@@ -128,12 +128,17 @@ recommendations.
   30-sec warnings, last-10s countdown, and auto-end. Known gaps: the `nowli-ai` bypass
   (inherited — `technical-debt.md` TD-001) and the UTC day boundary (`system-constraints.md`
   SC-001).
-  - **Call-screen UI polish** (2026-07-06): fixed four inherited in-call visual issues in
-    `ai_voice.dart` — a flickering mic icon (now a debounced "speaking" indicator),
-    the timer shifting the layout (fixed-width), the last minute tinting the whole
-    background orange (removed; background stays blue), and the final-10s fullscreen
-    overlay (now counts 10 → 1 on the shared notice card). See `technical-debt.md`
-    TD-017…TD-020. No UI/UX changes beyond these fixes; `flutter analyze` clean (no new issues).
+  - **Call-screen UI polish** (2026-07-06): fixed inherited in-call visual issues in
+    `ai_voice.dart` — a flickering mic icon (now a voice-activity "speaking" indicator via
+    `onSoundLevelChange`, off ~1s after speech stops), the timer shifting the layout (now
+    per-digit fixed-width slots), the last minute recoloring the background **and** timer
+    orange (removed both; they stay blue/indigo — only the notice card signals the warning),
+    and the final-10s fullscreen overlay (now counts 10 → 1 on the shared notice card). Also
+    replaced the placeholder "Answer emails" heading with a neutral companion heading, and
+    made the call summary fall back to its default cards instead of a "No session ID
+    provided" error when the AI session is missing (`call_summary_screen.dart`). See
+    `technical-debt.md` TD-017…TD-021. No UI/UX changes beyond these fixes; `flutter analyze`
+    clean (no new issues).
 - **AI subtask generation** (`POST /api/subtasks/generate/`) — complete, with proper
   error handling (502/503 on AI failures).
 - **AI insights** (`GET /api/insights/`) — weekly reflections + quest suggestions,

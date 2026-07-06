@@ -188,10 +188,11 @@ _Each item: location, problem, why it matters, recommended fix, priority, status
   lifecycle, which flips true/false on every pause between phrases (plus periodic
   restarts), so the mic icon constantly toggled red ↔ normal (looked like a bug).
 - **Recommended fix / status:** **Fixed (2026-07-06)** — added a debounced visual flag
-  `_micActive` driven by the existing callbacks: it goes active immediately on a speaking
-  event (`onResult` with text) and returns to normal only after ~1s of silence via a single
-  self-resetting `Timer` (`_micOffTimer`); a resumed speech event cancels the pending
-  turn-off. Recognition/restart logic and the icon's design are unchanged.
+  `_micActive` driven by **voice activity**: `_speech.listen`'s `onSoundLevelChange` (plus
+  `onResult` with text) lights the icon immediately while the user is actually speaking, and
+  a single ~1s `Timer` (`_micOffTimer`, non-resetting) turns it off after they stop; resumed
+  speech cancels the pending turn-off. Recognition/restart logic and the icon's design are
+  unchanged. (`_micSpeakingThreshold` may need tuning per device.)
 - **Priority:** P3 · **Status:** Fixed (2026-07-06)
 
 ### TD-018 — Call timer shifted the whole layout (proportional Wosker digits)
@@ -200,20 +201,25 @@ _Each item: location, problem, why it matters, recommended fix, priority, status
 - **Problem:** Inherited — `Wosker` has proportional digits (a "1" is narrower than an
   "8"), so as the time changed the timer's width changed and the whole centered row (and
   design) visibly "danced".
-- **Recommended fix / status:** **Fixed (2026-07-06)** — wrapped the timer in a
-  fixed-width `SizedBox` (left-aligned, `scaleDown` kept) so its width is constant; font,
-  size and colors are unchanged. (If any residual per-digit shimmer is observed on-device,
-  the fallback is per-character fixed slots.)
+- **Recommended fix / status:** **Fixed (2026-07-06)** — render the timer with
+  **per-digit fixed-width slots**: `_measureDigitWidth()` measures the widest Wosker digit
+  once (`TextPainter`) and `_fixedWidthTime()` centers each digit in that constant width
+  (non-digit glyphs `:`/`/`/` ` are constant-width already). Font, size and colors are
+  unchanged; the width no longer changes as the digits change. (A first attempt with just a
+  fixed-width `SizedBox` still let the individual seconds digits shift, hence the slots.)
 - **Priority:** P3 · **Status:** Fixed (2026-07-06)
 
-### TD-019 — Last minute turned the whole background orange
-- **Location:** `ai_voice.dart` `_backgroundColor` returned an orange
-  (`0xFFFF8F26`) whenever `_isTimeWarningActive`.
-- **Problem:** Inherited — during the final-minute warnings the entire screen background
-  went orange, which was not wanted.
+### TD-019 — Last minute turned the background (and timer) orange
+- **Location:** `ai_voice.dart` `_backgroundColor` and `_timerColor` both returned orange
+  (`0xFFFF8F26`) whenever the (now removed) `_isTimeWarningActive` was true.
+- **Problem:** Inherited — during the final-minute warnings the whole screen went orange,
+  which was not wanted; the orange also recolored the timer text/progress ring/pulse, making
+  the digits hard to read ("the letters disappear").
 - **Recommended fix / status:** **Fixed (2026-07-06)** — removed the orange branch from
-  `_backgroundColor` only; the background stays blue. The warning cards and `_timerColor`
-  were left intentionally unchanged (per product request: remove *only* the background tint).
+  **both** `_backgroundColor` (stays blue) and `_timerColor` (stays the normal indigo), and
+  deleted the now-unused `_isTimeWarningActive`. Nothing recolors on the last minute anymore;
+  only the notice card signals the warning. (First cut removed it from the background only,
+  per an earlier instruction; revised on user feedback to also stop the text recolor.)
 - **Priority:** P3 · **Status:** Fixed (2026-07-06)
 
 ### TD-020 — Final 10 seconds used a fullscreen overlay
@@ -225,6 +231,19 @@ _Each item: location, problem, why it matters, recommended fix, priority, status
   `_buildCountdownNotice()` that reuses the shared `_noticeCard` (same style as the
   30-seconds warning) and counts 10 → 1 on that card; the old overlay was commented out
   (preserve-not-delete), no fullscreen overlay remains.
+- **Priority:** P3 · **Status:** Fixed (2026-07-06)
+
+### TD-021 — Call screen placeholder heading + "No session ID provided" on the summary
+- **Location:** `ai_voice.dart` title (hardcoded `Answer emails 📧`);
+  `call_summary_screen.dart` `_loadSummary()` (error when `sessionId` is null/empty).
+- **Problem:** Inherited — the call screen's heading was a leftover quest placeholder
+  ("Answer emails"), and if the AI session was never created (e.g. the `:8001` service was
+  unreachable during the call) the call ended navigating to the summary **without** a
+  `sessionId`, which then showed a hard "No session ID provided" error screen.
+- **Recommended fix / status:** **Fixed (2026-07-06)** — the heading is now a neutral,
+  companion-appropriate `Let's talk 💬` / `All done ✓`; and the summary, when there is no
+  session, silently falls back to its friendly default insight cards (placeholder copy)
+  instead of the error. No error surfaces for a missing session.
 - **Priority:** P3 · **Status:** Fixed (2026-07-06)
 
 ---

@@ -28,6 +28,10 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   static const Duration _initialDuration = Duration(minutes: 5);
   static const Duration _extensionDuration = Duration(minutes: 2, seconds: 30);
 
+  // UI-TD-001: mic sound level (rms) above this ≈ the user is speaking. The
+  // platform values are roughly dB on Android; the icon lights on voice activity.
+  static const double _micSpeakingThreshold = 2.0;
+
   // Timer management
   late Duration _totalDuration;
   late Duration _elapsedTime;
@@ -511,6 +515,15 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
               _sendMessageToAi(textToSend);
             }
           },
+          // UI-TD-001: voice-activity drives the mic icon — active while the user
+          // is actually speaking (sound above threshold), off ~1s after they stop.
+          onSoundLevelChange: (level) {
+            if (level >= _micSpeakingThreshold) {
+              _markMicActive();
+            } else {
+              _scheduleMicInactive();
+            }
+          },
           listenFor: Duration(minutes: 5), // Matches the 5-min base call duration (TD-010)
           pauseFor: Duration(seconds: 30), // Increased pause tolerance to 30 seconds
           partialResults: true,
@@ -579,9 +592,11 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   }
 
   // UI-TD-001: the user seems to have stopped — don't turn the icon off right away.
-  // Wait ~1s; if speech resumes in that window, _markMicActive cancels this timer.
+  // Start a single ~1s countdown from when speech stopped (do NOT keep resetting it
+  // on every silent sample); if speech resumes, _markMicActive cancels it.
   void _scheduleMicInactive() {
-    _micOffTimer?.cancel();
+    if (!_micActive) return;
+    if (_micOffTimer?.isActive ?? false) return; // already counting down
     _micOffTimer = Timer(const Duration(seconds: 1), () {
       if (mounted) setState(() => _micActive = false);
     });
@@ -977,9 +992,55 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     return '${twoDigits(duration.inMinutes)}:${twoDigits(duration.inSeconds.remainder(60))}';
   }
 
-  // The call turns "warning orange" once any end-of-call notice is active.
-  bool get _isTimeWarningActive =>
-      _showOneMinuteWarning || _showThirtySecWarning || _countdownValue > 0;
+  // UI-TD-002: the widest digit's width in the timer font, measured once.
+  double? _digitSlotWidth;
+  double _measureDigitWidth() {
+    if (_digitSlotWidth != null) return _digitSlotWidth!;
+    const style = TextStyle(
+      fontSize: 52,
+      fontFamily: 'Wosker',
+      fontWeight: FontWeight.w400,
+      height: 0.80,
+    );
+    double maxWidth = 0;
+    for (final d in const ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']) {
+      final tp = TextPainter(
+        text: TextSpan(text: d, style: style),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      if (tp.width > maxWidth) maxWidth = tp.width;
+    }
+    _digitSlotWidth = maxWidth;
+    return maxWidth;
+  }
+
+  // UI-TD-002: lay a time string out with each digit centered in a fixed-width
+  // slot (the widest digit's width). Same Wosker look, but the width no longer
+  // changes as the digits change, so the timer — and the layout — stay put.
+  Widget _fixedWidthTime(String text, Color color) {
+    final slot = _measureDigitWidth();
+    final style = TextStyle(
+      color: color,
+      fontSize: 52,
+      fontFamily: 'Wosker',
+      fontWeight: FontWeight.w400,
+      height: 0.80,
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: text.split('').map((ch) {
+        final code = ch.codeUnitAt(0);
+        final isDigit = code >= 0x30 && code <= 0x39;
+        final glyph = Text(ch, style: style);
+        return isDigit
+            ? SizedBox(width: slot, child: Center(child: glyph))
+            : glyph;
+      }).toList(),
+    );
+  }
+
+  // UI-TD-003: removed `_isTimeWarningActive` — the end-of-call warnings no longer
+  // recolor the background or the timer, so nothing reads that state anymore.
 
   Color get _backgroundColor {
     if (_questCompleted) return const Color(0xFFCCFFAA);
@@ -990,7 +1051,9 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
 
   Color get _timerColor {
     if (_questCompleted) return const Color(0xFF3BB64B);
-    if (_isTimeWarningActive) return const Color(0xFFFF8F26);
+    // UI-TD-003: the last-minute warnings no longer recolor the timer/progress
+    // ring/pulse (they used to turn orange, which made the digits hard to read).
+    // Only the notice card signals the warning now; everything else stays put.
     return const Color(0xFF4542EB);
   }
   
@@ -1070,7 +1133,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
 
                         // Title Section
                         Text(
-                          _questCompleted ? 'Answer emails ✉️ ✓' : 'Answer emails 📧',
+                          _questCompleted ? 'All done ✓' : 'Let\'s talk 💬',
                           style: AppsTextStyles.black24Uppercase,
                         ),
                         const SizedBox(height: 8),
@@ -1135,27 +1198,18 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          // UI-TD-002: fixed width so the proportional-digit Wosker
-                          // font no longer changes the timer's width (and shifts the
-                          // whole layout) as the time counts. Left-aligned + scaleDown
-                          // keep the timer's position and size identical to before.
-                          SizedBox(
-                            width: 240,
+                          // UI-TD-002: render the timer with fixed-width digit slots so
+                          // the proportional-digit Wosker font no longer changes the
+                          // timer's width (which shifted the whole layout) as it counts.
+                          // Non-digit glyphs (':', '/', ' ') are constant-width already.
+                          Flexible(
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
                               child: Row(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text(
-                                    _formatDuration(_elapsedTime),
-                                    style: TextStyle(
-                                      color: _timerColor,
-                                      fontSize: 52,
-                                      fontFamily: 'Wosker',
-                                      fontWeight: FontWeight.w400,
-                                      height: 0.80,
-                                    ),
-                                  ),
+                                  _fixedWidthTime(
+                                      _formatDuration(_elapsedTime), _timerColor),
                                   Text(
                                     ' / ',
                                     style: TextStyle(
@@ -1166,15 +1220,9 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
                                       height: 0.80,
                                     ),
                                   ),
-                                  Text(
+                                  _fixedWidthTime(
                                     _formatDuration(_totalDuration),
-                                    style: TextStyle(
-                                      color: _timerColor.withOpacity(0.5),
-                                      fontSize: 52,
-                                      fontFamily: 'Wosker',
-                                      fontWeight: FontWeight.w400,
-                                      height: 0.80,
-                                    ),
+                                    _timerColor.withOpacity(0.5),
                                   ),
                                 ],
                               ),

@@ -32,9 +32,14 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
 
   Future<void> _loadSummary() async {
     if (widget.sessionId == null || widget.sessionId!.isEmpty) {
+      // No AI session (e.g. the :8001 AI service wasn't reachable during the call).
+      // Don't show an error — fall back to the friendly default summary below
+      // (the insight cards already render sensible placeholder text when _summary
+      // is null).
       setState(() {
         _isLoading = false;
-        _errorMessage = 'No session ID provided';
+        _summary = null;
+        _errorMessage = null;
       });
       return;
     }
