@@ -6,6 +6,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/services/ai_call_service.dart';
 import 'package:nowlii/services/voice_call_service.dart';
+import 'package:nowlii/api/storage.dart';
 import 'package:nowlii/models/ai_call_models.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
@@ -379,10 +380,24 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     }
   }
   
+  /// Resolve the real user identity for the AI session from the stored auth state /
+  /// profile — never a hardcoded name. Falls back through profile name → auth username →
+  /// a neutral greeting placeholder (only if the user somehow has neither).
+  Future<String> _resolveUserName() async {
+    final storage = StorageService();
+    final profile = await storage.getProfileData();
+    final profileName = profile?.name.trim() ?? '';
+    if (profileName.isNotEmpty) return profileName;
+    final username = (await storage.getUsername())?.trim() ?? '';
+    if (username.isNotEmpty) return username;
+    return 'there';
+  }
+
   Future<void> _createAiSession() async {
     try {
+      final userName = await _resolveUserName();
       final session = await _aiCallService.createSession(
-        userName: 'User', // You can get this from user profile
+        userName: userName,
         systemName: 'Aria',
         language: 'en',
       );
@@ -482,7 +497,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
               _sendMessageToAi(textToSend);
             }
           },
-          listenFor: Duration(minutes: 10), // Extended to 10 minutes to match call duration
+          listenFor: Duration(minutes: 5), // Matches the 5-min base call duration (TD-010)
           pauseFor: Duration(seconds: 30), // Increased pause tolerance to 30 seconds
           partialResults: true,
           cancelOnError: false, // Don't cancel on errors
@@ -540,6 +555,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     }
   }
   
+  /* TD-009: dead code (unused). Kept commented, not deleted, per cleanup task.
   Future<void> _handleWebVoiceInput() async {
     if (!kIsWeb) return;
     
@@ -601,6 +617,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
       setState(() {});
     }
   }
+  */
   
   Future<void> _sendMessageToAi(String message) async {
     if (message.isEmpty || _isHandlingAiResponse) return;
@@ -744,6 +761,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     });
   }
 
+  /* TD-009: dead code (unused). Kept commented, not deleted, per cleanup task.
   void _toggleMute() {
     setState(() {
       _isMuted = !_isMuted;
@@ -779,6 +797,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
       }
     });
   }
+  */
 
   void _addExtension() {
     // The extension can be used at most once; after that the call is capped at 7.5 min.
@@ -941,6 +960,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     return const Color(0xFF4542EB);
   }
   
+  /* TD-009: dead code (unused). Kept commented, not deleted, per cleanup task.
   IconData _getEmotionIcon(String emotionKey) {
     switch (emotionKey.toLowerCase()) {
       case 'happy':
@@ -988,6 +1008,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
         return Colors.grey;
     }
   }
+  */
 
   @override
   Widget build(BuildContext context) {

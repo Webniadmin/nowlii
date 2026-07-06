@@ -13,6 +13,25 @@ trace any later build break back to a change. Newest session on top._
 
 ---
 
+## Session 2026-07-06 — TD-008 (relocate dead AI-call screens)
+
+Moved the unrouted/duplicate AI-call screen variants out of `lib/screen/ai_call/` (which now
+holds only the routed screens) into `lib/experimental/ai_call/`. Used `git mv` (history
+preserved). All four are **unreferenced** and use only `package:` imports, so no import
+fixes were needed and the build is unaffected. `flutter analyze` → **0 errors**.
+
+| From | To |
+|---|---|
+| `lib/screen/ai_call/ai_calling.dart` | `lib/experimental/ai_call/ai_calling.dart` |
+| `lib/screen/ai_call/ai_calling_two.dart` | `lib/experimental/ai_call/ai_calling_two.dart` |
+| `lib/screen/ai_call/AiCalling_two.dart` | `lib/experimental/ai_call/AiCalling_two.dart` |
+| `lib/screen/ai_call/ai_voice_calling_screen.dart` | `lib/experimental/ai_call/ai_voice_calling_screen.dart` |
+
+Still live in `lib/screen/ai_call/`: `ai_voice.dart`, `call_summary_screen.dart`,
+`pop_po_sahre.dart` (all routed).
+
+---
+
 ## Session 2026-07-03 — A3 (frontend naming conventions)
 
 Renamed misspelled/inconsistent folders and files under `lib/`, fixing every `package:` and

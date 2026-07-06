@@ -68,7 +68,9 @@ _Each item: location, problem, why it matters, recommended fix, priority, status
   name instead of the logged-in user.
 - **Why it matters:** The companion addresses everyone as "User" — cosmetic, but sloppy.
 - **Recommended fix:** Read the stored username/profile name and pass it as `user_name`.
-- **Priority:** P3 · **Status:** Open
+- **Priority:** P3 · **Status:** Fixed (2026-07-06) — `ai_voice.dart` `_resolveUserName()`
+  now uses the profile name → stored username; the last-resort fallback is a neutral
+  greeting, never a hardcoded identity. Added `StorageService.getUsername()`.
 
 ### TD-008 — Dead / unrouted AI-call screen variants
 - **Location:** `nowli-frontend-app/lib/screen/ai_call/` — `ai_calling.dart`,
@@ -78,7 +80,9 @@ _Each item: location, problem, why it matters, recommended fix, priority, status
   canonical without checking the router.
 - **Why it matters:** Confusing; risk of editing the wrong file.
 - **Recommended fix:** Relocate to `lib/experimental/` or remove, per the cleanup rule.
-- **Priority:** P3 · **Status:** Open
+- **Priority:** P3 · **Status:** Fixed (2026-07-06) — moved (`git mv`, history preserved) to
+  `lib/experimental/ai_call/`. `screen/ai_call/` now holds only the routed screens
+  (`ai_voice`, `call_summary_screen`, `pop_po_sahre`). See `cleanup-log.md`.
 
 ### TD-009 — Unused methods in `ai_voice.dart`
 - **Location:** `nowli-frontend-app/lib/screen/ai_call/ai_voice.dart` — `_toggleMute`,
@@ -86,7 +90,8 @@ _Each item: location, problem, why it matters, recommended fix, priority, status
 - **Problem:** Inherited dead code (pre-existing; not introduced by the limit feature).
 - **Why it matters:** Noise; `_getEmotion*` hint at an emotion UI that was never wired.
 - **Recommended fix:** Remove, or wire the emotion display if intended.
-- **Priority:** P3 · **Status:** Open
+- **Priority:** P3 · **Status:** Fixed (2026-07-06) — commented out (not deleted) in
+  `ai_voice.dart` with a `TD-009` note, so the code is preserved but no longer dead-warns.
 
 ### TD-010 — Speech `listenFor` does not match the call duration
 - **Location:** `nowli-frontend-app/lib/screen/ai_call/ai_voice.dart` `_startListening()`
@@ -94,7 +99,8 @@ _Each item: location, problem, why it matters, recommended fix, priority, status
 - **Problem:** Inherited leftover constant — speech is told to listen for 10 minutes.
 - **Why it matters:** Harmless today, but a misleading magic number.
 - **Recommended fix:** Tie it to the call's remaining time or a sensible per-utterance value.
-- **Priority:** P3 · **Status:** Open
+- **Priority:** P3 · **Status:** Fixed (2026-07-06) — `listenFor` set to 5 minutes to match
+  the base call duration.
 
 ### TD-011 — `print()` used for logging; deprecated `withOpacity`
 - **Location:** across the frontend (e.g. `ai_voice.dart`, all services).

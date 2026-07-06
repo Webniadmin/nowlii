@@ -50,6 +50,12 @@ class StorageService {
     return token;
   }
 
+  // Username saved from the auth state on login (see saveUserData).
+  Future<String?> getUsername() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_usernameKey);
+  }
+
   // Profile data methods
   Future<void> saveProfileData(ProfileModel profile) async {
     print('\n💾 Saving profile data to storage...');
