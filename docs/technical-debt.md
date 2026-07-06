@@ -181,6 +181,52 @@ _Each item: location, problem, why it matters, recommended fix, priority, status
   in a dedicated lint-cleanup pass.
 - **Priority:** P3 · **Status:** Open
 
+### TD-017 — Call screen mic icon flickered (tracked the raw speech lifecycle)
+- **Location:** `nowli-frontend-app/lib/screen/ai_call/ai_voice.dart` — the mic button
+  decoration read `_isListening` directly.
+- **Problem:** Inherited behavior — `_isListening` mirrors the raw `speech_to_text`
+  lifecycle, which flips true/false on every pause between phrases (plus periodic
+  restarts), so the mic icon constantly toggled red ↔ normal (looked like a bug).
+- **Recommended fix / status:** **Fixed (2026-07-06)** — added a debounced visual flag
+  `_micActive` driven by the existing callbacks: it goes active immediately on a speaking
+  event (`onResult` with text) and returns to normal only after ~1s of silence via a single
+  self-resetting `Timer` (`_micOffTimer`); a resumed speech event cancels the pending
+  turn-off. Recognition/restart logic and the icon's design are unchanged.
+- **Priority:** P3 · **Status:** Fixed (2026-07-06)
+
+### TD-018 — Call timer shifted the whole layout (proportional Wosker digits)
+- **Location:** `ai_voice.dart` — the timer `Text`s (`Wosker`, size 52) sat in a
+  shrink-to-fit `Flexible`/`FittedBox`.
+- **Problem:** Inherited — `Wosker` has proportional digits (a "1" is narrower than an
+  "8"), so as the time changed the timer's width changed and the whole centered row (and
+  design) visibly "danced".
+- **Recommended fix / status:** **Fixed (2026-07-06)** — wrapped the timer in a
+  fixed-width `SizedBox` (left-aligned, `scaleDown` kept) so its width is constant; font,
+  size and colors are unchanged. (If any residual per-digit shimmer is observed on-device,
+  the fallback is per-character fixed slots.)
+- **Priority:** P3 · **Status:** Fixed (2026-07-06)
+
+### TD-019 — Last minute turned the whole background orange
+- **Location:** `ai_voice.dart` `_backgroundColor` returned an orange
+  (`0xFFFF8F26`) whenever `_isTimeWarningActive`.
+- **Problem:** Inherited — during the final-minute warnings the entire screen background
+  went orange, which was not wanted.
+- **Recommended fix / status:** **Fixed (2026-07-06)** — removed the orange branch from
+  `_backgroundColor` only; the background stays blue. The warning cards and `_timerColor`
+  were left intentionally unchanged (per product request: remove *only* the background tint).
+- **Priority:** P3 · **Status:** Fixed (2026-07-06)
+
+### TD-020 — Final 10 seconds used a fullscreen overlay
+- **Location:** `ai_voice.dart` `_buildCountdownOverlay()` — a `Positioned.fill` scrim with
+  a huge centered number.
+- **Problem:** Inherited — the last-10s countdown covered the whole screen instead of using
+  the app's existing in-call notice style.
+- **Recommended fix / status:** **Fixed (2026-07-06)** — replaced with
+  `_buildCountdownNotice()` that reuses the shared `_noticeCard` (same style as the
+  30-seconds warning) and counts 10 → 1 on that card; the old overlay was commented out
+  (preserve-not-delete), no fullscreen overlay remains.
+- **Priority:** P3 · **Status:** Fixed (2026-07-06)
+
 ---
 
 ## Reclassified out of this file (2026-07-06)

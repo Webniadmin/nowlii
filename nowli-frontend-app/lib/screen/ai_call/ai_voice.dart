@@ -68,7 +68,15 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   String _aiResponse = '';
   EmotionData? _currentEmotion;
   bool _isListening = false;
-  
+
+  // UI-TD-001: debounced visual state for the mic button. The icon follows real
+  // speaking activity — active immediately when the user speaks, and returns to
+  // normal only after ~1s of silence — instead of tracking the raw speech_to_text
+  // lifecycle (`_isListening` flips on every pause, which made the icon flicker).
+  // Recognition/restart logic is unchanged; this only drives the icon.
+  bool _micActive = false;
+  Timer? _micOffTimer;
+
   // Speech recognition and TTS
   late stt.SpeechToText _speech;
   late FlutterTts _flutterTts;
@@ -286,7 +294,10 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
                 _isListening = false;
               });
             }
-            
+
+            // UI-TD-001: user paused → debounce the mic icon off (~1s), not instantly.
+            _scheduleMicInactive();
+
             // Auto-restart if not handling AI response and not muted
             if (status == 'notListening' && !_isHandlingAiResponse && !_isMuted && !_isPaused && mounted) {
               Future.delayed(Duration(milliseconds: 800), () {
@@ -476,6 +487,9 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
           onResult: (result) {
             final recognizedText = result.recognizedWords.trim();
             print('📝 Live transcription: "$recognizedText" (final: ${result.finalResult})');
+
+            // UI-TD-001: speaking detected → mic icon active now, cancel pending off.
+            if (recognizedText.isNotEmpty) _markMicActive();
             
             if (mounted) {
               setState(() {
@@ -553,6 +567,24 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     } else {
       _startListening();
     }
+  }
+
+  // UI-TD-001: the user is speaking → make the mic icon active immediately and
+  // cancel any pending turn-off (so a resumed speech/listening event keeps it on).
+  void _markMicActive() {
+    _micOffTimer?.cancel();
+    if (!_micActive && mounted) {
+      setState(() => _micActive = true);
+    }
+  }
+
+  // UI-TD-001: the user seems to have stopped — don't turn the icon off right away.
+  // Wait ~1s; if speech resumes in that window, _markMicActive cancels this timer.
+  void _scheduleMicInactive() {
+    _micOffTimer?.cancel();
+    _micOffTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) setState(() => _micActive = false);
+    });
   }
   
   /* TD-009: dead code (unused). Kept commented, not deleted, per cleanup task.
@@ -925,6 +957,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     _reportCallEnd();
     _timer?.cancel();
     _listeningCheckTimer?.cancel(); // Cancel listening check timer
+    _micOffTimer?.cancel(); // UI-TD-001: cancel the mic-icon debounce timer
     _progressController.dispose();
     _pulseController.dispose();
     _testInputController.dispose();
@@ -950,7 +983,8 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
 
   Color get _backgroundColor {
     if (_questCompleted) return const Color(0xFFCCFFAA);
-    if (_isTimeWarningActive) return const Color(0xFFFF8F26);
+    // UI-TD-003: the last-minute warnings no longer tint the background orange —
+    // it stays blue. The warning cards and _timerColor are intentionally unchanged.
     return const Color(0xFF91BBF9);
   }
 
@@ -1101,9 +1135,15 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Flexible(
+                          // UI-TD-002: fixed width so the proportional-digit Wosker
+                          // font no longer changes the timer's width (and shifts the
+                          // whole layout) as the time counts. Left-aligned + scaleDown
+                          // keep the timer's position and size identical to before.
+                          SizedBox(
+                            width: 240,
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
                               child: Row(
                                 children: [
                                   Text(
@@ -1165,22 +1205,22 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
                                   width: 64,
                                   height: 64,
                                   decoration: BoxDecoration(
-                                    color: _isListening 
+                                    color: _micActive
                                         ? Colors.red.withOpacity(0.2)
-                                        : _isMuted 
-                                            ? const Color(0xFFFFE5E5) 
+                                        : _isMuted
+                                            ? const Color(0xFFFFE5E5)
                                             : const Color(0xFFC3DBFF),
                                     shape: BoxShape.circle,
-                                    border: _isListening 
+                                    border: _micActive
                                         ? Border.all(color: Colors.red, width: 3)
                                         : null,
                                   ),
                                   child: Icon(
                                     _isMuted ? Icons.mic_off : Icons.mic,
-                                    color: _isListening 
-                                        ? Colors.red 
-                                        : _isMuted 
-                                            ? Colors.red 
+                                    color: _micActive
+                                        ? Colors.red
+                                        : _isMuted
+                                            ? Colors.red
                                             : const Color(0xFF4542EB),
                                     size: 28,
                                   ),
@@ -1261,9 +1301,10 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
               if (_showThirtySecWarning && !_questCompleted && _countdownValue == 0)
                 _buildThirtySecWarning(),
 
-              // Final 10-second countdown.
+              // Final 10-second countdown (UI-TD-004: on the shared notice card,
+              // no fullscreen overlay).
               if (_countdownValue > 0 && !_questCompleted)
-                _buildCountdownOverlay(),
+                _buildCountdownNotice(),
 
               // Mute warning
               if (_showMuteWarning)
@@ -1504,6 +1545,23 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     );
   }
 
+  // UI-TD-004: final 10-second countdown, shown on the same notice card as the
+  // other end-of-call warnings (counts 10 → 1). Replaces the previous fullscreen
+  // overlay.
+  Widget _buildCountdownNotice() {
+    return _noticeCard(
+      child: Row(
+        children: [
+          const Icon(Icons.timer_outlined, color: Color(0xFF011F54)),
+          const SizedBox(width: 12),
+          Expanded(child: _noticeTitle('Ending in $_countdownValue…')),
+        ],
+      ),
+    );
+  }
+
+  /* UI-TD-004: replaced by _buildCountdownNotice (no fullscreen overlay).
+     Kept commented, not deleted, per the preserve-not-delete cleanup rule.
   // Final 10-second countdown, centered over the call.
   Widget _buildCountdownOverlay() {
     return Positioned.fill(
@@ -1540,6 +1598,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
       ),
     );
   }
+  */
 
   // Full-screen overlay while the backend daily-limit check is in flight.
   Widget _buildAuthorizingOverlay() {

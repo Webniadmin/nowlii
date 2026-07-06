@@ -128,6 +128,12 @@ recommendations.
   30-sec warnings, last-10s countdown, and auto-end. Known gaps: the `nowli-ai` bypass
   (inherited — `technical-debt.md` TD-001) and the UTC day boundary (`system-constraints.md`
   SC-001).
+  - **Call-screen UI polish** (2026-07-06): fixed four inherited in-call visual issues in
+    `ai_voice.dart` — a flickering mic icon (now a debounced "speaking" indicator),
+    the timer shifting the layout (fixed-width), the last minute tinting the whole
+    background orange (removed; background stays blue), and the final-10s fullscreen
+    overlay (now counts 10 → 1 on the shared notice card). See `technical-debt.md`
+    TD-017…TD-020. No UI/UX changes beyond these fixes; `flutter analyze` clean (no new issues).
 - **AI subtask generation** (`POST /api/subtasks/generate/`) — complete, with proper
   error handling (502/503 on AI failures).
 - **AI insights** (`GET /api/insights/`) — weekly reflections + quest suggestions,
