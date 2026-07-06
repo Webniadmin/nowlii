@@ -125,8 +125,9 @@ recommendations.
   max 2 calls/day (`VOICE_CALL_DAILY_LIMIT`), counted from calls started today (resets at
   00:00, no cron), with per-user race locking. Frontend (`ai_voice.dart`) enforces the
   5-minute call with a single +2.5-minute extension (7.5-min cap), start notice, 1-min /
-  30-sec warnings, last-10s countdown, and auto-end. See `technical-debt.md` for known
-  gaps (nowli-ai bypass, UTC window).
+  30-sec warnings, last-10s countdown, and auto-end. Known gaps: the `nowli-ai` bypass
+  (inherited — `technical-debt.md` TD-001) and the UTC day boundary (`system-constraints.md`
+  SC-001).
 - **AI subtask generation** (`POST /api/subtasks/generate/`) — complete, with proper
   error handling (502/503 on AI failures).
 - **AI insights** (`GET /api/insights/`) — weekly reflections + quest suggestions,

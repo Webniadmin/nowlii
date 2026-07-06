@@ -169,6 +169,24 @@ conversation only by its `session_id`. (If exposed publicly, this is worth harde
   default 2) server-side; the daily count is derived from calls started "today" (no cron).
   The frontend timer/warnings and the 5-min + one-time 2.5-min extension (7.5-min max) are
   in `ai_voice.dart`; `lib/services/voice_call_service.dart` calls this API.
+
+### Design notes / known limitations (by design) — AI voice-call limit
+
+These are deliberate properties of our current implementation, not defects or inherited
+debt (contrast `technical-debt.md` = inherited legacy; `system-constraints.md` = stack
+constraints):
+
+- **Per-user, not per-person.** The limit is scoped to the authenticated Django user.
+  Multiple *devices* on the same account correctly share the count (it is server-side), but
+  one person creating multiple *accounts* gets a fresh limit each. Addressing multi-account
+  abuse (device attestation, verification friction) is an open product decision, out of
+  scope for now.
+- **The limit is enforced when the call screen opens, not at the entry points.** The call
+  is authorized authoritatively via `POST /start/` as `ai_voice.dart` loads; the home /
+  swipe entry points navigate unconditionally, so a user out of calls briefly sees the call
+  screen "checking…" then a "limit reached" message before it closes. The backend remains
+  the sole authority; a future improvement could pre-check `getQuota()` at the entry point
+  to avoid the flash.
 - `manage.py`, `Dockerfile`, `docker-compose.*.yml`, `entrypoint.sh`, `uv.lock`, `.env`.
 
 ### `nowli-frontend-app/` (Flutter)
