@@ -58,6 +58,12 @@ MOCK_ANALYTICS = {
             "summary": "You complete more Soft Moves than Power Moves (72.0% vs 28.0%).",
         },
         "quests_completed": {"assigned": 20, "completed": 14},
+        "zone_progress": [
+            {"zone": "Soft steps",   "assigned": 10, "completed": 8, "ratio": "8/10"},
+            {"zone": "Stretch zone", "assigned": 4,  "completed": 3, "ratio": "3/4"},
+            {"zone": "Elevated",     "assigned": 3,  "completed": 2, "ratio": "2/3"},
+            {"zone": "Power move",   "assigned": 3,  "completed": 1, "ratio": "1/3"},
+        ],
         "calendar": [
             {"date": "2026-04-01", "status": "consistent", "assigned": 2, "completed": 2},
             {"date": "2026-04-02", "status": "skipped",    "assigned": 1, "completed": 0},

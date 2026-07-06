@@ -63,6 +63,7 @@ class MonthlyInsights {
   final String mostProductiveDay;
   final PreferredQuestTypes preferredQuestTypes;
   final QuestsCompleted questsCompleted;
+  final List<ZoneProgress> zoneProgress;
   final List<CalendarDay> calendar;
   final Milestones milestones;
 
@@ -71,6 +72,7 @@ class MonthlyInsights {
     required this.mostProductiveDay,
     required this.preferredQuestTypes,
     required this.questsCompleted,
+    required this.zoneProgress,
     required this.calendar,
     required this.milestones,
   });
@@ -86,6 +88,10 @@ class MonthlyInsights {
           PreferredQuestTypes.fromJson(json['preferred_quest_types'] ?? {}),
       questsCompleted:
           QuestsCompleted.fromJson(json['quests_completed'] ?? {}),
+      zoneProgress: (json['zone_progress'] as List?)
+              ?.map((e) => ZoneProgress.fromJson(e))
+              .toList() ??
+          [],
       calendar: (json['calendar'] as List?)
               ?.map((e) => CalendarDay.fromJson(e))
               .toList() ??

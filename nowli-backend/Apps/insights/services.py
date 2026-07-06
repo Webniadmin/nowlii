@@ -169,6 +169,26 @@ def get_monthly_analytics(user, ref: date = None) -> dict:
     completed = sum(1 for q in quests if _all_subtasks_done(q) or q.task_done)
     quests_completed = {"assigned": assigned, "completed": completed}
 
+    # ── 4b. Zone progress (real per-zone assigned/completed for the month,
+    #        same shape as the weekly zone_progress) ──────────────────────
+    ZONES = ["Soft steps", "Stretch zone", "Elevated", "Power move"]
+    zone_map: dict[str, dict] = {z: {"assigned": 0, "completed": 0} for z in ZONES}
+    for q in quests:
+        if q.zone in zone_map:
+            zone_map[q.zone]["assigned"] += 1
+            if _all_subtasks_done(q) or q.task_done:
+                zone_map[q.zone]["completed"] += 1
+
+    zone_progress = [
+        {
+            "zone":      zone,
+            "assigned":  data["assigned"],
+            "completed": data["completed"],
+            "ratio":     f"{data['completed']}/{data['assigned']}" if data["assigned"] else "0/0",
+        }
+        for zone, data in zone_map.items()
+    ]
+
     # ── 5. Calendar (consistent / skipped / streak) ──────────────────────
     calendar = _generate_calendar(first, last, quests, ref)
 
@@ -201,6 +221,7 @@ def get_monthly_analytics(user, ref: date = None) -> dict:
         "most_productive_day":   most_productive_day,
         "preferred_quest_types": preferred_quest_types,
         "quests_completed":      quests_completed,
+        "zone_progress":         zone_progress,
         "calendar":              calendar,
         "milestones":            milestones,
     }

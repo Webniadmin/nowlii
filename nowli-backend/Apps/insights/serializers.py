@@ -32,23 +32,26 @@ class MilestoneSerializer(serializers.Serializer):
     longest_streak_days         = serializers.IntegerField()
 
 
-class MonthlyInsightSerializer(serializers.Serializer):
-    most_completed_quests  = MostCompletedQuestSerializer(many=True)
-    most_productive_day    = serializers.CharField(allow_blank=True, allow_null=True)
-    preferred_quest_types  = PreferredQuestTypesSerializer()
-    quests_completed       = MonthlyQuestsCompletedSerializer()
-    calendar               = CalendarDaySerializer(many=True)
-    milestones             = MilestoneSerializer()
-
-
-# ── Weekly insight sub-serializers ───────────────────────────────────────────
-
+# Shared by both weekly and monthly insights (defined here so the monthly serializer
+# below can reference it).
 class ZoneProgressSerializer(serializers.Serializer):
     zone      = serializers.CharField()
     assigned  = serializers.IntegerField()
     completed = serializers.IntegerField()
     ratio     = serializers.CharField()   # e.g. "3/5"
 
+
+class MonthlyInsightSerializer(serializers.Serializer):
+    most_completed_quests  = MostCompletedQuestSerializer(many=True)
+    most_productive_day    = serializers.CharField(allow_blank=True, allow_null=True)
+    preferred_quest_types  = PreferredQuestTypesSerializer()
+    quests_completed       = MonthlyQuestsCompletedSerializer()
+    zone_progress          = ZoneProgressSerializer(many=True)
+    calendar               = CalendarDaySerializer(many=True)
+    milestones             = MilestoneSerializer()
+
+
+# ── Weekly insight sub-serializers ───────────────────────────────────────────
 
 class QuestSuggestionSerializer(serializers.Serializer):
     task           = serializers.CharField()

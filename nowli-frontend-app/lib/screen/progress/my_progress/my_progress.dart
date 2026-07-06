@@ -25,6 +25,9 @@ class _MyProgressState extends State<MyProgress> {
   StreakResponse? _streak;
   bool _isLoading = true;
 
+  // 1B: selected period for the "Your moves" section (This week / This month).
+  String _movesPeriod = 'This week';
+
   @override
   void initState() {
     super.initState();
@@ -197,6 +200,8 @@ class _MyProgressState extends State<MyProgress> {
               ],
             ),
           ),
+          // 1A: "Share" button hidden per request — commented out (not deleted).
+          /*
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
@@ -227,6 +232,7 @@ class _MyProgressState extends State<MyProgress> {
               ),
             ),
           ),
+          */
         ],
       ),
     );
@@ -347,11 +353,14 @@ class _MyProgressState extends State<MyProgress> {
   }
 
   Widget _buildMovesSection() {
-    final zoneProgress = _insights?.weekly.zoneProgress ?? [];
-    
     int softSteps = 0;
     int powerMoves = 0;
-    
+
+    // Real per-zone completed counts from the backend — weekly or monthly zone_progress
+    // (both have the same shape). No client-side approximation.
+    final zoneProgress = _movesPeriod == 'This month'
+        ? (_insights?.monthly.zoneProgress ?? [])
+        : (_insights?.weekly.zoneProgress ?? []);
     for (var zone in zoneProgress) {
       if (zone.zone == 'Soft steps') {
         softSteps = zone.completed;
@@ -373,31 +382,48 @@ class _MyProgressState extends State<MyProgress> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Your moves', style: AppTextStylesQutes.workSansBlack20),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: ShapeDecoration(
-                  color: const Color(0xFFFAE3CE),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
+              // 1B: the pill is now a period selector (This week / This month).
+              // Same pill design — only behavior added (tap to open menu).
+              PopupMenuButton<String>(
+                onSelected: (value) => setState(() => _movesPeriod = value),
+                padding: EdgeInsets.zero,
+                tooltip: '',
+                itemBuilder: (context) => const [
+                  PopupMenuItem<String>(
+                    value: 'This week',
+                    child: Text('This week'),
                   ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'This week',
-                      style: GoogleFonts.workSans(
-                        color: const Color(0xFF011F54),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        height: 1,
-                        letterSpacing: -0.5,
-                      ),
+                  PopupMenuItem<String>(
+                    value: 'This month',
+                    child: Text('This month'),
+                  ),
+                ],
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: ShapeDecoration(
+                    color: const Color(0xFFFAE3CE),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
                     ),
-                  ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _movesPeriod,
+                        style: GoogleFonts.workSans(
+                          color: const Color(0xFF011F54),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          height: 1,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -520,6 +546,9 @@ class _MyProgressState extends State<MyProgress> {
                   ],
                 ),
               ),
+              // 1C: Activity Trend "This week" label hidden per request —
+              // commented out (not deleted). Rest of the section is untouched.
+              /*
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(
@@ -548,6 +577,7 @@ class _MyProgressState extends State<MyProgress> {
                   ],
                 ),
               ),
+              */
             ],
           ),
           const SizedBox(height: 4),

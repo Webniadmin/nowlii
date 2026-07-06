@@ -5,6 +5,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/themes/text_styles.dart' show AppsTextStyles;
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 import 'package:nowlii/services/insights_service.dart';
+import 'package:nowlii/services/personal_notes_service.dart';
 import 'package:nowlii/models/insights_models.dart';
 
 enum DayStatus { skipped, consistent, streak, empty }
@@ -25,10 +26,34 @@ class _InsightsScreenState extends State<InsightsScreen> {
   bool _isLoading = true;
   final TextEditingController _personalNoteController = TextEditingController();
 
+  // 2C: per-user personal notes (persisted locally).
+  final PersonalNotesService _notesService = PersonalNotesService();
+  List<PersonalNote> _personalNotes = [];
+
   @override
   void initState() {
     super.initState();
     _loadInsights();
+    _loadNotes();
+  }
+
+  // 2C: personal notes — load / add / delete (per-user, persistent).
+  Future<void> _loadNotes() async {
+    final notes = await _notesService.getNotes();
+    if (mounted) setState(() => _personalNotes = notes);
+  }
+
+  Future<void> _addNote() async {
+    final text = _personalNoteController.text.trim();
+    if (text.isEmpty) return;
+    final notes = await _notesService.addNote(text);
+    _personalNoteController.clear();
+    if (mounted) setState(() => _personalNotes = notes);
+  }
+
+  Future<void> _deleteNote(String id) async {
+    final notes = await _notesService.deleteNote(id);
+    if (mounted) setState(() => _personalNotes = notes);
   }
 
   @override
@@ -532,6 +557,8 @@ class _InsightsScreenState extends State<InsightsScreen> {
 
               const SizedBox(height: 16),
 
+              // 2A: Insights "This week" label hidden per request — commented out (not deleted).
+              /*
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -563,6 +590,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
                   ],
                 ),
               ),
+              */
               const SizedBox(height: 20),
               Padding(
                 padding: const EdgeInsets.all(8.0),
@@ -986,6 +1014,8 @@ class _InsightsScreenState extends State<InsightsScreen> {
             Text('Monthly Overview', style: AppsTextStyles.extraBold32Centered),
             const SizedBox(height: 14),
 
+            // 2B: Monthly Overview "This month" label hidden per request — commented out (not deleted).
+            /*
             Container(
               padding: const EdgeInsets.symmetric(
                 horizontal: 16,
@@ -1015,6 +1045,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 ],
               ),
             ),
+            */
 
             const SizedBox(height: 20),
             Center(
@@ -1165,6 +1196,57 @@ class _InsightsScreenState extends State<InsightsScreen> {
                   ),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ),
+            // 2C: save action (the input is multiline, so an explicit "Add note").
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _addNote,
+                child: Text(
+                  'Add note',
+                  style: GoogleFonts.workSans(
+                    color: const Color(0xFF4542EB),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            // 2C: saved notes, each with an "X" to delete.
+            ..._personalNotes.map(
+              (note) => Container(
+                width: 346,
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9F9FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE8E8FF), width: 1),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        note.text,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Color(0xFF011F54),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () => _deleteNote(note.id),
+                      child: const Icon(
+                        Icons.close,
+                        size: 18,
+                        color: Color(0xFF9CA3AF),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1460,6 +1542,8 @@ class _InsightsScreenState extends State<InsightsScreen> {
                       ],
                     ),
                   ),
+                  // 2D: "Share my success" button hidden per request — commented out (not deleted).
+                  /*
                   const SizedBox(height: 20),
                   Container(
                     width: double.infinity,
@@ -1490,6 +1574,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
                       ],
                     ),
                   ),
+                  */
                 ],
               ),
             ),

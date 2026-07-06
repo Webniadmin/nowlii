@@ -34,12 +34,17 @@ _Each item: location, problem, why it matters, recommended fix, priority, status
 
 ## P2
 
-### TD-007 — No automated test suite anywhere
-- **Location:** whole repo (`nowli-backend` apps have no real `tests.py`; `nowli-ai` none;
-  frontend only the default `widget_test.dart`).
-- **Problem:** The inherited project ships with no regression safety net.
-- **Why it matters:** Every change is manually verified; easy to regress silently.
-- **Recommended fix:** Add API tests (auth, quests, subtasks, and voice-call
+### TD-007 — Almost no automated tests, and the test runner is broken
+- **Location:** whole repo. Correction (found 2026-07-06): `Apps/insights/tests.py` **does**
+  have real tests; the other backend apps (`users`, `quests`, `subtask_generator`,
+  `support`, `voice_calls`) have none, `nowli-ai` has none, frontend only the default
+  `widget_test.dart`.
+- **Problem:** Near-zero regression safety net. Worse, **`manage.py test` fails to even
+  discover tests** — `TypeError: _path_normpath: path should be string … not NoneType`
+  (a namespace-package/`Apps` discovery quirk), so the existing insights tests can't be run
+  via the standard command. Changes are verified ad-hoc via `manage.py shell`.
+- **Recommended fix:** Fix test discovery (e.g. ensure `Apps/__init__.py`, set a test
+  runner / `pytest-django`), then add API tests (auth, quests, subtasks, voice-call
   quota/start/end). Also tracked in `future-checklist.md`.
 - **Priority:** P2 · **Status:** Open
 
@@ -59,7 +64,71 @@ _Each item: location, problem, why it matters, recommended fix, priority, status
   local `DB_NAME=db.sqlite3`).
 - **Priority:** P2 · **Status:** Open (tracking removed; history + config trap remain)
 
+### TD-013 — Companion seed data uses broken Google Drive `/view` URLs
+- **Location:** the `Apps/users` data migration that seeds `NowliiPredefinedOption` rows
+  (the 6 companions milo/bloop/gumo/knotty/fizzy/zee); `avatar_logo` values are
+  `https://drive.google.com/file/d/<id>/view?usp=drive_link`.
+- **Problem:** A Google Drive `/view` link returns an **HTML page** (`content-type:
+  text/html`), not the image, so `Image.network` cannot render it. Any freshly-migrated DB
+  gets these broken URLs. The previously-working `nowlii` DB only rendered because it had
+  been **manually re-seeded** with proper S3 paths (`nowlii_logos/*.png` →
+  `https://nowlii.s3.eu-north-1.amazonaws.com/...`, `content-type: image/png`).
+- **Why it matters:** On a fresh DB the companion avatar is blank on the home screen and
+  the avatar picker; changing the avatar looks like it "reverts to default" even though the
+  selection **is** persisted (`Profile.save()` copies `predefined_option.avatar_logo`, so the
+  broken URL is copied and the UI falls back to the default asset). Purely a data/URL bug,
+  not a persistence bug.
+- **Recommended fix:** Add a corrective data migration (or a seed management command — the
+  long-pending "seed as management command" TODO) that sets the 6 `avatar_logo` values to the
+  working `nowlii_logos/*.png` S3 paths, so any fresh/reset DB renders correctly. (The current
+  local `db.sqlite3` was patched by hand on 2026-07-06 to unblock testing; the migration/seed
+  is still unfixed.)
+- **Priority:** P2 · **Status:** Open (local `db.sqlite3` data patched; seed/migration
+  still produces broken URLs on a fresh DB)
+
 ## P3
+
+### TD-014 — Monthly insights had no per-zone breakdown (Your Moves "This Month")
+- **Location:** `Apps/insights/services.py` `get_monthly_analytics`,
+  `Apps/insights/serializers.py` `MonthlyInsightSerializer`; frontend `MonthlyInsights` in
+  `lib/models/insights_models.dart`, consumed by `_buildMovesSection()` in
+  `screen/progress/my_progress/my_progress.dart`.
+- **Problem:** `WeeklyInsights` had `zone_progress` (per-zone completed **counts**), but
+  `MonthlyInsights` did not — only `preferred_quest_types` (percentages, computed from
+  **assigned** quests) + a total `quests_completed`. The first cut of "This Month" therefore
+  showed a client-side **approximation** (`pct × total`), which was not real per-zone counts.
+- **Recommended fix / status:** **Fixed (2026-07-06)** — extended the existing endpoint
+  (no new endpoint): `get_monthly_analytics` now computes a real monthly `zone_progress`
+  (same shape/logic as weekly), added `zone_progress` to `MonthlyInsightSerializer` (and the
+  test fixture), added `zoneProgress` to the frontend `MonthlyInsights`, and the widget now
+  reads real counts for both This Week and This Month — the approximation was removed.
+- **Priority:** P3 · **Status:** Fixed (2026-07-06)
+
+### TD-015 — "Add personal note" was a dead input (no save/persistence/display)
+- **Location:** `nowli-frontend-app/lib/screen/progress/insights/insights.dart`
+  (`_personalNoteController` + the note `TextField`).
+- **Problem:** The previous team shipped the note input with **no** save action, no
+  persistence, and no display of saved notes — the typed text went nowhere.
+- **Why it matters:** A visible feature that silently did nothing.
+- **Recommended fix / status:** **Fixed (2026-07-06)** by us as part of task 2C — added
+  `PersonalNotesService` (per-user, SharedPreferences), an explicit "Add note" action
+  (the input is multiline so keyboard-submit isn't reliable), a saved-notes list, and
+  per-note delete. Logged here for the inherited-state record.
+- **Priority:** P3 · **Status:** Fixed (2026-07-06)
+
+### TD-016 — Asset filename with `?` fails to load ("Ready to make today count?.png")
+- **Location:** `nowli-frontend-app/assets/svg_icons/Ready to make today count?.png`
+  (referenced via `Assets.svgIcons.readyToMakeTodayCount`; used as the home-screen companion
+  **fallback** image and in `contextual_onboarding/popup_screen.dart`).
+- **Problem:** Runtime error `Unable to load asset: "assets/svg_icons/Ready to make today
+  count?.png"`. The filename contains `?` (and spaces) — `?` is invalid in Windows filenames,
+  so the asset isn't bundled/loadable. Same class of bug as the earlier `&`/space filenames.
+- **Why it matters:** When a user has no avatar the home companion fallback throws instead
+  of showing the placeholder. Found while redeploying for the Progress/Insights task (unrelated
+  to it).
+- **Recommended fix:** Rename the asset to an ASCII, no-`?`/space name (e.g.
+  `ready_to_make_today_count.png`), update `pubspec.yaml` + the `Assets` reference.
+- **Priority:** P3 · **Status:** Open
 
 ### TD-005 — AI session still greets a hardcoded "User"
 - **Location:** `nowli-frontend-app/lib/screen/ai_call/ai_voice.dart` `_createAiSession()`
