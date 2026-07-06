@@ -1,0 +1,179 @@
+# ==============================================================================
+# NOWLII monorepo .gitignore
+# Covers: Django/Python backend, FastAPI AI service, Flutter frontend (Android/
+# iOS/macOS/Windows/Linux), IDEs, and all secrets / generated artifacts.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Secrets & environment config  (NEVER commit these)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.env
+
+# Flutter compile-time config (real values are per-machine; keep only the template)
+dart_defines.json
+dart_defines.*.json
+!dart_defines.example.json
+
+# Keys, certificates, keystores
+*.pem
+*.p8
+*.p12
+*.key
+*.keystore
+*.jks
+key.properties
+google-services.json
+GoogleService-Info.plist
+
+# ------------------------------------------------------------------------------
+# Python / Django / FastAPI
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+sdist/
+wheels/
+*.egg-info/
+*.egg
+.installed.cfg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.virtualenv
+
+# Django runtime / generated
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+/nowli-backend/media/
+/nowli-backend/staticfiles/
+/nowli-backend/static/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+
+# ------------------------------------------------------------------------------
+# Flutter / Dart
+# ------------------------------------------------------------------------------
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+/coverage/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+app.*.symbols
+app.*.map.json
+migrate_working_dir/
+.flutter-versions
+
+# ------------------------------------------------------------------------------
+# Android
+# ------------------------------------------------------------------------------
+**/android/**/gradle-wrapper.jar
+**/android/.gradle
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/android/key.properties
+/nowli-frontend-app/android/app/debug/
+/nowli-frontend-app/android/app/profile/
+/nowli-frontend-app/android/app/release/
+
+# ------------------------------------------------------------------------------
+# iOS / macOS (Xcode)
+# ------------------------------------------------------------------------------
+**/ios/**/*.mode1v3
+**/ios/**/*.mode2v3
+**/ios/**/*.moved-aside
+**/ios/**/*.pbxuser
+**/ios/**/*.perspectivev3
+**/ios/**/*sync/
+**/ios/**/.sconsign.dblite
+**/ios/**/.tags*
+**/ios/**/.vagrant/
+**/ios/**/DerivedData/
+**/ios/**/Icon?
+**/ios/**/Pods/
+**/ios/**/.symlinks/
+**/ios/**/profile
+**/ios/**/xcuserdata
+**/ios/.generated/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Flutter/ephemeral/
+**/macos/Pods/
+**/xcuserdata/
+.DS_Store
+
+# ------------------------------------------------------------------------------
+# Windows / Linux desktop (Flutter)
+# ------------------------------------------------------------------------------
+**/windows/flutter/generated_plugin_registrant.*
+**/windows/flutter/generated_plugins.cmake
+**/linux/flutter/generated_plugin_registrant.*
+**/linux/flutter/generated_plugins.cmake
+
+# ------------------------------------------------------------------------------
+# Claude Code (machine-local settings — shared config can still be committed)
+# ------------------------------------------------------------------------------
+.claude/settings.local.json
+
+# ------------------------------------------------------------------------------
+# IDEs & editors
+# ------------------------------------------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+*~
+.history
+.atom/
+.svn/
+
+# ------------------------------------------------------------------------------
+# OS / misc
+# ------------------------------------------------------------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.tmp
+*.bak

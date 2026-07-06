@@ -1,0 +1,142 @@
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:mobile_app_dea/core/gen/assets.gen.dart';
+import 'package:mobile_app_dea/themes/text_styles.dart';
+import 'package:mobile_app_dea/utlis/color_palette/color_palette.dart';
+
+class ReadyToStartScreen extends StatelessWidget {
+  const ReadyToStartScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColorsApps.lightBlueBackground,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: SizedBox(
+                  width: 57,
+                  height: 55,
+                  child: CircleAvatar(
+                    backgroundColor: Colors.blue.shade100,
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.chevron_left,
+                        color: Colors.black87,
+                        size: 34,
+                      ),
+                      onPressed: () {
+                        context.pop();
+                      },
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 60),
+
+              // Illustration
+              Center(child: Assets.svgImages.readyToStart.svg(height: 180)),
+
+              const Spacer(),
+
+              // Google Button
+              SizedBox(
+                width: double.infinity,
+                height: 74,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4A46FF),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(50),
+                    ),
+                  ),
+                  icon: Assets.svgIcons.googleIcon.svg(height: 24, width: 24),
+                  label: Text(
+                    'Continue with Google',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.workSans(
+                      color: const Color(0xFFFFFDF7), // Text-light
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      height: 0.80,
+                    ),
+                  ),
+                  onPressed: () {
+                    context.push('/signInScreen');
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Apple Button
+              SizedBox(
+                width: double.infinity,
+                height: 74,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4A46FF),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(50),
+                    ),
+                  ),
+                  icon: Assets.svgIcons.appleIcon.svg(height: 24, width: 24),
+                  label: Text(
+                    'Continue with Apple',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.workSans(
+                      color: const Color(0xFFFFFDF7), // Text-light
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      height: 0.80,
+                    ),
+                  ),
+                  onPressed: () {
+                    context.push('/signInScreen');
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              RichText(
+                textAlign: TextAlign.center,
+                text: TextSpan(
+                  text: 'By signing up, you agree to Nowlii’s ',
+                  style: AppsTextStyles.normalText,
+                  children: [
+                    TextSpan(
+                      text: 'Privacy Policy',
+                      style: AppsTextStyles.linkText,
+                      recognizer: TapGestureRecognizer()..onTap = () {},
+                    ),
+                    const TextSpan(
+                      text: ' & ',
+                      style: TextStyle(color: Colors.black87),
+                    ),
+                    TextSpan(
+                      text: 'Terms of Service',
+                      style: AppsTextStyles.linkText,
+                      recognizer: TapGestureRecognizer()..onTap = () {},
+                    ),
+                    const TextSpan(text: '.'),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

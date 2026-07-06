@@ -1,0 +1,33 @@
+services:
+  # redis:
+  #   image: redis:alpine
+  #   container_name: nowlii-redis
+  #   ports:
+  #     - "6379:6379"
+  #   restart: always
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fahad1000mir/nowlii-backend:dev
+    container_name: nowlii-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - venv_volume:/app/.venv
+    env_file:
+      - .env
+    environment:
+      - DEBUG=True
+      # DB config (DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD)
+      # is read from .env and points to AWS RDS — no local postgres needed.
+      # - REDIS_HOST=redis
+    # depends_on:
+    #   - redis
+    command: python manage.py runserver 0.0.0.0:8000
+    restart: always
+
+volumes:
+  venv_volume:

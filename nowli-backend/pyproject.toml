@@ -1,0 +1,28 @@
+[project]
+name = "nowlii"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12.4"
+dependencies = [
+    "anthropic>=0.89.0",
+    "boto3>=1.43.6",
+    "daphne>=4.2.1",
+    "dj-rest-auth>=5.0.2",
+    "django>=6.0.1",
+    "django-allauth[socialaccount]>=65.13.1",
+    "django-cors-headers>=4.9.0",
+    "django-otp>=1.7.0",
+    "django-storages>=1.14.6",
+    "djangorestframework>=3.16.1",
+    "djoser>=2.3.3",
+    "dotenv>=0.9.9",
+    "drf-yasg>=1.21.14",
+    "google-genai>=1.73.1",
+    "gunicorn>=25.3.0",
+    "openai>=2.30.0",
+    "pillow>=12.2.0",
+    "psycopg2-binary>=2.9.11",
+    "uvicorn>=0.44.0",
+    "whitenoise>=6.12.0",
+]
