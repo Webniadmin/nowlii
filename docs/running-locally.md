@@ -140,6 +140,11 @@ See `google-login.md` for the required Google Cloud config.
 - **Python 3.10 is too old.** Django 6 needs 3.12+; use `uv python install 3.12`.
 - **Production DB in `.env`.** `nowli-backend/.env` points at AWS RDS Postgres. Override
   `DB_ENGINE=django.db.backends.sqlite3` for local work rather than hitting/altering prod.
+- **Also override `DB_NAME` locally.** `.env` sets `DB_NAME=nowlii`. If you only override
+  the engine, Django creates a SQLite file literally named `nowlii` (no extension) that the
+  ignore rules can miss. Override `DB_NAME=db.sqlite3` too, e.g.
+  `$env:DB_NAME="db.sqlite3"`, so the local DB is the standard git-ignored `db.sqlite3`.
+  (See `technical-debt.md` TD-012.)
 - **Developer Mode.** Standalone `flutter pub get` warns
   *"Building with plugins requires symlink support — enable Developer Mode."* Web builds
   work without it, but **Windows/Android/iOS** native targets need Developer Mode on

@@ -3,6 +3,14 @@
 _Verified 2026-07-03 on the Windows dev box: app runs on the `Medium Phone API 36.1` emulator,
 Google login + companion avatars + email all work end-to-end._
 
+_Re-verified 2026-07-06: backend on `0.0.0.0:8000` + emulator run (`emulator-5554`) build,
+install, and launch cleanly (no logcat errors). Two tips learned this run:_
+- _Run `flutter run` in **your own terminal** (interactive) so hot reload (`r`) and the
+  in-tool screenshot (`s`) work. Launching it non-interactively detaches after startup._
+- _`adb exec-out screencap` returns a **black** image for this Flutter app (Impeller renders
+  to a GPU surface `screencap` can't grab) — use the emulator window or the `flutter run`
+  `s` key to capture instead. Not an app fault._
+
 The Flutter app talks to two local servers (Django `:8000`, nowli-ai `:8001`). The trick on
 Android is **how the device reaches those servers**, which differs between emulator and phone.
 
