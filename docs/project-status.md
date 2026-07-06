@@ -193,6 +193,11 @@ recommendations.
    (lost on restart), and the service has **no tests and no dependency lockfile**. The
    port mismatch is resolved — `test17.py` and `nowli-ai/.env` now default to `:8001`
    (env-driven `HOST`/`PORT`), matching the Flutter client.
+8. **Conversation-analytics endpoints are unconsumed.** `nowli-ai` implements
+   `/conversation/emotion-breakdown` and `/conversation/low-mood-detect`, but the frontend
+   never calls them and nothing is persisted or aggregated. These are the intended basis for
+   the planned Insights "Top Emotions" + "When feeling low…" sections — see
+   `docs/insights-emotions.md` (investigated 2026-07-06, to build next).
 
 ## Bottom line
 

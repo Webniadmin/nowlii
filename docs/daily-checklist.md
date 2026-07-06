@@ -43,6 +43,13 @@ for tomorrow. Deferred items go to `future-checklist.md`._
 
 ## 🔲 Open — pick up here next
 
+### Next up (2026-07-07): Insights emotion sections
+- [ ] **"Top Emotions" + "When feeling low, you often say…"** — two AI-fed Insights sections.
+      Investigated today: AI logic exists in `nowli-ai` but is unwired/unpersisted/unsurfaced;
+      categories differ. **Do not "just enable" — it needs real work.** Full report + plan +
+      touch list in **`docs/insights-emotions.md`**; tracked in `future-checklist.md` (P3).
+
+
 - [ ] **Commit the Progress/Insights work** (uncommitted): `my_progress.dart`,
       `insights.dart`, `personal_notes_service.dart`, `technical-debt.md`, `daily-checklist.md`
       → suggested: `feat(progress-insights): dropdown, personal notes, hide share/labels`

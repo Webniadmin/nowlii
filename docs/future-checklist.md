@@ -43,6 +43,14 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
 
 ## P3 — Features
 
+- [ ] **Insights: "Top Emotions" + "When feeling low, you often say…" (AI).** Two new
+      Insights sections (between "Weekly reflection" and "Preferred quest types") fed by the
+      AI from call transcripts. **Investigated 2026-07-06:** the AI logic already exists in
+      `nowli-ai` (`/conversation/emotion-breakdown` + `/conversation/low-mood-detect`) but is
+      **not wired, not persisted, not surfaced**, and the emotion categories differ from the
+      requested happy/motivated/angry/tired/sad. Needs: call-end capture → Django persist →
+      Insights aggregate → frontend model + UI. Full plan + touch list in
+      **`docs/insights-emotions.md`**.
 - [ ] **Apple Sign-In (B2).** Fully built; disabled (returns 503) until `APPLE_CLIENT_IDS` and
       related keys are filled. Requires a paid Apple Developer account + `.p8` key + Service ID.
       See `docs/apple-login.md`.
