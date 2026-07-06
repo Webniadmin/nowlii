@@ -60,6 +60,9 @@ env/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+# Stray SQLite DB created locally when DB_ENGINE is overridden to sqlite3 but DB_NAME
+# stays "nowlii" (extension-less, so the rules above miss it). See technical-debt.md TD-012.
+/nowli-backend/nowlii
 /nowli-backend/media/
 /nowli-backend/staticfiles/
 /nowli-backend/static/

@@ -5,6 +5,7 @@ import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/services/ai_call_service.dart';
+import 'package:nowlii/services/voice_call_service.dart';
 import 'package:nowlii/models/ai_call_models.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
@@ -20,6 +21,12 @@ class AiVoice extends StatefulWidget {
 }
 
 class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
+  // Call duration policy. The backend is the source of truth for the daily call *count*;
+  // these constants govern the in-call *timer* the user sees. Initial 5 minutes, with a
+  // single optional +2.5 minute extension → 7.5 minutes maximum.
+  static const Duration _initialDuration = Duration(minutes: 5);
+  static const Duration _extensionDuration = Duration(minutes: 2, seconds: 30);
+
   // Timer management
   late Duration _totalDuration;
   late Duration _elapsedTime;
@@ -27,25 +34,33 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   Timer? _listeningCheckTimer; // New timer to check listening state
   bool _isPaused = false;
   bool _isMuted = false;
-  
+
   // Animation controllers
   late AnimationController _progressController;
   late AnimationController _pulseController;
-  
+
   // State flags
-  bool _showTimeWarning = false;
   bool _showMuteWarning = false;
   bool _showWrapUpDialog = false;
   bool _questCompleted = false;
   bool _isHandlingAiResponse = false;
-  
-  // Typing animation
-  bool _showTypingAnimation = false;
-  String _typedText = '';
-  Timer? _typingTimer;
-  int _typingIndex = 0;
-  final String _typingMessage = "You're doing great – keep it going";
-  
+
+  // Call duration / limit notifications
+  bool _extensionUsed = false; // the +2.5 min extension can be used at most once
+  bool _showStartNotice = false; // "this call lasts up to N minutes" on connect
+  bool _showOneMinuteWarning = false; // 1 minute left (offers the extension if unused)
+  bool _showThirtySecWarning = false; // 30 seconds left
+  int _countdownValue = 0; // >0 during the final 10-second countdown
+
+  // Backend daily-limit gate (authoritative). The call timeline only starts after the
+  // backend authorizes the call via POST /api/voice-calls/start/.
+  final VoiceCallService _voiceCallService = VoiceCallService();
+  bool _authorizing = true; // checking the daily limit with the backend
+  bool _callBlocked = false; // limit reached or the check failed
+  String _blockMessage = '';
+  int? _callId; // server-side VoiceCall id, for the end report
+  bool _callEndReported = false;
+
   // AI Call integration
   final AiCallService _aiCallService = AiCallService();
   AiSession? _currentSession;
@@ -74,40 +89,99 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _totalDuration = const Duration(minutes: 5);
+    _totalDuration = _initialDuration;
     _elapsedTime = Duration.zero;
-    
+
     // Progress animation
     _progressController = AnimationController(
       vsync: this,
       duration: _totalDuration,
     );
-    
+
     // Pulse animation
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
-    
+
+    // Gate the call on the backend daily limit before starting anything.
+    _authorizeAndBegin();
+  }
+
+  /// Ask the backend to register a new call (this enforces the per-user daily limit).
+  /// Only if the backend authorizes it do we begin the call; otherwise we show a
+  /// blocking message and leave the screen.
+  Future<void> _authorizeAndBegin() async {
+    final result = await _voiceCallService.startCall();
+    if (!mounted) return;
+
+    if (result.outcome == VoiceCallStartOutcome.allowed) {
+      _callId = result.callId;
+      setState(() => _authorizing = false);
+      _beginCall();
+    } else {
+      setState(() {
+        _authorizing = false;
+        _callBlocked = true;
+        _blockMessage = result.outcome == VoiceCallStartOutcome.limitReached
+            ? "You've reached your daily limit of AI calls.\nCome back tomorrow for more."
+            : "Couldn't start the call right now.\nPlease check your connection and try again.";
+      });
+      // Give the user a moment to read the message, then leave the call screen.
+      Future.delayed(const Duration(seconds: 3), () {
+        if (!mounted) return;
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go(AppRoutespath.homeScreen);
+        }
+      });
+    }
+  }
+
+  /// Start the AI session, the timer and listening — only after the call is authorized.
+  void _beginCall() {
     // Initialize speech and TTS
     _initializeSpeech();
     _initializeTts();
     _initializeAudioStreaming();
-    
+
     // Create AI session
     _createAiSession();
-    
+
     _startCall();
-    
+
+    // Notify the user of the max duration as soon as the call connects.
+    _showStartDurationNotice();
+
     // Auto-start listening after a short delay
-    Future.delayed(Duration(milliseconds: 1500), () {
+    Future.delayed(const Duration(milliseconds: 1500), () {
       if (mounted && !_isMuted) {
         _startListening();
       }
     });
-    
+
     // Start periodic check to ensure listening is active
     _startListeningCheck();
+  }
+
+  void _showStartDurationNotice() {
+    setState(() => _showStartNotice = true);
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _showStartNotice = false);
+    });
+  }
+
+  /// Report the end of the call to the backend (duration + whether it was extended).
+  /// Guarded so it only fires once; the backend end record is idempotent anyway.
+  void _reportCallEnd() {
+    if (_callEndReported || _callId == null) return;
+    _callEndReported = true;
+    _voiceCallService.endCall(
+      callId: _callId!,
+      durationSeconds: _elapsedTime.inSeconds,
+      extensionUsed: _extensionUsed,
+    );
   }
   
   void _startListeningCheck() {
@@ -625,44 +699,32 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
       if (!_isPaused && mounted) {
         setState(() {
           _elapsedTime = Duration(seconds: _elapsedTime.inSeconds + 1);
-          
-          // Update progress
-          _progressController.value = _elapsedTime.inSeconds / _totalDuration.inSeconds;
-          
-          // Check for 5 minute mark to show typing animation
-          if (_elapsedTime.inSeconds == 300 && !_showTypingAnimation) {
-            _startTypingAnimation();
-          }
-          
-          // Check for warning (1 minute before end)
-          if (_elapsedTime.inSeconds == (_totalDuration.inSeconds - 60) && !_showTimeWarning) {
-            _showTimeWarning = true;
-          }
-          
-          // Quest completed
-          if (_elapsedTime.inSeconds >= _totalDuration.inSeconds) {
-            _onQuestComplete();
-          }
-        });
-      }
-    });
-  }
 
-  void _startTypingAnimation() {
-    setState(() {
-      _showTypingAnimation = true;
-      _typedText = '';
-      _typingIndex = 0;
-    });
-    
-    _typingTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
-      if (_typingIndex < _typingMessage.length) {
-        setState(() {
-          _typedText = _typingMessage.substring(0, _typingIndex + 1);
-          _typingIndex++;
+          // Update progress relative to the current total (grows if the call is extended).
+          _progressController.value = _elapsedTime.inSeconds / _totalDuration.inSeconds;
+
+          // Time-based notifications, all measured against the *remaining* time so they
+          // adapt automatically to the extended 7.5-minute maximum when used.
+          final remaining = _totalDuration.inSeconds - _elapsedTime.inSeconds;
+
+          if (remaining <= 0) {
+            // Time is up — end the call automatically.
+            _countdownValue = 0;
+            _onQuestComplete();
+          } else if (remaining <= 10) {
+            // Final 10 seconds: show the countdown, hide the banners.
+            _countdownValue = remaining;
+            _showOneMinuteWarning = false;
+            _showThirtySecWarning = false;
+          } else if (remaining <= 30) {
+            // 30 seconds left.
+            _showThirtySecWarning = true;
+            _showOneMinuteWarning = false;
+          } else if (remaining <= 60) {
+            // 1 minute left (offers the one-time extension while it is still unused).
+            _showOneMinuteWarning = true;
+          }
         });
-      } else {
-        timer.cancel();
       }
     });
   }
@@ -718,13 +780,21 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     });
   }
 
-  void _addTenMinutes() {
+  void _addExtension() {
+    // The extension can be used at most once; after that the call is capped at 7.5 min.
+    if (_extensionUsed) return;
+
     setState(() {
-      _totalDuration = Duration(minutes: _totalDuration.inMinutes + 5);
-      _showTimeWarning = false;
+      _extensionUsed = true;
+      _totalDuration = _totalDuration + _extensionDuration; // 5:00 → 7:30
+      _progressController.duration = _totalDuration;
+      // Clear the current warnings; they re-appear relative to the new end time.
+      _showOneMinuteWarning = false;
+      _showThirtySecWarning = false;
+      _countdownValue = 0;
     });
-    
-    // Show success popup
+
+    // Show success popup (same style as the existing in-call dialogs)
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -742,15 +812,15 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
               Container(
                 width: 60,
                 height: 60,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4542EB),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF4542EB),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.check, color: Colors.white, size: 32),
+                child: const Icon(Icons.check, color: Colors.white, size: 32),
               ),
               const SizedBox(height: 16),
               Text(
-                '5 more minutes added',
+                '2.5 more minutes added',
                 style: TextStyle(
                   color: const Color(0xFF011F54),
                   fontSize: 20,
@@ -760,7 +830,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 8),
               Text(
-                'You can now talk to me 5 more minutes!',
+                'We can keep talking a little longer!',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: const Color(0xFF595754),
@@ -774,7 +844,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
         ),
       ),
     );
-    
+
     // Auto close after 2 seconds
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
@@ -787,6 +857,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     setState(() {
       _questCompleted = true;
     });
+    _reportCallEnd();
     _timer?.cancel();
     _listeningCheckTimer?.cancel(); // Stop listening check when quest completes
     
@@ -809,6 +880,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   }
 
   void _onWrapUpYes() {
+    _reportCallEnd();
     _timer?.cancel();
     _listeningCheckTimer?.cancel(); // Stop listening check
     
@@ -830,8 +902,9 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    // Best-effort: if the user leaves the screen mid-call, still record the end.
+    _reportCallEnd();
     _timer?.cancel();
-    _typingTimer?.cancel();
     _listeningCheckTimer?.cancel(); // Cancel listening check timer
     _progressController.dispose();
     _pulseController.dispose();
@@ -852,15 +925,19 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     return '${twoDigits(duration.inMinutes)}:${twoDigits(duration.inSeconds.remainder(60))}';
   }
 
+  // The call turns "warning orange" once any end-of-call notice is active.
+  bool get _isTimeWarningActive =>
+      _showOneMinuteWarning || _showThirtySecWarning || _countdownValue > 0;
+
   Color get _backgroundColor {
     if (_questCompleted) return const Color(0xFFCCFFAA);
-    if (_showTimeWarning) return const Color(0xFFFF8F26);
+    if (_isTimeWarningActive) return const Color(0xFFFF8F26);
     return const Color(0xFF91BBF9);
   }
 
   Color get _timerColor {
     if (_questCompleted) return const Color(0xFF3BB64B);
-    if (_showTimeWarning) return const Color(0xFFFF8F26);
+    if (_isTimeWarningActive) return const Color(0xFFFF8F26);
     return const Color(0xFF4542EB);
   }
   
@@ -947,11 +1024,9 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
                           child: Text(
                             _questCompleted
                                 ? 'Take a deep breath - you did great.\nI\'ll be here when you\'re ready for the next one.'
-                                : _showTypingAnimation
-                                    ? _typedText
-                                    : _totalDuration.inMinutes > 5
-                                        ? 'New energy, new ${_totalDuration.inMinutes} minutes!'
-                                        : 'You\'re doing great — keep it going',
+                                : _extensionUsed
+                                    ? 'New energy — a little more time together!'
+                                    : 'You\'re doing great — keep it going',
                             style: AppsTextStyles.regular16l,
                             textAlign: TextAlign.center,
                           ),
@@ -1153,21 +1228,39 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
                 ),
               ),
               
-              // Time warning popup
-              if (_showTimeWarning && !_questCompleted)
-                _buildTimeWarningPopup(),
-              
+              // Start-of-call notice: maximum duration.
+              if (_showStartNotice && !_questCompleted)
+                _buildStartNotice(),
+
+              // 1-minute-left warning (offers the one-time extension).
+              if (_showOneMinuteWarning && !_questCompleted && _countdownValue == 0)
+                _buildOneMinuteWarning(),
+
+              // 30-seconds-left warning.
+              if (_showThirtySecWarning && !_questCompleted && _countdownValue == 0)
+                _buildThirtySecWarning(),
+
+              // Final 10-second countdown.
+              if (_countdownValue > 0 && !_questCompleted)
+                _buildCountdownOverlay(),
+
               // Mute warning
               if (_showMuteWarning)
                 _buildMuteWarning(),
-              
+
               // Wrap up dialog
               if (_showWrapUpDialog)
                 _buildWrapUpDialog(),
-              
+
               // Test input dialog (for web testing)
               if (_showTestInput)
                 _buildTestInputDialog(),
+
+              // Daily-limit gate: checking with the backend / blocked.
+              if (_authorizing)
+                _buildAuthorizingOverlay(),
+              if (_callBlocked)
+                _buildBlockedOverlay(),
             ],
           ),
         ),
@@ -1268,7 +1361,8 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildTimeWarningPopup() {
+  // In-call notice card, shared style (same cream card the mute/time popups used).
+  Widget _noticeCard({required Widget child}) {
     return Positioned(
       top: 100,
       left: 20,
@@ -1280,7 +1374,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          shadows: [
+          shadows: const [
             BoxShadow(
               color: Color(0x070A0C12),
               blurRadius: 6,
@@ -1289,34 +1383,63 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
             ),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Call ending soon!',
-              style: TextStyle(
-                color: const Color(0xFF011F54),
-                fontSize: 20,
-                fontFamily: 'Work Sans',
-                fontWeight: FontWeight.w800,
-                height: 1.2,
-                letterSpacing: -0.5,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'You can add 5 more minutes to your call!',
-              style: TextStyle(
-                color: const Color(0xFF595754),
-                fontSize: 14,
-                fontFamily: 'Work Sans',
-                fontWeight: FontWeight.w400,
-                height: 1.6,
-              ),
-            ),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _noticeTitle(String text) => Text(
+        text,
+        style: const TextStyle(
+          color: Color(0xFF011F54),
+          fontSize: 20,
+          fontFamily: 'Work Sans',
+          fontWeight: FontWeight.w800,
+          height: 1.2,
+          letterSpacing: -0.5,
+        ),
+      );
+
+  Widget _noticeBody(String text) => Text(
+        text,
+        style: const TextStyle(
+          color: Color(0xFF595754),
+          fontSize: 14,
+          fontFamily: 'Work Sans',
+          fontWeight: FontWeight.w400,
+          height: 1.6,
+        ),
+      );
+
+  // Shown on connect: the call's maximum duration.
+  Widget _buildStartNotice() {
+    return _noticeCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _noticeTitle('Let\'s talk!'),
+          const SizedBox(height: 12),
+          _noticeBody('This call lasts up to ${_initialDuration.inMinutes} minutes.'),
+        ],
+      ),
+    );
+  }
+
+  // 1 minute left. Offers the one-time +2.5 min extension while it is still unused.
+  Widget _buildOneMinuteWarning() {
+    return _noticeCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _noticeTitle('1 minute left'),
+          const SizedBox(height: 12),
+          _noticeBody(_extensionUsed
+              ? 'Your call is wrapping up soon.'
+              : 'Your call is wrapping up. You can add 2.5 more minutes once.'),
+          if (!_extensionUsed) ...[
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _addTenMinutes,
+              onPressed: _addExtension,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFF8F26),
                 shape: RoundedRectangleBorder(
@@ -1326,13 +1449,13 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.add, size: 18, color: const Color(0xFF011F54)),
-                  const SizedBox(width: 8),
+                children: const [
+                  Icon(Icons.add, size: 18, color: Color(0xFF011F54)),
+                  SizedBox(width: 8),
                   Text(
-                    'Add 5 minutes',
+                    'Add 2.5 minutes',
                     style: TextStyle(
-                      color: const Color(0xFF011F54),
+                      color: Color(0xFF011F54),
                       fontSize: 18,
                       fontFamily: 'Work Sans',
                       fontWeight: FontWeight.w900,
@@ -1342,6 +1465,120 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  // 30 seconds left.
+  Widget _buildThirtySecWarning() {
+    return _noticeCard(
+      child: Row(
+        children: [
+          const Icon(Icons.timer_outlined, color: Color(0xFF011F54)),
+          const SizedBox(width: 12),
+          Expanded(child: _noticeTitle('30 seconds left')),
+        ],
+      ),
+    );
+  }
+
+  // Final 10-second countdown, centered over the call.
+  Widget _buildCountdownOverlay() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Container(
+          color: Colors.black.withOpacity(0.15),
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Ending in',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontFamily: 'Work Sans',
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$_countdownValue',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 120,
+                  fontFamily: 'Wosker',
+                  fontWeight: FontWeight.w400,
+                  height: 1.0,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Full-screen overlay while the backend daily-limit check is in flight.
+  Widget _buildAuthorizingOverlay() {
+    return Positioned.fill(
+      child: Container(
+        color: const Color(0xFF91BBF9),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            CircularProgressIndicator(color: Color(0xFF4542EB)),
+            SizedBox(height: 20),
+            Text(
+              'Checking your daily calls…',
+              style: TextStyle(
+                color: Color(0xFF011F54),
+                fontSize: 18,
+                fontFamily: 'Work Sans',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Full-screen overlay when the call is blocked (limit reached or check failed).
+  Widget _buildBlockedOverlay() {
+    return Positioned.fill(
+      child: Container(
+        color: const Color(0xFF91BBF9),
+        alignment: Alignment.center,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 32),
+          padding: const EdgeInsets.all(24),
+          decoration: ShapeDecoration(
+            color: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.access_time_filled, size: 50, color: Color(0xFF4542EB)),
+              const SizedBox(height: 16),
+              Text(
+                _blockMessage,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF011F54),
+                  fontSize: 18,
+                  fontFamily: 'Work Sans',
+                  fontWeight: FontWeight.w700,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

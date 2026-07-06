@@ -64,6 +64,7 @@ LOCAL_APPS = [
     "Apps.subtask_generator",
     "Apps.insights",
     "Apps.support",
+    "Apps.voice_calls",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -295,6 +296,15 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "").replace(" ", "")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL") or EMAIL_HOST_USER
 # Address users write to for help (support). Defaults to the sender if unset.
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL") or DEFAULT_FROM_EMAIL
+
+
+# ------------------------------------------------------------------------------
+# AI voice calls
+# ------------------------------------------------------------------------------
+# Max AI voice calls a single user may start per day. Per-user (never global) and
+# env-overridable so it is not a hardcoded magic number. Enforced server-side in
+# Apps.voice_calls — the frontend is never the authority for this limit.
+VOICE_CALL_DAILY_LIMIT = int(os.getenv("VOICE_CALL_DAILY_LIMIT", "2"))
 
 
 # ------------------------------------------------------------------------------

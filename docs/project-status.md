@@ -120,6 +120,13 @@ recommendations.
 - **Google login** (as of 2026-07-03): `POST /api/auth/google/` exchanges a Google
   `id_token` for NOWLII JWTs; frontend "Continue with Google" button wired. Live test
   pending Google Cloud config (see `google-login.md`).
+- **AI voice-call daily limit** (as of 2026-07-06): `Apps/voice_calls` +
+  `/api/voice-calls/` (`quota/`, `start/`, `<id>/end/`). Per-user, backend-authoritative:
+  max 2 calls/day (`VOICE_CALL_DAILY_LIMIT`), counted from calls started today (resets at
+  00:00, no cron), with per-user race locking. Frontend (`ai_voice.dart`) enforces the
+  5-minute call with a single +2.5-minute extension (7.5-min cap), start notice, 1-min /
+  30-sec warnings, last-10s countdown, and auto-end. See `technical-debt.md` for known
+  gaps (nowli-ai bypass, UTC window).
 - **AI subtask generation** (`POST /api/subtasks/generate/`) — complete, with proper
   error handling (502/503 on AI failures).
 - **AI insights** (`GET /api/insights/`) — weekly reflections + quest suggestions,

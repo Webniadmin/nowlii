@@ -43,6 +43,12 @@ class ApiConstants {
 
   // Support endpoints
   static const String supportMessages = '/api/support/messages/';
+
+  // AI voice-call limit endpoints (use baseUrl / Django — the authority for the
+  // per-user daily limit). See Apps.voice_calls on the backend.
+  static const String voiceCallQuota = '/api/voice-calls/quota/';
+  static const String voiceCallStart = '/api/voice-calls/start/';
+  static String voiceCallEnd(int id) => '/api/voice-calls/$id/end/';
   
   // AI Call endpoints (use aiBaseUrl)
   static const String createSession = '$aiCallPrefix/session/new';

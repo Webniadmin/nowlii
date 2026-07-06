@@ -102,7 +102,9 @@ services (`quest_service`, `profile_service`, `subtask_service`) build their own
 → JWT, prepared/keys-pending), `/api/profiles/`,
 `/api/nowlii-options/`, `/api/quests/` (+`/streak/`, `/bulk-delete/`),
 `/api/subtasks/` (CRUD) and `/api/subtasks/generate/`, `/api/insights/`,
-`/api/support/messages/` (per-user support chat), `/accounts/…` (allauth), `/api/docs/` (Swagger).
+`/api/support/messages/` (per-user support chat),
+`/api/voice-calls/` (`quota/`, `start/`, `<id>/end/` — per-user AI-call daily limit),
+`/accounts/…` (allauth), `/api/docs/` (Swagger).
 > ⚠ Include order matters: `api/subtasks/` (generator) is included **before** the quests
 > router so `subtasks/generate/` isn't shadowed by the subtasks `<pk>` detail route.
 
@@ -162,6 +164,11 @@ conversation only by its `session_id`. (If exposed publicly, this is worth harde
 - `Apps/insights/` — `GET /api/insights/` + `InsightCache` model (in-Django AI).
 - `Apps/support/` — `SupportMessage` model + `/api/support/messages/` (per-user support chat);
   admin "Reply" box + email notifications. See `docs/support-feature.md`.
+- `Apps/voice_calls/` — `VoiceCall` model + `/api/voice-calls/` (`quota/`, `start/`,
+  `<id>/end/`). Enforces the **per-user daily AI-call limit** (`VOICE_CALL_DAILY_LIMIT`,
+  default 2) server-side; the daily count is derived from calls started "today" (no cron).
+  The frontend timer/warnings and the 5-min + one-time 2.5-min extension (7.5-min max) are
+  in `ai_voice.dart`; `lib/services/voice_call_service.dart` calls this API.
 - `manage.py`, `Dockerfile`, `docker-compose.*.yml`, `entrypoint.sh`, `uv.lock`, `.env`.
 
 ### `nowli-frontend-app/` (Flutter)
