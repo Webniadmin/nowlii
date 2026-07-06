@@ -131,7 +131,14 @@ recommendations.
 - **AI subtask generation** (`POST /api/subtasks/generate/`) — complete, with proper
   error handling (502/503 on AI failures).
 - **AI insights** (`GET /api/insights/`) — weekly reflections + quest suggestions,
-  backed by an `InsightCache` model to avoid re-calling the AI on every request.
+  backed by an `InsightCache` model to avoid re-calling the AI on every request. The
+  `monthly` block now also returns a real `zone_progress` (per-zone completed counts),
+  matching `weekly` (added 2026-07-06 for the Progress screen).
+- **Progress + Insights screens** (as of 2026-07-06, committed `05605ae`): **done**.
+  Progress "Your moves" has a This week / This month selector that shows **real backend
+  per-zone data for both** (no approximation); Insights has a per-user **personal notes**
+  system (add / list / delete, persisted locally via `PersonalNotesService`). Share buttons
+  and the redundant This week / This month labels were commented out per product request.
 - **Frontend** has a large, wired route table (~40 screens) covering onboarding, auth,
   quests, home, progress, profile, AI call, and settings.
 - **AI voice/emotion service** (`nowli-ai/`) implements the full companion pipeline —

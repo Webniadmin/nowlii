@@ -79,6 +79,10 @@ The three services share **no code and no database**; they communicate only over
   layer inside Django (`Apps/subtask_generator`, `Apps/insights`) — auto-selecting
   Anthropic → OpenAI → Google by which key is set. These are unrelated to the `nowli-ai`
   service and are authenticated with the normal JWT.
+- `GET /api/insights/` returns a `weekly` and a `monthly` block. **Both now include a real
+  `zone_progress`** (per-zone `assigned`/`completed` counts, computed from the DB with the
+  same logic) — the Progress screen's "Your moves" This week / This month selector reads
+  these directly, with no client-side approximation (added 2026-07-06).
 
 ---
 
