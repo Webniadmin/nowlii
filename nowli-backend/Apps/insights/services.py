@@ -231,6 +231,162 @@ def get_monthly_analytics(user, ref: date = None) -> dict:
 #  Weekly Analytics
 # ─────────────────────────────────────────────
 
+# ─────────────────────────────────────────────
+#  Top Emotions (Insights) — aggregated from voice-call snapshots
+# ─────────────────────────────────────────────
+
+_EMOTION_KEYS = ["happy", "motivated", "angry", "tired", "sad"]
+_EMOTION_LABELS = {
+    "happy": "Happy", "motivated": "Motivated", "angry": "Angry",
+    "tired": "Tired", "sad": "Sad",
+}
+
+# TEMPORARY placeholder copy for the "What this means" card — two variants per
+# dominant emotion. The variant is picked deterministically from the ISO week so it
+# stays stable within a week but varies week to week.
+# TODO(insights-emotions): replace this table with an AI-generated summary (we deliberately
+# do NOT call the AI on every Insights load for now). See docs/insights-emotions.md.
+_EMOTION_SUMMARY_VARIANTS = {
+    "happy": [
+        "You feel mostly calm and positive — it's been a good week for your mood.",
+        "Happiness led your conversations this week. Keep leaning into what lifts you.",
+    ],
+    "motivated": [
+        "Motivation ran high this week — you sounded driven and focused.",
+        "You showed a lot of drive lately. Channel it into your next quests.",
+    ],
+    "angry": [
+        "Frustration showed up often this week. It may help to name what's setting it off.",
+        "Anger came through in your talks — a short reset might ease the tension.",
+    ],
+    "tired": [
+        "You sounded tired this week — rest may matter more than pushing harder.",
+        "Low energy came up a lot lately. Be gentle with your pace.",
+    ],
+    "sad": [
+        "Sadness appeared often this week. Be kind to yourself — small steps count.",
+        "You carried some heavy feelings lately. Reaching out can lighten the load.",
+    ],
+}
+
+
+def _build_top_emotions(user, start: date, end: date):
+    """Average the 5 Top-Emotion categories across the user's call snapshots in
+    [start, end] and return (top_emotions_sorted_desc, summary_text).
+
+    Returns ([], "") when there are no snapshots so the UI can hide the section.
+    """
+    # Local import avoids an app-load-time cycle (insights ↔ voice_calls).
+    from Apps.voice_calls.models import CallEmotionSnapshot
+
+    snaps = list(
+        CallEmotionSnapshot.objects.filter(
+            user=user, created_at__date__gte=start, created_at__date__lte=end
+        )
+    )
+    if not snaps:
+        return [], ""
+
+    avg = {
+        key: round(sum(getattr(s, key) for s in snaps) / len(snaps), 1)
+        for key in _EMOTION_KEYS
+    }
+    top_emotions = [
+        {"key": key, "label": _EMOTION_LABELS[key], "pct": avg[key]}
+        for key in sorted(_EMOTION_KEYS, key=lambda e: avg[e], reverse=True)
+    ]
+    dominant = top_emotions[0]["key"]
+    variants = _EMOTION_SUMMARY_VARIANTS.get(dominant) or [""]
+    summary = variants[end.isocalendar()[1] % len(variants)]
+    return top_emotions, summary
+
+
+# ─────────────────────────────────────────────
+#  When feeling low (Insights) — recurring low-mood phrases from voice calls
+# ─────────────────────────────────────────────
+
+# TEMPORARY placeholder "What this means" copy, keyed by the dominant low-mood category.
+# TODO(insights-emotions): replace with an AI-generated summary (we do NOT call the AI on
+# Insights load). Each entry is (summary, recommendation). See docs/insights-emotions.md.
+_LOW_MOOD_MEANING_DEFAULT = (
+    "You tend to feel overwhelmed when tasks pile up, "
+    "and your language becomes more self-critical.",
+    "→ Try breaking tasks into smaller steps.",
+)
+_LOW_MOOD_MEANING = {
+    "overwhelm": _LOW_MOOD_MEANING_DEFAULT,
+    "self-criticism": (
+        "When things get hard, your words turn more self-critical.",
+        "→ Try speaking to yourself like you would to a friend.",
+    ),
+    "helplessness": (
+        "When things feel stuck, your language leans toward “I can’t”.",
+        "→ Try naming one small thing you can control.",
+    ),
+    "avoidance": (
+        "You tend to put things off when they feel heavy.",
+        "→ Try starting with a two-minute version of the task.",
+    ),
+    "exhaustion": (
+        "Tiredness shows up a lot in how you talk lately.",
+        "→ Try protecting a little rest before pushing on.",
+    ),
+    "stress": (
+        "Stress comes through strongly in your words.",
+        "→ Try a slow breath and one task at a time.",
+    ),
+    "hopelessness": (
+        "Some of your phrasing sounds hopeless when you’re low.",
+        "→ Consider reaching out to someone you trust.",
+    ),
+}
+
+
+def _build_low_mood(user, start: date, end: date):
+    """Aggregate recurring low-mood phrases across the user's call snapshots in
+    [start, end] and return (top_phrases, summary, recommendation).
+
+    Top 5 phrases by total frequency, ties broken alphabetically. Returns ([], "", "")
+    when there are no snapshots (the UI still shows the section with an empty-state).
+    """
+    # Local import avoids an app-load-time cycle (insights ↔ voice_calls).
+    from Apps.voice_calls.models import CallLowMoodSnapshot
+
+    snaps = list(
+        CallLowMoodSnapshot.objects.filter(
+            user=user, created_at__date__gte=start, created_at__date__lte=end
+        )
+    )
+    if not snaps:
+        return [], "", ""
+
+    phrase_counts: dict[str, int] = {}
+    cat_counts: dict[str, int] = {}
+    for s in snaps:
+        for item in (s.phrases or []):
+            phrase = (item.get("phrase") or "").strip()
+            if not phrase:
+                continue
+            try:
+                count = int(item.get("count") or 1)
+            except (TypeError, ValueError):
+                count = 1
+            phrase_counts[phrase] = phrase_counts.get(phrase, 0) + count
+            category = item.get("category") or ""
+            if category:
+                cat_counts[category] = cat_counts.get(category, 0) + count
+
+    if not phrase_counts:
+        return [], "", ""
+
+    # Top 5: frequency descending, ties alphabetical.
+    top = sorted(phrase_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+    phrases = [p for p, _ in top]
+    dominant_cat = max(cat_counts, key=cat_counts.get) if cat_counts else ""
+    summary, recommendation = _LOW_MOOD_MEANING.get(dominant_cat, _LOW_MOOD_MEANING_DEFAULT)
+    return phrases, summary, recommendation
+
+
 def get_weekly_analytics(user, ref: date = None) -> dict:
     ref = ref or date.today()
     monday, sunday = _week_bounds(ref)
@@ -290,12 +446,21 @@ def get_weekly_analytics(user, ref: date = None) -> dict:
     # ── Calendar ─────────────────────────────────────────────────────────
     calendar = _generate_calendar(monday, sunday, quests, ref)
 
+    # ── Top Emotions + When-feeling-low (from voice-call snapshots this week) ──
+    top_emotions, emotions_summary = _build_top_emotions(user, monday, sunday)
+    low_mood_phrases, low_mood_summary, low_mood_recommendation = _build_low_mood(user, monday, sunday)
+
     return {
         "quests_completed":  completed_quests,
         "total_quests":      total_quests,
         "zone_progress":     zone_progress,
         "skipped_days":      skipped_days,
         "calendar":          calendar,
+        "top_emotions":      top_emotions,
+        "emotions_summary":  emotions_summary,
+        "low_mood_phrases":  low_mood_phrases,
+        "low_mood_summary":  low_mood_summary,
+        "low_mood_recommendation": low_mood_recommendation,
         # ai_reflections is filled in by the AI layer
     }
 

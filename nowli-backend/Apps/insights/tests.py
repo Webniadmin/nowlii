@@ -35,6 +35,17 @@ MOCK_ANALYTICS = {
             }
         ],
         "skipped_days": ["Wednesday"],
+        "top_emotions": [
+            {"key": "happy",     "label": "Happy",     "pct": 34.0},
+            {"key": "sad",       "label": "Sad",       "pct": 28.0},
+            {"key": "motivated", "label": "Motivated", "pct": 12.0},
+            {"key": "angry",     "label": "Angry",     "pct": 12.0},
+            {"key": "tired",     "label": "Tired",     "pct": 14.0},
+        ],
+        "emotions_summary": "You feel mostly calm and positive this week.",
+        "low_mood_phrases": ["I can't", "It's too much", "I should", "Later", "I don't know"],
+        "low_mood_summary": "You tend to feel overwhelmed when tasks pile up.",
+        "low_mood_recommendation": "→ Try breaking tasks into smaller steps.",
         "calendar": [
             {"date": "2026-04-06", "status": "consistent", "assigned": 2, "completed": 2},
             {"date": "2026-04-07", "status": "consistent", "assigned": 1, "completed": 1},
@@ -96,6 +107,13 @@ class AIInsightViewTest(TestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertIn("weekly",  res.data)
         self.assertIn("monthly", res.data)
+        # Top Emotions section flows through the weekly serializer.
+        self.assertEqual(len(res.data["weekly"]["top_emotions"]), 5)
+        self.assertEqual(res.data["weekly"]["top_emotions"][0]["key"], "happy")
+        # "When feeling low" section flows through too.
+        self.assertEqual(len(res.data["weekly"]["low_mood_phrases"]), 5)
+        self.assertEqual(res.data["weekly"]["low_mood_recommendation"],
+                         "→ Try breaking tasks into smaller steps.")
 
     @override_settings(ANTHROPIC_API_KEY="fake-key", OPENAI_API_KEY=None, GOOGLE_AI_API_KEY=None)
     @patch("Apps.insights.views.generate_quest_suggestions")

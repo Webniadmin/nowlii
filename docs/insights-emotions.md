@@ -1,7 +1,44 @@
 # Insights — "Top Emotions" + "When feeling low, you often say…" (plan)
 
-_Status: **planned / not implemented** (report written 2026-07-06, to build 2026-07-07)._
+_Status: **Both sections DONE & runtime-verified (2026-07-07)** — Top Emotions + "When feeling low…"._
 _Companion to `architecture.md` (services/ports) and `technical-debt.md`._
+
+> **Update 2026-07-07 (2) — "When feeling low…" implemented (see `daily-reports/2026-07-07.md`).**
+> The second section is built from Figma node `2888:11656`, below Top Emotions. Key points:
+> - **One GPT-free call for BOTH sections** — new nowli-ai `GET /conversation/call-insights/{id}`
+>   returns the 5-category emotion breakdown **and** the canonical low-mood phrases (emotions from
+>   per-turn scores, phrases from regex — no LLM). The app calls it once at call end. The original
+>   `/emotion-breakdown` and `/low-mood-detect` endpoints are left intact.
+> - **Canonical phrases** — `_LOW_MOOD_CANONICAL` maps raw regex matches to tidy display phrases
+>   (e.g. "can't" → "I can't"), English-only.
+> - **Persistence/aggregation** — new `CallLowMoodSnapshot` (migration `0003`); `Apps/insights`
+>   aggregates top 5 by frequency, dedup by normalized phrase, ties alphabetical → `low_mood_phrases`
+>   (+ placeholder `low_mood_summary`/`low_mood_recommendation`).
+> - **UI** — `_buildWhenFeelingLow()`; **always-visible** section with a designed empty-state (unlike
+>   Top Emotions, which hides); mood phrases **left-aligned** per Figma.
+> - **TODO left (both sections):** replace the temporary "What this means" copy with a real
+>   AI-generated summary; and a final **organic** voice-call test (app writes the snapshots itself).
+
+> **Update 2026-07-07 — "Top Emotions" implemented (see `daily-reports/2026-07-07.md`).**
+> Built end-to-end from Figma "Frame 2147228872" and verified live on the emulator (real
+> flow, not mock):
+> - **nowli-ai** — `GET /conversation/emotion-breakdown/{id}` now returns 5 **native**
+>   categories **Happy, Motivated, Angry, Tired, Sad** (`_TOP_EMOTION_MAP` /
+>   `_compute_top_emotions_from_turns`). The shared 6-bucket map, low-mood endpoint and chat
+>   prompts were left untouched (no throwaway remap).
+> - **Persistence** — new `CallEmotionSnapshot` in `Apps/voice_calls`; the app captures the
+>   breakdown at call end (session still in memory) and `POST /voice-calls/<id>/end/` stores it.
+> - **Aggregation** — `Apps/insights` averages the week's snapshots → `weekly.top_emotions`
+>   (+ `emotions_summary`); Weekly only, above "Weekly Reflection".
+> - **UI** — `_buildTopEmotions()`/`_buildEmotionTile()` in `insights.dart`; **dynamic** layout
+>   (dominant full-width, rest sorted desc), Figma 1:1, with a clean hide-when-empty state.
+> - **TODO left:** (1) the "What this means" copy is a **temporary placeholder** (10 texts, 2
+>   per emotion, `TODO(insights-emotions)` in `services.py`) — replace with a real AI summary;
+>   (2) a **final organic voice-call test** (non-seeded snapshot) to confirm the app writes the
+>   snapshot itself.
+>
+> The rest of this document is the original plan (kept for the "When feeling low…" section,
+> which is still to build). Note the shipped layout is **dynamic**, not the static Figma order.
 
 ## Goal
 

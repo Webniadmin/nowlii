@@ -126,11 +126,16 @@ class VoiceCallService {
   }
 
   /// Finalize a call with its real duration and whether the extension was used.
+  /// Optionally persists the AI Top-Emotion breakdown captured at call end (the app
+  /// fetches it from nowli-ai while the session is still alive and hands it here).
   /// Fire-and-forget: the backend end record is best-effort and idempotent.
   Future<void> endCall({
     required int callId,
     required int durationSeconds,
     required bool extensionUsed,
+    Map<String, double>? emotionBreakdown,
+    String? dominantEmotion,
+    List<Map<String, dynamic>>? lowMoodPhrases,
   }) async {
     try {
       final token = await _getToken();
@@ -141,6 +146,9 @@ class VoiceCallService {
             body: jsonEncode({
               'duration_seconds': durationSeconds,
               'extension_used': extensionUsed,
+              if (emotionBreakdown != null) 'emotion_breakdown': emotionBreakdown,
+              if (dominantEmotion != null) 'dominant_emotion': dominantEmotion,
+              if (lowMoodPhrases != null) 'low_mood_phrases': lowMoodPhrases,
             }),
           )
           .timeout(const Duration(seconds: 10));

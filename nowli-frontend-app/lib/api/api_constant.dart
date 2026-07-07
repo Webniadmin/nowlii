@@ -53,6 +53,12 @@ class ApiConstants {
   // AI Call endpoints (use aiBaseUrl)
   static const String createSession = '$aiCallPrefix/session/new';
   static const String chatStream = '$aiCallPrefix/chat-stream';
+  // 5-category Top-Emotion breakdown for a finished session (used by Insights).
+  static String aiEmotionBreakdown(String sessionId) =>
+      '$aiCallPrefix/conversation/emotion-breakdown/$sessionId';
+  // One GPT-free call at call end: both the emotion breakdown AND the low-mood phrases.
+  static String aiCallInsights(String sessionId) =>
+      '$aiCallPrefix/conversation/call-insights/$sessionId';
   
   // Google Sign-In server/web client id — becomes the `id_token` audience the backend
   // verifies. Pass at build/run time (same as the base URLs):

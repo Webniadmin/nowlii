@@ -12,8 +12,70 @@ from rest_framework.views import APIView
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 
-from .models import VoiceCall
+from .models import CallEmotionSnapshot, CallLowMoodSnapshot, VoiceCall
 from .serializers import VoiceCallSerializer
+
+# The five Insights "Top Emotions" categories (must match nowli-ai's breakdown keys).
+_EMOTION_KEYS = ('happy', 'motivated', 'angry', 'tired', 'sad')
+
+
+def _persist_emotion_snapshot(call, data):
+    """Store the AI Top-Emotion breakdown for a call if the app sent one.
+
+    Best-effort: a missing or malformed ``emotion_breakdown`` just skips the snapshot —
+    the call itself still finalizes normally. Idempotent (one snapshot per call).
+    """
+    breakdown = data.get('emotion_breakdown')
+    if not isinstance(breakdown, dict):
+        return
+    values = {}
+    for key in _EMOTION_KEYS:
+        try:
+            values[key] = max(0.0, float(breakdown.get(key, 0) or 0))
+        except (TypeError, ValueError):
+            values[key] = 0.0
+    if not any(values.values()):
+        return
+    dominant = data.get('dominant_emotion') or max(values, key=values.get)
+    CallEmotionSnapshot.objects.update_or_create(
+        call=call,
+        defaults={'user': call.user, 'dominant_emotion': str(dominant)[:20], **values},
+    )
+
+
+def _persist_low_mood_snapshot(call, data):
+    """Store the canonical low-mood phrases for a call if the app sent any.
+
+    Best-effort: a missing/malformed/empty ``low_mood_phrases`` just skips the snapshot.
+    Idempotent (one snapshot per call). Expects a list of
+    ``{"phrase": str, "category": str, "count": int}``.
+    """
+    raw = data.get('low_mood_phrases')
+    if not isinstance(raw, list):
+        return
+    phrases = []
+    cat_counts = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        phrase = str(item.get('phrase') or '').strip()
+        if not phrase:
+            continue
+        category = str(item.get('category') or '').strip()[:32]
+        try:
+            count = max(1, int(item.get('count') or 1))
+        except (TypeError, ValueError):
+            count = 1
+        phrases.append({'phrase': phrase[:80], 'category': category, 'count': count})
+        if category:
+            cat_counts[category] = cat_counts.get(category, 0) + count
+    if not phrases:
+        return
+    dominant_category = max(cat_counts, key=cat_counts.get) if cat_counts else ''
+    CallLowMoodSnapshot.objects.update_or_create(
+        call=call,
+        defaults={'user': call.user, 'phrases': phrases, 'dominant_category': dominant_category},
+    )
 
 
 def _calls_used_today(user):
@@ -118,6 +180,18 @@ class VoiceCallEndView(APIView):
             properties={
                 'duration_seconds': openapi.Schema(type=openapi.TYPE_INTEGER),
                 'extension_used': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                'emotion_breakdown': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    description='Optional AI Top-Emotion percentages: '
+                                'happy/motivated/angry/tired/sad.',
+                ),
+                'dominant_emotion': openapi.Schema(type=openapi.TYPE_STRING),
+                'low_mood_phrases': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_OBJECT),
+                    description='Optional canonical low-mood phrases: '
+                                '[{phrase, category, count}].',
+                ),
             },
         ),
         responses={200: VoiceCallSerializer},
@@ -135,5 +209,11 @@ class VoiceCallEndView(APIView):
             call.extension_used = bool(request.data.get('extension_used') or False)
             call.status = VoiceCall.Status.COMPLETED
             call.save(update_fields=['ended_at', 'duration_seconds', 'extension_used', 'status'])
+
+        # Persist the AI Top-Emotion breakdown + low-mood phrases if the app captured them at
+        # call end. Done outside the status guard so a late/retried payload still lands even
+        # after the call was already finalized.
+        _persist_emotion_snapshot(call, request.data)
+        _persist_low_mood_snapshot(call, request.data)
 
         return Response(VoiceCallSerializer(call).data, status=status.HTTP_200_OK)

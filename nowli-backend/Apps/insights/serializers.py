@@ -60,6 +60,12 @@ class QuestSuggestionSerializer(serializers.Serializer):
     suggested_time = serializers.CharField()
 
 
+class TopEmotionSerializer(serializers.Serializer):
+    key   = serializers.CharField()   # happy | motivated | angry | tired | sad
+    label = serializers.CharField()
+    pct   = serializers.FloatField()  # 0–100
+
+
 class WeeklyInsightSerializer(serializers.Serializer):
     quests_completed    = serializers.IntegerField()
     total_quests        = serializers.IntegerField()
@@ -68,6 +74,14 @@ class WeeklyInsightSerializer(serializers.Serializer):
     zone_progress       = ZoneProgressSerializer(many=True)
     skipped_days        = serializers.ListField(child=serializers.CharField())
     calendar            = CalendarDaySerializer(many=True)
+    # Top Emotions section — optional so responses/tests without call data still validate.
+    top_emotions        = TopEmotionSerializer(many=True, required=False)
+    emotions_summary    = serializers.CharField(required=False, allow_blank=True)
+    # "When feeling low" section — optional; the section is always shown, with an empty-state
+    # in the UI when there are no phrases.
+    low_mood_phrases        = serializers.ListField(child=serializers.CharField(), required=False)
+    low_mood_summary        = serializers.CharField(required=False, allow_blank=True)
+    low_mood_recommendation = serializers.CharField(required=False, allow_blank=True)
 
 
 # ── Combined top-level response ───────────────────────────────────────────────

@@ -56,6 +56,62 @@ class AiCallService {
     }
   }
 
+  /// Fetch the 5-category Top-Emotion breakdown for a finished session.
+  /// Best-effort: nowli-ai keeps sessions in memory only, so this must run before the
+  /// session is dropped (i.e. right at call end). Returns the raw response map
+  /// (with `emotion_breakdown` + `dominant_emotion`) or null on any error.
+  Future<Map<String, dynamic>?> getEmotionBreakdown(String sessionId) async {
+    try {
+      final url = Uri.parse(
+          '${ApiConstants.aiBaseUrl}${ApiConstants.aiEmotionBreakdown(sessionId)}');
+      final response = await http.get(
+        url,
+        headers: {
+          'Content-Type': ApiConstants.contentType,
+          'Accept': ApiConstants.accept,
+          'ngrok-skip-browser-warning': 'true',
+        },
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      print('⚠️ emotion-breakdown status: ${response.statusCode}');
+      return null;
+    } catch (e) {
+      print('❌ emotion-breakdown error: $e');
+      return null;
+    }
+  }
+
+  /// One GPT-free call at call end returning BOTH the 5-category emotion breakdown and the
+  /// canonical low-mood phrases (`emotion_breakdown`, `dominant_emotion`, `low_mood_phrases`).
+  /// Best-effort: nowli-ai keeps sessions in memory only, so this must run before the session
+  /// is dropped. Returns the raw response map or null on any error.
+  Future<Map<String, dynamic>?> getCallInsights(String sessionId) async {
+    try {
+      final url = Uri.parse(
+          '${ApiConstants.aiBaseUrl}${ApiConstants.aiCallInsights(sessionId)}');
+      final response = await http.get(
+        url,
+        headers: {
+          'Content-Type': ApiConstants.contentType,
+          'Accept': ApiConstants.accept,
+          'ngrok-skip-browser-warning': 'true',
+        },
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      print('⚠️ call-insights status: ${response.statusCode}');
+      return null;
+    } catch (e) {
+      print('❌ call-insights error: $e');
+      return null;
+    }
+  }
+
   // Stream chat with emotion detection
   Stream<StreamEvent> chatStream({
     required String message,

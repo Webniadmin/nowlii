@@ -25,6 +25,15 @@ class WeeklyInsights {
   final List<ZoneProgress> zoneProgress;
   final List<String> skippedDays;
   final List<CalendarDay> calendar;
+  // Top Emotions section (aggregated from voice-call snapshots). Empty when the user
+  // has no calls yet — the UI hides the section in that case.
+  final List<TopEmotion> topEmotions;
+  final String emotionsSummary;
+  // "When feeling low" section — recurring low-mood phrases + placeholder interpretation.
+  // Empty phrases → the section still renders, with an empty-state placeholder.
+  final List<String> lowMoodPhrases;
+  final String lowMoodSummary;
+  final String lowMoodRecommendation;
 
   WeeklyInsights({
     required this.questsCompleted,
@@ -34,6 +43,11 @@ class WeeklyInsights {
     required this.zoneProgress,
     required this.skippedDays,
     required this.calendar,
+    required this.topEmotions,
+    required this.emotionsSummary,
+    required this.lowMoodPhrases,
+    required this.lowMoodSummary,
+    required this.lowMoodRecommendation,
   });
 
   factory WeeklyInsights.fromJson(Map<String, dynamic> json) {
@@ -54,6 +68,34 @@ class WeeklyInsights {
               ?.map((e) => CalendarDay.fromJson(e))
               .toList() ??
           [],
+      topEmotions: (json['top_emotions'] as List?)
+              ?.map((e) => TopEmotion.fromJson(e))
+              .toList() ??
+          [],
+      emotionsSummary: json['emotions_summary'] ?? '',
+      lowMoodPhrases: List<String>.from(json['low_mood_phrases'] ?? []),
+      lowMoodSummary: json['low_mood_summary'] ?? '',
+      lowMoodRecommendation: json['low_mood_recommendation'] ?? '',
+    );
+  }
+}
+
+class TopEmotion {
+  final String key; // happy | motivated | angry | tired | sad
+  final String label;
+  final double pct; // 0–100
+
+  TopEmotion({
+    required this.key,
+    required this.label,
+    required this.pct,
+  });
+
+  factory TopEmotion.fromJson(Map<String, dynamic> json) {
+    return TopEmotion(
+      key: json['key'] ?? '',
+      label: json['label'] ?? '',
+      pct: (json['pct'] ?? 0).toDouble(),
     );
   }
 }

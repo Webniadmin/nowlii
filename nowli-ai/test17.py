@@ -473,6 +473,16 @@ class LowMoodDetectResponse(BaseModel):
     gpt_summary: str; recommendations: List[str]; processing_ms: float
 
 
+class LowMoodPhrase(BaseModel):
+    phrase: str; category: str; count: int
+
+
+class CallInsightsResponse(BaseModel):
+    session_id: str; user_name: str; total_turns: int
+    emotion_breakdown: Dict[str, float]; dominant_emotion: str
+    low_mood_phrases: List[LowMoodPhrase]; processing_ms: float
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # OPENAI CLIENT
 # ══════════════════════════════════════════════════════════════════════════════
@@ -993,6 +1003,71 @@ def _map_to_bucket(emotion_name: str) -> str:
     return _resolve_emotion_key(name)
 
 
+# ── Top-emotion categories (5) for the Insights "Top Emotions" section ────────
+# The Insights screen shows exactly five categories. This is a *native* taxonomy
+# for that feature — fine-grained Hume/GPT emotions are folded straight into one
+# of these five (it is not a temporary remap of the 6 analytics buckets above,
+# which stay in use by the low-mood endpoint and the chat prompts). Calm/neutral
+# and unknown emotions fall back to "happy" (the positive-calm baseline).
+_TOP_EMOTIONS = ["happy", "motivated", "angry", "tired", "sad"]
+
+_TOP_EMOTION_MAP: Dict[str, str] = {
+    # happy — joy / calm / positive
+    "joy": "happy", "happiness": "happy", "excitement": "happy", "amusement": "happy",
+    "delight": "happy", "contentment": "happy", "satisfaction": "happy", "love": "happy",
+    "relief": "happy", "gratitude": "happy", "admiration": "happy", "adoration": "happy",
+    "ecstasy": "happy", "euphoria": "happy", "calmness": "happy", "serenity": "happy",
+    "awe": "happy", "surprise": "happy",
+    # motivated — drive / optimism / focus
+    "optimism": "motivated", "enthusiasm": "motivated", "determination": "motivated",
+    "pride": "motivated", "hope": "motivated", "inspiration": "motivated",
+    "confidence": "motivated", "concentration": "motivated", "interest": "motivated",
+    "desire": "motivated", "craving": "motivated", "triumph": "motivated",
+    # angry
+    "anger": "angry", "rage": "angry", "annoyance": "angry", "frustration": "angry",
+    "irritation": "angry", "contempt": "angry", "disgust": "angry", "envy": "angry",
+    "jealousy": "angry", "hostility": "angry", "disapproval": "angry",
+    # tired
+    "tiredness": "tired", "exhaustion": "tired", "fatigue": "tired", "boredom": "tired",
+    "sleepiness": "tired", "lethargy": "tired",
+    # sad — sadness + anxiety/fear + confusion (all negative low-mood)
+    "sadness": "sad", "grief": "sad", "sorrow": "sad", "disappointment": "sad",
+    "despair": "sad", "hurt": "sad", "melancholy": "sad", "loneliness": "sad",
+    "regret": "sad", "guilt": "sad", "shame": "sad", "pain": "sad",
+    "fear": "sad", "anxiety": "sad", "stress": "sad", "worry": "sad", "panic": "sad",
+    "distress": "sad", "nervousness": "sad", "dread": "sad", "apprehension": "sad",
+    "insecurity": "sad", "embarrassment": "sad",
+    "confusion": "sad", "uncertainty": "sad", "doubt": "sad", "perplexity": "sad",
+    "disbelief": "sad",
+}
+
+
+def _map_to_top_emotion(emotion_name: str) -> str:
+    name = (emotion_name or "").strip().lower()
+    if name in _TOP_EMOTION_MAP:
+        return _TOP_EMOTION_MAP[name]
+    for key, category in _TOP_EMOTION_MAP.items():
+        if key in name or name in key:
+            return category
+    # calm / neutral / unknown → positive-calm baseline
+    return "happy"
+
+
+def _compute_top_emotions_from_turns(session: Session) -> Dict[str, float]:
+    """Percentage split across the 5 Top-Emotion categories (sums to ~100)."""
+    totals: Dict[str, float] = {c: 0.0 for c in _TOP_EMOTIONS}
+    if not session.turns:
+        return {**totals, "happy": 100.0}
+    for turn in session.turns:
+        if turn.emotion_scores:
+            for es in turn.emotion_scores:
+                totals[_map_to_top_emotion(es.name)] += es.score
+        else:
+            totals[_map_to_top_emotion(turn.dominant_emotion)] += 1.0
+    total = sum(totals.values()) or 1.0
+    return {c: round((v / total) * 100, 1) for c, v in totals.items()}
+
+
 def _build_conversation_text(session: Session) -> str:
     return "\n".join(f"Turn {t.turn_number}: {t.user_message}" for t in session.turns)
 
@@ -1040,7 +1115,7 @@ _BREAKDOWN_GPT_USER = (
     "that reflects each emotion. Percentages must sum to 100.\n\n"
     "Conversation:\n{conversation}\n\n"
     "Return ONLY this JSON:\n"
-    '{{"happy": N, "sad": N, "angry": N, "anxious": N, "confused": N, "neutral": N}}'
+    '{{"happy": N, "motivated": N, "angry": N, "tired": N, "sad": N}}'
 )
 
 _LOW_MOOD_GPT_SYSTEM = {
@@ -1128,6 +1203,58 @@ def _rule_based_phrase_scan(session: Session) -> List[DetectedPhrase]:
     return unique
 
 
+# ── Canonical low-mood phrases (for the Insights "When feeling low…" section) ──
+# That section shows tidy, deduped phrases (e.g. "I can't", "I don't know") — NOT the raw
+# regex matches. Each entry maps a pattern to the exact display phrase; several raw
+# variations fold into one canonical phrase. English-only (same scope as the low-mood
+# patterns above). Kept separate from `_LOW_MOOD_PATTERNS` so the existing low-mood-detect
+# endpoint is untouched.
+_LOW_MOOD_CANONICAL: List[tuple] = [
+    (r"\bi don'?t know\b",                              "helplessness",   "I don't know"),
+    (r"\bi (can'?t|cannot|couldn'?t)\b",                "helplessness",   "I can't"),
+    (r"\bi give up\b",                                  "helplessness",   "I give up"),
+    (r"\bnothing (works|matters|helps)\b",              "helplessness",   "Nothing works"),
+    (r"\bwhat'?s the point\b",                          "helplessness",   "What's the point"),
+    (r"\bit'?s too much\b",                             "overwhelm",      "It's too much"),
+    (r"\btoo (much|hard|difficult|many)\b",             "overwhelm",      "It's too much"),
+    (r"\bi'?m overwhelmed\b",                            "overwhelm",      "I'm overwhelmed"),
+    (r"\bi can'?t (handle|deal|cope|do this)\b",        "overwhelm",      "I can't cope"),
+    (r"\blater\b",                                      "avoidance",      "Later"),
+    (r"\bmaybe (tomorrow|later|someday|another day)\b", "avoidance",      "Maybe later"),
+    (r"\bnot (now|today|yet)\b",                         "avoidance",      "Not now"),
+    (r"\bi'?ll (try|think about it|see)\b",             "avoidance",      "I'll try later"),
+    (r"\bi (should|shouldn'?t)\b",                       "self-criticism", "I should"),
+    (r"\bi'?m (not good enough|worthless|useless|pathetic)\b", "self-criticism", "I'm not good enough"),
+    (r"\bmy fault\b",                                    "self-criticism", "It's my fault"),
+    (r"\bi hate (myself|my life|everything)\b",         "self-criticism", "I hate this"),
+    (r"\bi'?m (so )?(tired|exhausted|burnt out|burned out|drained|done)\b", "exhaustion", "I'm so tired"),
+    (r"\bso (stressed|anxious|worried|scared)\b",       "stress",         "I'm so stressed"),
+    (r"\bfreaking out\b",                                "stress",         "I'm freaking out"),
+    (r"\bnobody (cares|understands|gets it)\b",         "hopelessness",   "Nobody understands"),
+    (r"\bno (future|way out|escape)\b",                 "hopelessness",   "There's no way out"),
+]
+
+
+def _extract_canonical_low_mood_phrases(session: Session) -> List[Dict[str, Any]]:
+    """Per-call canonical low-mood phrases with per-turn frequency (rule-based, no GPT).
+
+    Each canonical phrase is counted once per turn it appears in; the raw regex match is
+    mapped to its tidy display form. Django aggregates these across the week's calls.
+    """
+    counts: Dict[str, List[Any]] = {}  # canonical -> [category, count]
+    for turn in session.turns:
+        seen_this_turn: set = set()
+        for pattern_str, category, canonical in _LOW_MOOD_CANONICAL:
+            if canonical in seen_this_turn:
+                continue
+            if _re.search(pattern_str, turn.user_message, _re.IGNORECASE):
+                seen_this_turn.add(canonical)
+                if canonical not in counts:
+                    counts[canonical] = [category, 0]
+                counts[canonical][1] += 1
+    return [{"phrase": c, "category": v[0], "count": v[1]} for c, v in counts.items()]
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # API 4 — GET /api/v1/conversation/emotion-breakdown/{session_id}
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1147,7 +1274,7 @@ async def conversation_emotion_breakdown(session_id: str):
     has_scores = any(t.emotion_scores for t in session.turns)
 
     if has_scores:
-        breakdown = _compute_breakdown_from_turns(session)
+        breakdown = _compute_top_emotions_from_turns(session)
         method    = "turn_scores"
     else:
         try:
@@ -1162,21 +1289,21 @@ async def conversation_emotion_breakdown(session_id: str):
             data = _json.loads(raw)
             total = 0.0
             breakdown = {}
-            for bucket in _EMOTION_BUCKETS:
+            for bucket in _TOP_EMOTIONS:
                 val = float(data.get(bucket, 0))
                 breakdown[bucket] = val
                 total += val
             breakdown = ({k: round((v / total) * 100, 1) for k, v in breakdown.items()}
-                         if total > 0 else {**{b: 0.0 for b in _EMOTION_BUCKETS}, "neutral": 100.0})
+                         if total > 0 else {**{b: 0.0 for b in _TOP_EMOTIONS}, "happy": 100.0})
             method = "gpt_full"
         except Exception as exc:
             logger.error("GPT breakdown failed: %s", exc)
-            breakdown = _compute_breakdown_from_turns(session)
+            breakdown = _compute_top_emotions_from_turns(session)
             method    = "turn_scores_fallback"
 
     dominant     = max(breakdown, key=breakdown.get)
     turn_by_turn = [{"turn": t.turn_number, "message": t.user_message[:80],
-                     "emotion": _map_to_bucket(t.dominant_emotion), "raw": t.dominant_emotion}
+                     "emotion": _map_to_top_emotion(t.dominant_emotion), "raw": t.dominant_emotion}
                     for t in session.turns]
     elapsed_ms   = round((time.perf_counter() - t0) * 1000, 1)
     logger.info("emotion-breakdown | session=%s | method=%s | dominant=%s | %.0f ms", session_id, method, dominant, elapsed_ms)
@@ -1255,6 +1382,40 @@ async def conversation_low_mood_detect(session_id: str):
         gpt_summary=gpt_result.get("gpt_summary", ""),
         recommendations=gpt_result.get("recommendations", []),
         processing_ms=elapsed_ms,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# API 5b — GET /api/v1/conversation/call-insights/{session_id}
+#   ONE GPT-free call returning BOTH the 5-category Top-Emotion breakdown AND the
+#   canonical low-mood phrases. The app calls this once at call end: emotions come from
+#   the per-turn scores captured during the call, phrases from the regex patterns —
+#   neither needs the LLM, so this is the cheapest way to feed both Insights sections.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/v1/conversation/call-insights/{session_id}",
+         response_model=CallInsightsResponse,
+         summary="Call Insights — emotions + low-mood phrases (no GPT)",
+         tags=["Conversation Analytics"])
+async def conversation_call_insights(session_id: str):
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = _sessions[session_id]
+    if not session.turns:
+        raise HTTPException(status_code=422, detail="No turns recorded. Have a conversation first.")
+
+    t0         = time.perf_counter()
+    breakdown  = _compute_top_emotions_from_turns(session)
+    dominant   = max(breakdown, key=breakdown.get)
+    phrases    = _extract_canonical_low_mood_phrases(session)
+    elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+    logger.info("call-insights | session=%s | dominant=%s | phrases=%d | %.0f ms",
+                session_id, dominant, len(phrases), elapsed_ms)
+
+    return CallInsightsResponse(
+        session_id=session_id, user_name=session.user_name, total_turns=len(session.turns),
+        emotion_breakdown=breakdown, dominant_emotion=dominant,
+        low_mood_phrases=[LowMoodPhrase(**p) for p in phrases], processing_ms=elapsed_ms,
     )
 
 

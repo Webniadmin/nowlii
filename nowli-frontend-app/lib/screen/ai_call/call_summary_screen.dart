@@ -46,21 +46,24 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
 
     try {
       final summary = await _summaryService.getSummary(widget.sessionId!);
-      
+
       if (mounted) {
         setState(() {
+          // summary may be null (e.g. nowli-ai 422 for an empty session, or the AI
+          // service was unreachable). Never surface a technical error — fall back to the
+          // friendly default insight cards below (they render sensible placeholder text
+          // when _summary is null). Unifies with the missing-sessionId branch above.
           _summary = summary;
           _isLoading = false;
-          if (summary == null) {
-            _errorMessage = 'Could not load summary. Please try again.';
-          }
+          _errorMessage = null;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
+          _summary = null;
           _isLoading = false;
-          _errorMessage = 'Error loading summary: $e';
+          _errorMessage = null;
         });
       }
     }

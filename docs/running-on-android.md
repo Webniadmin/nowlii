@@ -44,18 +44,50 @@ All three also carry `GOOGLE_WEB_CLIENT_ID` (see `google-login.md`).
 
 ## Run on the emulator
 
-```powershell
-# 1. Backend (bind 0.0.0.0 so the emulator reaches it via 10.0.2.2; allow that host)
-cd nowli-backend
-$env:DB_ENGINE="django.db.backends.sqlite3"; $env:DEBUG="True"
-$env:ALLOWED_HOSTS="10.0.2.2,192.168.0.39,localhost,127.0.0.1"
-uv run python manage.py runserver 0.0.0.0:8000
-# (optional) nowli-ai: cd nowli-ai; $env:HOST="0.0.0.0"; $env:PORT="8001"; .venv\Scripts\python.exe test17.py
+_Re-verified 2026-07-07: all three services + emulator up together; the AI voice/emotion flow
+(and the new Insights "Top Emotions" section) work end-to-end. Two things worth pinning down this
+run: **run nowli-ai too** (not optional — the AI companion + emotion features need `:8001`), and
+**override `DB_NAME` as well as `DB_ENGINE`** or Django creates an extension-less `nowlii` SQLite
+file (TD-012). The `.env` DB points at **AWS RDS Postgres**, so without the SQLite override your
+local commands hit that cloud DB — always set the override for local work._
 
-# 2. Launch the emulator + run the app
-flutter emulators --launch Medium_Phone_API_36.1
+**Start each service in its own terminal, in this order: 1) backend → 2) nowli-ai → 3) app.**
+
+```powershell
+# 1) DJANGO BACKEND — 0.0.0.0:8000, LOCAL SQLite (10.0.2.2 = the emulator's route to the host)
+cd "C:\Users\Pavle\Documents\Just Web (projekti)\nowli-app\nowli-backend"
+$env:DB_ENGINE="django.db.backends.sqlite3"; $env:DB_NAME="db.sqlite3"; $env:DEBUG="True"
+$env:ALLOWED_HOSTS="10.0.2.2,192.168.0.39,localhost,127.0.0.1"
+uv run python manage.py migrate            # only when there are new migrations
+uv run python manage.py runserver 0.0.0.0:8000
+#   check: http://localhost:8000/api/docs/  -> 200
+
+# 2) NOWLI-AI — 0.0.0.0:8001 (FastAPI; needs OPENAI_API_KEY, optionally HUME in nowli-ai/.env)
+cd "C:\Users\Pavle\Documents\Just Web (projekti)\nowli-app\nowli-ai"
+$env:HOST="0.0.0.0"; $env:PORT="8001"
+.\.venv\Scripts\python.exe test17.py
+#   check: http://localhost:8001/health  -> {"status":"ok","openai":true,"hume":true,...}
+
+# 3) FLUTTER APP on the emulator (after both servers are up)
+cd "C:\Users\Pavle\Documents\Just Web (projekti)\nowli-app\nowli-frontend-app"
+flutter emulators --launch Medium_Phone_API_36.1     # wait for it to fully boot
 flutter run -d emulator-5554 --dart-define-from-file=dart_defines.android.json
 ```
+
+Notes / prerequisites:
+- **PATH:** `C:\src\flutter\bin` (flutter/dart), `%LOCALAPPDATA%\Android\sdk\platform-tools` (adb),
+  `%USERPROFILE%\.local\bin` (uv).
+- Only AVD is `Medium_Phone_API_36.1`; it attaches as `emulator-5554` (`adb devices`).
+- Run `flutter run` **interactively in its own terminal** so hot reload (`r`) and screenshot (`s`)
+  work; `adb screencap` returns a black image for this app (Impeller) — use the emulator window.
+- Emulator reaches the host via `10.0.2.2`, so bind the servers to `0.0.0.0` (not `127.0.0.1`).
+- **Voice Call needs the emulator microphone (verified 2026-07-07).** For speech-to-text to work,
+  open **Extended controls (`…`) → Microphone** and enable **"Virtual microphone uses host audio
+  input"** (+ the Microphone toggle). Without it, `speech_to_text` gets no audio and loops on
+  `error_speech_timeout` → no transcript, so the AI never responds (this looked like an app bug but
+  is purely the emulator not routing host audio). The AVD already has `hw.audioInput=yes` and Windows
+  mic privacy is Allow; the runtime toggle is the missing piece. A physical device (real mic) also works.
+
 Google login needs a Google account added on the emulator (Settings → Passwords & accounts → Add
 account) and the tester's account listed as a **Test user** on the OAuth consent screen.
 

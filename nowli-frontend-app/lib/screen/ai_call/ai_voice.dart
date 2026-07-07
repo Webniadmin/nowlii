@@ -55,6 +55,8 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   bool _showStartNotice = false; // "this call lasts up to N minutes" on connect
   bool _showOneMinuteWarning = false; // 1 minute left (offers the extension if unused)
   bool _showThirtySecWarning = false; // 30 seconds left
+  int _speechTimeoutStreak = 0; // consecutive "can't hear you" speech errors (no audio)
+  bool _micHintShown = false;   // show the "check your microphone" hint at most once per streak
   int _countdownValue = 0; // >0 during the final 10-second countdown
 
   // Backend daily-limit gate (authoritative). The call timeline only starts after the
@@ -187,13 +189,48 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
 
   /// Report the end of the call to the backend (duration + whether it was extended).
   /// Guarded so it only fires once; the backend end record is idempotent anyway.
-  void _reportCallEnd() {
+  Future<void> _reportCallEnd() async {
     if (_callEndReported || _callId == null) return;
     _callEndReported = true;
+
+    // Capture the AI call insights (emotion breakdown + low-mood phrases) in ONE GPT-free
+    // call while the nowli-ai session is still in memory (it isn't persisted there and is
+    // dropped on restart), then hand them to the backend end record. Best-effort — on any
+    // failure the call still finalizes without this data.
+    Map<String, double>? emotionBreakdown;
+    String? dominantEmotion;
+    List<Map<String, dynamic>>? lowMoodPhrases;
+    final sessionId = _currentSession?.sessionId;
+    if (sessionId != null && sessionId.isNotEmpty) {
+      final data = await _aiCallService.getCallInsights(sessionId);
+      final raw = data?['emotion_breakdown'];
+      if (raw is Map) {
+        emotionBreakdown = raw.map(
+          (k, v) => MapEntry(k.toString(), (v is num) ? v.toDouble() : 0.0),
+        );
+        dominantEmotion = data?['dominant_emotion']?.toString();
+      }
+      final rawPhrases = data?['low_mood_phrases'];
+      if (rawPhrases is List) {
+        lowMoodPhrases = rawPhrases
+            .whereType<Map>()
+            .map((m) => {
+                  'phrase': m['phrase']?.toString() ?? '',
+                  'category': m['category']?.toString() ?? '',
+                  'count': (m['count'] is num) ? (m['count'] as num).toInt() : 1,
+                })
+            .where((m) => (m['phrase'] as String).isNotEmpty)
+            .toList();
+      }
+    }
+
     _voiceCallService.endCall(
       callId: _callId!,
       durationSeconds: _elapsedTime.inSeconds,
       extensionUsed: _extensionUsed,
+      emotionBreakdown: emotionBreakdown,
+      dominantEmotion: dominantEmotion,
+      lowMoodPhrases: lowMoodPhrases,
     );
   }
   
@@ -286,6 +323,24 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
               setState(() {
                 _isListening = false;
               });
+            }
+            // When speech repeatedly can't be heard (e.g. no mic audio is reaching the
+            // app — a silent/disabled microphone), surface a one-time hint instead of
+            // looping in silence. Reset by the first recognized words (see onResult).
+            if (errorMsg.contains('timeout') ||
+                errorMsg.contains('no_speech') ||
+                errorMsg.contains('audio')) {
+              _speechTimeoutStreak++;
+              if (_speechTimeoutStreak >= 2 && !_micHintShown && mounted) {
+                _micHintShown = true;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("I can't hear you — check that your microphone is on."),
+                    backgroundColor: Color(0xFFFF8F26),
+                    duration: Duration(seconds: 4),
+                  ),
+                );
+              }
             }
           }
         },
@@ -493,7 +548,12 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
             print('📝 Live transcription: "$recognizedText" (final: ${result.finalResult})');
 
             // UI-TD-001: speaking detected → mic icon active now, cancel pending off.
-            if (recognizedText.isNotEmpty) _markMicActive();
+            // Also clears the "can't hear you" streak (speech is coming through fine).
+            if (recognizedText.isNotEmpty) {
+              _markMicActive();
+              _speechTimeoutStreak = 0;
+              _micHintShown = false;
+            }
             
             if (mounted) {
               setState(() {

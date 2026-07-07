@@ -1,6 +1,6 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-07-01_
+_Last reviewed: 2026-07-07_
 
 ## What the app does
 
@@ -10,6 +10,49 @@ call/alarm/repeat flags), track completion streaks, view progress analytics, and
 interact with a personalized companion (Milo, Bloop, Gumo, etc.) via text and **voice
 calls** — including AI-generated subtask suggestions, weekly reflections, and quest
 recommendations.
+
+## Completed this session (2026-07-07)
+
+- **Insights "Top Emotions" section — implemented end-to-end and runtime-verified** (from
+  Figma "Frame 2147228872"; full report in `daily-reports/2026-07-07.md`, plan/notes in
+  `insights-emotions.md`).
+  - **nowli-ai** — `/conversation/emotion-breakdown/{id}` now returns **5 native categories**
+    (Happy, Motivated, Angry, Tired, Sad) via a dedicated `_TOP_EMOTION_MAP` /
+    `_compute_top_emotions_from_turns`. The shared 6-bucket analytics map, the low-mood
+    endpoint and the chat-prompt `_resolve_emotion_key` were left untouched.
+  - **Persistence** — new `CallEmotionSnapshot` model in `Apps/voice_calls`; the app captures
+    the breakdown at call end (nowli-ai session still in memory) and `POST /voice-calls/<id>/end/`
+    stores it per call/user. Migration `0002_callemotionsnapshot`.
+  - **Aggregation** — `Apps/insights` averages the week's snapshots and exposes
+    `weekly.top_emotions` + `weekly.emotions_summary` (Weekly only, above "Weekly Reflection").
+  - **Flutter** — `_buildTopEmotions()`/`_buildEmotionTile()` in `insights.dart`, **dynamic**
+    layout (dominant full-width, rest sorted descending), Figma 1:1; clean hide-when-empty state.
+  - **Runtime-verified on the emulator** — all three services up; the real flow (session →
+    chat-stream → emotion-breakdown → voice-calls start/end → insights) exercised live, **not
+    mock**; data-gate + seeded-data display both confirmed.
+  - **Known TODOs:** the "What this means" copy is a **temporary placeholder** (10 texts, 2 per
+    emotion; `TODO(insights-emotions)` in `services.py`) pending a real AI summary; and a final
+    **organic** (non-seeded) voice-call test still to do.
+
+- **Insights "When feeling low, you often say…" section — implemented end-to-end and
+  runtime-verified** (Figma node `2888:11656`, below Top Emotions).
+  - **One GPT-free call for both sections** — new nowli-ai `GET /conversation/call-insights/{id}`
+    returns the 5-category emotion breakdown **and** the canonical low-mood phrases in one request
+    (emotions from per-turn scores, phrases from regex — no LLM). The app calls it once at call end.
+  - **Persistence** — new `CallLowMoodSnapshot` (`Apps/voice_calls`, migration `0003`);
+    `end` stores the phrases. **Aggregation** — `Apps/insights` returns `low_mood_phrases`
+    (top 5 by frequency, dedup, alphabetical ties) + placeholder `low_mood_summary`/`low_mood_recommendation`.
+  - **Flutter** — `_buildWhenFeelingLow()`; **always-visible** section with a designed empty-state
+    (unlike Top Emotions, which hides), mood phrases left-aligned per Figma.
+  - Same TODOs as Top Emotions (AI "What this means"; organic voice-call test).
+
+- **First real Voice Call E2E — passed; two fixes.** With the emulator mic enabled, the full pipeline
+  ran on real speech (11 turns → AI replies → TTS → `CallEmotionSnapshot` + `CallLowMoodSnapshot` →
+  summary). **P0** ("AI silent") root cause was the emulator not routing host audio (`error_speech_timeout`),
+  not code — added a "check your microphone" hint (`ai_voice.dart`). **P3** ("Could not load summary")
+  fixed — `call_summary_screen.dart` falls back to default cards instead of the error screen. An audit
+  confirmed the Voice Call → Insights flow is dynamic + user-isolated (no mock data); test seeds removed.
+  Open for next: AI persona (companion vs chatbot), timeout UI to Figma (Figma rate-limited), barge-in.
 
 ## Completed this session (2026-07-03)
 
@@ -150,6 +193,12 @@ recommendations.
   per-zone data for both** (no approximation); Insights has a per-user **personal notes**
   system (add / list / delete, persisted locally via `PersonalNotesService`). Share buttons
   and the redundant This week / This month labels were commented out per product request.
+- **Insights "Top Emotions" + "When feeling low…"** (as of 2026-07-07): **done, runtime-verified**.
+  Both fed by real voice-call data via one GPT-free nowli-ai call (`/conversation/call-insights/{id}`)
+  → `CallEmotionSnapshot` / `CallLowMoodSnapshot` (Django) → weekly aggregation → the two Insights
+  cards (Figma 1:1). Top Emotions hides when empty; "When feeling low" is always shown with a
+  designed empty-state. Both "What this means" summaries are **temporary placeholders** pending a
+  real AI summary. See `insights-emotions.md`.
 - **Frontend** has a large, wired route table (~40 screens) covering onboarding, auth,
   quests, home, progress, profile, AI call, and settings.
 - **AI voice/emotion service** (`nowli-ai/`) implements the full companion pipeline —
@@ -193,11 +242,13 @@ recommendations.
    (lost on restart), and the service has **no tests and no dependency lockfile**. The
    port mismatch is resolved — `test17.py` and `nowli-ai/.env` now default to `:8001`
    (env-driven `HOST`/`PORT`), matching the Flutter client.
-8. **Conversation-analytics endpoints are unconsumed.** `nowli-ai` implements
-   `/conversation/emotion-breakdown` and `/conversation/low-mood-detect`, but the frontend
-   never calls them and nothing is persisted or aggregated. These are the intended basis for
-   the planned Insights "Top Emotions" + "When feeling low…" sections — see
-   `docs/insights-emotions.md` (investigated 2026-07-06, to build next).
+8. **Conversation-analytics: now consumed via a combined GPT-free endpoint.**
+   As of 2026-07-07, both Insights emotion sections are fed by a single new nowli-ai endpoint
+   `/conversation/call-insights/{id}` (5-category emotion breakdown **+** canonical low-mood
+   phrases, no LLM). The app fetches it at call end; Django persists both (`CallEmotionSnapshot`,
+   `CallLowMoodSnapshot`) and Insights aggregates them into **Top Emotions** and **When feeling
+   low…**. The original `/conversation/emotion-breakdown` and `/conversation/low-mood-detect`
+   endpoints still exist but are no longer the app's path. See `docs/insights-emotions.md`.
 
 ## Bottom line
 

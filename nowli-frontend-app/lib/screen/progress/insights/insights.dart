@@ -129,6 +129,8 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildAIInsights(),
+                  _buildTopEmotions(),
+                  _buildWhenFeelingLow(),
                   _buildWeeklyReflection(),
                   _buildMonthlyOverview(),
                   _buildMilestonesAndAchievements(),
@@ -136,6 +138,269 @@ class _InsightsScreenState extends State<InsightsScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // ── Top Emotions ──────────────────────────────────────────────────────────
+  // Dynamic layout (Figma "Frame 2147228872"): the dominant emotion gets a full-width
+  // card, the rest follow sorted descending in a 2-column grid. Hidden entirely when
+  // the user has no voice-call emotion data yet.
+  Widget _buildTopEmotions() {
+    final emotions = _insightsData!.weekly.topEmotions;
+    if (emotions.isEmpty) return const SizedBox.shrink();
+
+    final summary = _insightsData!.weekly.emotionsSummary;
+    final dominant = emotions.first;
+    final rest = emotions.length > 1 ? emotions.sublist(1) : <TopEmotion>[];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFCF1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFFFCB9B)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header: emoji cluster + title + subtitle (gap 16)
+            Image.asset(
+              'assets/images/top_emotions_emojis.png',
+              height: 40,
+              fit: BoxFit.fitHeight,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Top emotions',
+              style: GoogleFonts.workSans(
+                color: const Color(0xFF011F54),
+                fontSize: 32,
+                fontWeight: FontWeight.w800,
+                height: 1.20,
+                letterSpacing: -1,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Your most frequent emotions',
+              style: GoogleFonts.workSans(
+                color: const Color(0xFF4C586E),
+                fontSize: 16,
+                fontWeight: FontWeight.w400,
+                height: 1.40,
+                letterSpacing: -0.50,
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Emotion tiles: dominant full-width, then rows of two (gap 8)
+            SizedBox(width: double.infinity, child: _buildEmotionTile(dominant)),
+            for (int i = 0; i < rest.length; i += 2) ...[
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _buildEmotionTile(rest[i])),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: i + 1 < rest.length
+                        ? _buildEmotionTile(rest[i + 1])
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ],
+            // What this means (gap 24)
+            if (summary.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Text(
+                'What this means',
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF011F54),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  height: 1.40,
+                  letterSpacing: -0.90,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                summary,
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF4C586E),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                  height: 1.40,
+                  letterSpacing: -0.50,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmotionTile(TopEmotion emotion) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAE3CE).withValues(alpha: 0.32),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFCB9B)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            emotion.label,
+            style: GoogleFonts.workSans(
+              color: const Color(0xFF011F54),
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              height: 1.20,
+              letterSpacing: -0.50,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${emotion.pct.toStringAsFixed(0)}%',
+            style: GoogleFonts.workSans(
+              color: const Color(0xFF011F54),
+              fontSize: 16,
+              fontWeight: FontWeight.w400,
+              height: 1.40,
+              letterSpacing: -0.50,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── When feeling low ──────────────────────────────────────────────────────
+  // Figma "Frame 2147228875" — recurring low-mood phrases from voice calls. Unlike Top
+  // Emotions, this section is ALWAYS shown; when there are no detected phrases yet it shows
+  // a designed empty-state inside the blue box (not a technical message).
+  Widget _buildWhenFeelingLow() {
+    final weekly = _insightsData!.weekly;
+    final phrases = weekly.lowMoodPhrases;
+    final hasData = phrases.isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFCF1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFFFCB9B)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header: WaveTriangle icon + title (gap 16)
+            Image.asset(
+              'assets/images/when_feeling_low_icon.png',
+              height: 40,
+              width: 40,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'When feeling low, you often say things like:',
+              style: GoogleFonts.workSans(
+                color: const Color(0xFF011F54),
+                fontSize: 32,
+                fontWeight: FontWeight.w800,
+                height: 1.20,
+                letterSpacing: -1,
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Phrases box (bg #DFEFFF), centered — real phrases or the empty-state copy
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFDFEFFF),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: hasData
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (int i = 0; i < phrases.length; i++) ...[
+                          if (i > 0) const SizedBox(height: 12),
+                          Text(
+                            '“${phrases[i]}”',
+                            textAlign: TextAlign.left,
+                            style: GoogleFonts.workSans(
+                              color: const Color(0xFF011F54),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.50,
+                            ),
+                          ),
+                        ],
+                      ],
+                    )
+                  : Text(
+                      'Your most repeated phrases from voice chats will appear here once we pick them up.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.workSans(
+                        color: const Color(0xFF4C586E),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w400,
+                        height: 1.40,
+                        letterSpacing: -0.50,
+                      ),
+                    ),
+            ),
+            // What this means (only when there are phrases to interpret)
+            if (hasData && weekly.lowMoodSummary.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Text(
+                'What this means',
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF011F54),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  height: 1.40,
+                  letterSpacing: -0.90,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                weekly.lowMoodSummary,
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF4C586E),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                  height: 1.40,
+                  letterSpacing: -0.50,
+                ),
+              ),
+              if (weekly.lowMoodRecommendation.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  weekly.lowMoodRecommendation,
+                  style: GoogleFonts.workSans(
+                    color: const Color(0xFF011F54),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    height: 1.40,
+                    letterSpacing: -0.50,
+                  ),
+                ),
+              ],
+            ],
+          ],
         ),
       ),
     );

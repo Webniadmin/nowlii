@@ -43,14 +43,30 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
 
 ## P3 — Features
 
-- [ ] **Insights: "Top Emotions" + "When feeling low, you often say…" (AI).** Two new
-      Insights sections (between "Weekly reflection" and "Preferred quest types") fed by the
-      AI from call transcripts. **Investigated 2026-07-06:** the AI logic already exists in
-      `nowli-ai` (`/conversation/emotion-breakdown` + `/conversation/low-mood-detect`) but is
-      **not wired, not persisted, not surfaced**, and the emotion categories differ from the
-      requested happy/motivated/angry/tired/sad. Needs: call-end capture → Django persist →
-      Insights aggregate → frontend model + UI. Full plan + touch list in
-      **`docs/insights-emotions.md`**.
+- [x] **Insights: "Top Emotions" + "When feeling low, you often say…" (AI).** ✅ **Done 2026-07-07**
+      — both sections implemented end-to-end and runtime-verified on the emulator. Fed by one
+      GPT-free nowli-ai call (`/conversation/call-insights/{id}`) → `CallEmotionSnapshot` /
+      `CallLowMoodSnapshot` persist → weekly aggregate → Flutter cards (Figma 1:1). See
+      `daily-reports/2026-07-07.md` and `insights-emotions.md`. **Two follow-ups remain:**
+  - [ ] **Replace the temporary "What this means" copy** (BOTH sections) with a real AI-generated
+        summary (currently placeholder tables; `TODO(insights-emotions)` in
+        `Apps/insights/services.py`). Keep it off the Insights-load hot path or cache it.
+  - [ ] **Final organic voice-call test** — confirm an actual emulator call (not a seeded snapshot)
+        makes the app write both `CallEmotionSnapshot` and `CallLowMoodSnapshot`, and both cards
+        update.
+- [ ] **Voice Call companion — persona & UX (found in the 2026-07-07 real E2E).**
+  - **AI persona** — `nowli-ai/test17.py` `_FRIEND_PROMPTS` is a casual "close friend", not a Nowli
+    wellbeing/reflective companion (the `neutral` default even says "don't sound like a helper").
+    Reframe to supportive/reflective/empathetic + question-asking; pass the user's real companion
+    name instead of hardcoded "Aria" (`ai_voice.dart _createAiSession`). Prompt edit, high impact. **(P1-impact)**
+  - **Voice Call timeout UI to Figma** — implement frames Adding 2.5 min (`364-15969`), Added 2.5 min
+    (`364-15790`), Less than 1 minute (`364-15945`) in `ai_voice.dart` notice widgets. Was blocked by
+    the Figma MCP rate limit on 2026-07-07 — retry.
+  - **Barge-in / interrupt** — let the user interrupt the AI mid-TTS (STT listens during TTS → real
+    speech stops TTS → normal send). Guard echo/self-trigger; device test. `ai_voice.dart`.
+  - **"Your mood" weekly bars** (`insights.dart:980–1035`) — hardcoded demo data; needs a new per-day
+    backend mood source to become dynamic (new API field). Separate from Top Emotions.
+  - (Optional) Persist Call Summary (currently live-only from nowli-ai, lost on restart).
 - [ ] **Apple Sign-In (B2).** Fully built; disabled (returns 503) until `APPLE_CLIENT_IDS` and
       related keys are filled. Requires a paid Apple Developer account + `.p8` key + Service ID.
       See `docs/apple-login.md`.
