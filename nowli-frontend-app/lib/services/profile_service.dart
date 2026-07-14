@@ -7,18 +7,29 @@ class ProfileData {
   final String profileImage;
   final String avatarLogo;
   final String name;
+  final String nowliiName;
+  final String customNowliiName;
 
   ProfileData({
     required this.profileImage,
     required this.avatarLogo,
     required this.name,
+    this.nowliiName = '',
+    this.customNowliiName = '',
   });
+
+  /// The user's companion display name: their custom name if set, otherwise the
+  /// chosen predefined companion. Empty string if the profile has neither.
+  String get companionName =>
+      customNowliiName.isNotEmpty ? customNowliiName : nowliiName;
 
   factory ProfileData.fromJson(Map<String, dynamic> json) {
     return ProfileData(
       profileImage: json['profile_image'] ?? '',
       avatarLogo: json['avatar_logo'] ?? '',
       name: json['name'] ?? 'User',
+      nowliiName: json['nowlii_name'] ?? '',
+      customNowliiName: json['custom_nowlii_name'] ?? '',
     );
   }
 }

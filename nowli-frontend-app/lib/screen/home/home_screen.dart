@@ -14,8 +14,6 @@ import 'package:nowlii/themes/create_qutes.dart';
 import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/swipe_button_widget.dart';
-import 'package:nowlii/screen/home/swipe_to_talk/emotion_detection_helper.dart';
-import 'package:nowlii/screen/home/swipe_to_talk/voice_saved_popup.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/services/profile_service.dart';
 import 'package:nowlii/services/quest_service.dart';
@@ -54,7 +52,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _loadQuests();
     _loadAllQuestsForDates();
     _checkAndShowOnboarding();
-    _checkAndShowVoiceSavedPopup();
   }
 
   @override
@@ -171,28 +168,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _checkAndShowVoiceSavedPopup() async {
-    // Check if emotion detection was just completed
-    final prefs = await SharedPreferences.getInstance();
-    final shouldShowPopup = prefs.getBool('show_voice_saved_popup') ?? false;
-    
-    if (shouldShowPopup && mounted) {
-      // Clear the flag
-      await prefs.setBool('show_voice_saved_popup', false);
-      
-      // Show popup after a short delay
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) {
-              VoiceSavedPopup.show(context);
-            }
-          });
-        }
-      });
-    }
-  }
-
   Future<void> _checkAndShowOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     
@@ -228,17 +203,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             'Send a voice note to your bestie- me! Tell me what\'s on your mind, or how you\'re feeling before the session.',
         buttonText: 'Send a quick note',
         displayDuration: const Duration(seconds: 5),
-        onButtonPressed: () async {
-          // Same logic as swipe to talk
-          final needsEmotionDetection = await EmotionDetectionHelper.shouldShowEmotionDetection();
-          
-          if (needsEmotionDetection) {
-            // First time today - show emotion detection flow
-            context.push(AppRoutespath.emotionShareScreen);
-          } else {
-            // Already done today - go directly to AI voice calling screen
-            context.push(AppRoutespath.aiVoice);
-          }
+        onButtonPressed: () {
+          // Go straight to the 5-min AI voice call (emotion-share detour removed).
+          context.push(AppRoutespath.aiVoice);
         },
       ),
     );
@@ -1026,17 +993,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildSwipeButton() {
     return SwipeButtonWidget(
-      onSwipe: () async {
-        // Check if emotion detection is needed today
-        final needsEmotionDetection = await EmotionDetectionHelper.shouldShowEmotionDetection();
-        
-        if (needsEmotionDetection) {
-          // First time today - show emotion detection flow
-          context.push(AppRoutespath.emotionShareScreen);
-        } else {
-          // Already done today - go directly to AI voice calling screen
-          context.push(AppRoutespath.aiVoice);
-        }
+      companionName: (_profileData?.companionName.isNotEmpty ?? false)
+          ? _profileData!.companionName
+          : 'Fuzzy',
+      onSwipe: () {
+        // Go straight to the 5-min AI voice call (emotion-share detour removed).
+        context.push(AppRoutespath.aiVoice);
       },
     );
   }

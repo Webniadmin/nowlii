@@ -4,9 +4,6 @@ import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/screen/onboarding/energy_check_in_screen.dart';
 import 'package:nowlii/screen/onboarding/pop_speaking_loading.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/swipe_to_talk_loading.dart';
-import 'package:nowlii/screen/home/swipe_to_talk/popup_share_how_you_feel.dart';
-import 'package:nowlii/screen/home/swipe_to_talk/popup_speaking.dart';
-import 'package:nowlii/screen/home/swipe_to_talk/popup_processing.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/voice_check/popup_your_share_you.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/voice_check/popup_speaking.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/voice_check/popup_processing.dart';
@@ -284,19 +281,10 @@ class AppPages {
         path: AppRoutespath.swipeToTalkLoading,
         builder: (context, state) => const SwipeToTalkLoading(),
       ),
-      // Emotion Detection Flow (Daily once)
-      GoRoute(
-        path: AppRoutespath.emotionShareScreen,
-        builder: (context, state) => const EmotionShareScreen(),
-      ),
-      GoRoute(
-        path: AppRoutespath.emotionSpeakingScreen,
-        builder: (context, state) => const EmotionSpeakingScreen(),
-      ),
-      GoRoute(
-        path: AppRoutespath.emotionProcessingScreen,
-        builder: (context, state) => const EmotionProcessingScreen(),
-      ),
+      // Emotion Detection Flow (Daily once) — REMOVED from the swipe→call path.
+      // The "share how you feel / voice note" detour was cut so swipe goes straight
+      // to the 5-min AI call. The screens are preserved (unreferenced) in
+      // lib/experimental/emotion_share_flow/. See docs/cleanup-log.md.
       // Old voice check screens (for calling)
       GoRoute(
         path: AppRoutespath.poupYourShareYou,

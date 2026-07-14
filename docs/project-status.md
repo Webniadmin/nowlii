@@ -1,6 +1,6 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-07-07_
+_Last reviewed: 2026-07-10_
 
 ## What the app does
 
@@ -10,6 +10,31 @@ call/alarm/repeat flags), track completion streaks, view progress analytics, and
 interact with a personalized companion (Milo, Bloop, Gumo, etc.) via text and **voice
 calls** — including AI-generated subtask suggestions, weekly reflections, and quest
 recommendations.
+
+## Completed this session (2026-07-10)
+
+_Full detail in `daily-reports/2026-07-10.md`; feature detail in `three-features-plan.md`._
+
+- **Fluid voice conversation (architecture change).** Per-message emotion detection (a gpt-4o call
+  before every reply, ~1.5–4s of lag) was **removed from the live path**; emotions are now extracted
+  **once at call end over the whole transcript** (`_compute_top_emotions_from_transcript`, model via
+  `EMOTION_MODEL` = gpt-4o-mini). First reply word dropped to **~0.9–1.4s**. Old per-message code is
+  **commented, not deleted**. Feeds call-insights (Top Emotions / When-feeling-low) + the summary.
+- **Profanity / content filter** in nowli-ai `chat-stream` (local word list + OpenAI Moderation),
+  **excludes distress/self-harm**; warns via an SSE `warning` event → app notice + spoken TTS.
+- **Barge-in** (interrupt the AI by talking) implemented; needs **headphones on the emulator / a real
+  phone (AEC)** or the mic echoes the AI. **Tap-to-interrupt** fallback added. Mic start/stop earcon
+  ("bip bip") still open (needs native mute).
+- **AI persona** rewritten to a warm, emotionally-intelligent **wellness companion** (the only prompt
+  that runs now that emotion is always "neutral").
+- **After-call summary** confirmed dynamic; static fallbacks made honest; new **"Emotions in this
+  chat"** section on the summary screen.
+- **Swipe-to-talk** goes straight to the 5-min call (voice-note mock detour relocated to
+  `lib/experimental/`); **dynamic companion name** on that path; call-screen control-row width fix.
+- **Apple Sign-In (Android web flow)**: backend enabled + verified; redirect endpoint + manifest +
+  cloudflared tested — Apple auth + backend 307 work, but the `intent://` bounce into the app didn't
+  complete (deferred). **Must swap the temp trycloudflare URL for a permanent one before any
+  preview/device build** (see `apple-login.md`).
 
 ## Completed this session (2026-07-07)
 

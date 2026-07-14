@@ -12,6 +12,9 @@ class CallSummaryResponse {
   final String dominantEmotion;
   final Map<String, int> emotionCounts;
   final List<EmotionTimelineItem> emotionTimeline;
+  // 5-category Top-Emotion split for this call (happy/motivated/angry/tired/sad, sums ~100),
+  // extracted from the transcript by the summary GPT call.
+  final Map<String, double> topEmotions;
   final double processingMs;
 
   CallSummaryResponse({
@@ -28,6 +31,7 @@ class CallSummaryResponse {
     required this.dominantEmotion,
     required this.emotionCounts,
     required this.emotionTimeline,
+    this.topEmotions = const {},
     required this.processingMs,
   });
 
@@ -49,6 +53,10 @@ class CallSummaryResponse {
               ?.map((item) => EmotionTimelineItem.fromJson(item))
               .toList() ??
           [],
+      topEmotions: (json['top_emotions'] as Map?)?.map(
+            (key, value) => MapEntry(key.toString(), (value as num).toDouble()),
+          ) ??
+          {},
       processingMs: (json['processing_ms'] ?? 0).toDouble(),
     );
   }

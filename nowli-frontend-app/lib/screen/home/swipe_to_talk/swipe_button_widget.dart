@@ -5,7 +5,15 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 class SwipeButtonWidget extends StatefulWidget {
   final VoidCallback onSwipe;
 
-  const SwipeButtonWidget({super.key, required this.onSwipe});
+  /// The user's companion (Nowlii) display name, shown in the label.
+  /// Defaults to 'Fuzzy' when the profile hasn't loaded / has no name yet.
+  final String companionName;
+
+  const SwipeButtonWidget({
+    super.key,
+    required this.onSwipe,
+    this.companionName = 'Fuzzy',
+  });
 
   @override
   State<SwipeButtonWidget> createState() => _SwipeButtonWidgetState();
@@ -50,7 +58,7 @@ class _SwipeButtonWidgetState extends State<SwipeButtonWidget> {
                 child: Padding(
                   padding: EdgeInsets.only(left: _knobSize),
                   child: Text(
-                    'Swipe to talk to Fuzzy',
+                    'Swipe to talk to ${widget.companionName}',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.workSans(
                       color: const Color(0xFF011F54),

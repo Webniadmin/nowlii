@@ -106,6 +106,7 @@ enum StreamEventType {
   emotion,
   word,
   done,
+  warning,
 }
 
 class StreamEvent {

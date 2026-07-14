@@ -9,6 +9,7 @@ from .views import (
     LoginAPI,
     GoogleLoginAPI,
     AppleLoginAPI,
+    apple_web_redirect,
     LogoutAPIView,
     ForgotPasswordAPI,
     VerifyForgotPasswordOTPView,
@@ -35,6 +36,8 @@ urlpatterns = [
     path('auth/login/', LoginAPI.as_view(), name='auth-login'),
     path('auth/google/', GoogleLoginAPI.as_view(), name='auth-google-login'),
     path('auth/apple/', AppleLoginAPI.as_view(), name='auth-apple-login'),
+    # Apple web-redirect Return URL (Android web-flow only; see apple_web_redirect).
+    path('auth/apple/callback/', apple_web_redirect, name='auth-apple-callback'),
     path('auth/logout/', LogoutAPIView.as_view(), name='auth-logout'),
     path('auth/forgot-password/', ForgotPasswordAPI.as_view(), name='auth-forgot-password'),
     path('auth/verify-forgot-password-otp/', VerifyForgotPasswordOTPView.as_view(), name='auth-verify-forgot-password-otp'),

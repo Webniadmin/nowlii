@@ -124,13 +124,14 @@ Be warm and patient. Never make them feel dumb for not understanding.
 Remember everything from this conversation and build on it naturally.
 NEVER say you are an AI. You are just {system_name}, their friend.""",
 
-        "neutral": """You are {system_name}, a warm and genuine close friend of {user_name}.
-Have a real, natural conversation. Be curious about their life, their thoughts, their day.
-Don't sound like a helper or an assistant — sound like someone who genuinely enjoys talking with them.
-React naturally, share in their thoughts, ask follow-up questions, be present.
-Use casual, warm, human language at all times.
-Remember everything from this conversation and reference it naturally.
-NEVER say you are an AI. You are just {system_name}, their friend.""",
+        "neutral": """You are {system_name}, {user_name}'s warm, caring companion — someone who genuinely looks out for how they're doing.
+Have a real, natural conversation. Listen closely and make {user_name} feel truly heard and never alone.
+Read how they're feeling from what they say and meet them there: celebrate the good moments with them, gently sit with them when they're down or stressed (no rushing to fix, no empty "it'll be fine"), and steady them when they feel overwhelmed.
+Reflect back what you hear with real empathy before anything else. Ask one caring, curious follow-up at a time.
+When it feels natural, gently encourage them and connect to their day, their small wins, and what they're working toward — but their feelings always come first, never a lecture.
+Be warm, human, and present — someone who cares, not an assistant or a coach.
+Remember everything from this conversation and bring it up naturally.
+NEVER say you are an AI. You are just {system_name}, here for {user_name}.""",
     },
 
     "de": {
@@ -161,9 +162,13 @@ Antworte IMMER auf Deutsch. Sage NIEMALS, dass du eine KI bist. Du bist einfach 
 Gerade fühlt sich {user_name} verwirrt oder verloren. Sei ihre Klarheit.
 Antworte IMMER auf Deutsch. Sage NIEMALS, dass du eine KI bist. Du bist einfach {system_name}.""",
 
-        "neutral": """Du bist {system_name}, ein warmer und aufrichtiger enger Freund von {user_name}.
-Führe ein echtes, natürliches Gespräch. Sei neugierig auf ihr Leben, ihre Gedanken, ihren Tag.
-Antworte IMMER auf Deutsch. Sage NIEMALS, dass du eine KI bist. Du bist einfach {system_name}.""",
+        "neutral": """Du bist {system_name}, {user_name}s warme, fürsorgliche Begleitung — jemand, dem es wirklich wichtig ist, wie es {user_name} geht.
+Führe ein echtes, natürliches Gespräch. Höre genau zu und gib {user_name} das Gefühl, wirklich gehört und nie allein zu sein.
+Erkenne aus dem, was sie sagen, wie sie sich fühlen, und triff sie genau dort: freu dich mit ihnen über schöne Momente, sei sanft für sie da, wenn es ihnen schlecht geht oder sie gestresst sind (nichts überstürzt reparieren, keine leeren "wird schon"), und gib ihnen Halt, wenn ihnen alles zu viel wird.
+Spiegle zuerst mit echter Empathie zurück, was du hörst. Stelle eine einfühlsame, neugierige Nachfrage nach der anderen.
+Wenn es sich natürlich anfühlt, ermutige sie sanft und knüpfe an ihren Tag, ihre kleinen Erfolge und ihre Ziele an — aber ihre Gefühle kommen immer zuerst, keine Belehrungen.
+Sei warm, menschlich und präsent. Antworte IMMER auf Deutsch.
+Erinnere dich an alles aus diesem Gespräch. Sage NIEMALS, dass du eine KI bist. Du bist einfach {system_name}, für {user_name} da.""",
     },
 
     "es": {
@@ -190,9 +195,13 @@ Responde SIEMPRE en español. NUNCA digas que eres una IA. Eres simplemente {sys
 Ahora mismo {user_name} se siente confundido. Sé su claridad.
 Responde SIEMPRE en español. NUNCA digas que eres una IA. Eres simplemente {system_name}.""",
 
-        "neutral": """Eres {system_name}, un amigo cercano, cálido y genuino de {user_name}.
-Ten una conversación real y natural. Muestra curiosidad por su vida.
-Responde SIEMPRE en español. NUNCA digas que eres una IA. Eres simplemente {system_name}.""",
+        "neutral": """Eres {system_name}, el/la compañero/a cálido/a y atento/a de {user_name} — alguien a quien de verdad le importa cómo está {user_name}.
+Ten una conversación real y natural. Escucha con atención y haz que {user_name} se sienta escuchado/a y nunca solo/a.
+Percibe cómo se siente por lo que dice y acompáñalo/a ahí: celebra los buenos momentos, quédate con calma a su lado cuando esté triste o estresado/a (sin prisa por arreglar nada, sin "todo estará bien" vacíos), y dale calma cuando se sienta abrumado/a.
+Refleja primero con empatía real lo que escuchas. Haz una pregunta cercana y curiosa cada vez.
+Cuando sea natural, anímalo/a con suavidad y conecta con su día, sus pequeños logros y sus metas — pero sus sentimientos van siempre primero, sin sermones.
+Sé cálido/a, humano/a y presente. Responde SIEMPRE en español.
+Recuerda todo de esta conversación. NUNCA digas que eres una IA. Eres simplemente {system_name}, aquí para {user_name}.""",
     },
 }
 
@@ -229,6 +238,11 @@ def _resolve_emotion_key(emotion: str) -> str:
 
 
 def _build_system_prompt(emotion: str, user_name: str, system_name: str, language: str) -> str:
+    # NOTE (2026-07-10): since per-message emotion detection was moved to end-of-call, `emotion`
+    # is always "neutral" here, so the "neutral" persona is what actually runs. That prompt was
+    # rewritten to be an emotionally-intelligent warm wellness companion that adapts to any mood
+    # on its own. The emotion-specific templates (happy/sad/angry/anxious/confused) are currently
+    # UNUSED — kept for reference / if per-message detection is ever re-enabled.
     lang         = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
     emotion_key  = _resolve_emotion_key(emotion)
     lang_prompts = _FRIEND_PROMPTS.get(lang, _FRIEND_PROMPTS["en"])
@@ -281,22 +295,25 @@ _SUMMARY_KEYS: dict[str, dict[str, str]] = {
 }
 
 _SUMMARY_FALLBACKS: dict[str, dict[str, str]] = {
+    # HONEST fallbacks: used only when a real conversation happened but the GPT
+    # summary call/parse failed. They do NOT fabricate a specific mood/topic/arc —
+    # they own the miss — so a failed summary never masquerades as a real insight.
     "en": {
-        "mood_detected": "You sounded real and open throughout our whole chat.",
-        "focus_topic":   "We talked a lot about what's been on your mind lately.",
-        "energy_shift":  "You started out a bit guarded but opened up as we talked.",
+        "mood_detected": "I had a little trouble putting your mood into words this time.",
+        "focus_topic":   "I couldn't quite capture what we focused on, but I'm glad we talked.",
+        "energy_shift":  "I couldn't read your energy shift this time.",
         "next_step":     "Take a moment for yourself today — you deserve it!",
     },
     "de": {
-        "mood_detected": "Du klangst während unserem ganzen Gespräch offen und ehrlich.",
-        "focus_topic":   "Wir haben viel über das gesprochen, was dich gerade beschäftigt.",
-        "energy_shift":  "Du hast angefangen etwas zurückhaltend, aber dann hat sich das Gespräch geöffnet.",
+        "mood_detected": "Ich konnte deine Stimmung diesmal nicht ganz in Worte fassen.",
+        "focus_topic":   "Ich konnte nicht genau festhalten, worum es ging, aber schön, dass wir geredet haben.",
+        "energy_shift":  "Ich konnte deinen Energiewechsel diesmal nicht ablesen.",
         "next_step":     "Gönn dir heute einen Moment für dich — du hast es verdient!",
     },
     "es": {
-        "mood_detected": "Sonaste abierto y genuino durante toda nuestra conversación.",
-        "focus_topic":   "Hablamos mucho sobre lo que tienes en mente últimamente.",
-        "energy_shift":  "Empezaste un poco guardado pero te fuiste abriendo.",
+        "mood_detected": "Esta vez no logré captar bien tu estado de ánimo.",
+        "focus_topic":   "No pude captar del todo de qué hablamos, pero me alegra que hayamos charlado.",
+        "energy_shift":  "Esta vez no pude interpretar tu cambio de energía.",
         "next_step":     "Tómate un momento para ti hoy — ¡te lo mereces!",
     },
 }
@@ -316,14 +333,16 @@ def _build_summary_prompt(session: "Session") -> str:
     return (
         f"Here is the full turn-by-turn log:\n{turns_text}\n\n"
         f"First emotion: {first_emotion}\nLast emotion: {last_emotion}\nFrequency: {counts}\n\n"
-        "Return ONLY a JSON object with exactly these 4 keys:\n"
+        "Return ONLY a JSON object with exactly these 5 keys:\n"
         "{\n"
         f'  "mood_detected": "<{keys["mood_detected"]}>",\n'
         f'  "focus_topic":   "<{keys["focus_topic"]}>",\n'
         f'  "energy_shift":  "<{keys["energy_shift"]}>",\n'
-        f'  "next_step":     "<{keys["next_step"]}>"\n'
+        f'  "next_step":     "<{keys["next_step"]}>",\n'
+        '  "top_emotions":  {"happy": <n>, "motivated": <n>, "angry": <n>, "tired": <n>, "sad": <n>}\n'
         "}\n"
-        "No markdown. No extra keys. No text outside the JSON."
+        "The five top_emotions numbers estimate the user's overall emotional split across the "
+        "whole chat and MUST sum to 100. No markdown. No extra keys. No text outside the JSON."
     )
 
 
@@ -453,6 +472,9 @@ class MoodSummaryResponse(BaseModel):
     focus_topic: str; energy_shift: str; next_step: str
     dominant_emotion: str; emotion_counts: dict
     emotion_timeline: list[dict]; processing_ms: float
+    # 5-category Top-Emotion split for this call (happy/motivated/angry/tired/sad, sums ~100).
+    # Extracted from the transcript by the same summary GPT call (per-message detection removed).
+    top_emotions: Dict[str, float] = {}
 
 
 class EmotionBreakdownResponse(BaseModel):
@@ -883,6 +905,67 @@ async def detect_emotion(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# CONTENT MODERATION  (block abusive / inappropriate input — NOT emotional distress)
+# ══════════════════════════════════════════════════════════════════════════════
+# Two layers: (1) a fast local profanity word list (plain swear words that the OpenAI
+# Moderation API does NOT flag on their own), and (2) OpenAI omni-moderation for
+# categorical abuse (harassment / hate / sexual — multilingual, obfuscation-aware).
+# We DELIBERATELY do NOT block self-harm / violence / distress: this is a wellness app,
+# so a struggling user must get a supportive reply, never a "you can't say that".
+# Fails OPEN — an API error never blocks a message.
+
+_PROFANITY_WORDS: frozenset = frozenset({
+    # English
+    "fuck", "fucks", "fucking", "fucked", "fucker", "motherfucker", "shit", "shits",
+    "shitty", "bullshit", "bitch", "bitches", "bastard", "asshole", "assholes", "arsehole",
+    "dick", "dickhead", "prick", "cunt", "twat", "wanker", "slut", "whore", "cock",
+    "pussy", "faggot", "fag", "nigger", "retard", "douche", "douchebag",
+    # Serbian / ex-yu (common)
+    "jebem", "jebi", "jebo", "jebote", "jebiga", "jebeni", "pizda", "pizdo", "pizdu",
+    "kurac", "kurca", "kurcu", "picka", "picku", "picko", "govno", "govna", "seronja",
+    "kreten", "peder", "pederu", "kucko", "drolja", "gadura", "shupak", "šupak",
+})
+
+# OpenAI Moderation categories we treat as BLOCK-worthy. Excludes self_harm* and
+# violence* on purpose (distress / venting → supportive response, not a block).
+_BLOCK_MODERATION_CATEGORIES = (
+    "harassment", "harassment_threatening",
+    "hate", "hate_threatening",
+    "sexual", "sexual_minors",
+)
+
+_MODERATION_WARNING = {
+    "en": "Let's keep our chat kind and respectful. I'm still here for you — what's really on your mind?",
+    "de": "Lass uns freundlich und respektvoll bleiben. Ich bin für dich da — was beschäftigt dich wirklich?",
+    "es": "Mantengamos la conversación amable y respetuosa. Sigo aquí para ti — ¿qué te preocupa de verdad?",
+}
+
+_MOD_WORD_RE = _re.compile(r"[^\W\d_]+", _re.UNICODE)
+
+
+def _contains_profanity(text: str) -> bool:
+    return any(tok.lower() in _PROFANITY_WORDS for tok in _MOD_WORD_RE.findall(text))
+
+
+async def _is_message_blocked(text: str) -> bool:
+    """True if the message is abusive/inappropriate and should be blocked. Fails open."""
+    if _contains_profanity(text):
+        return True
+    try:
+        client = _get_openai_client()
+        resp = await client.moderations.create(model="omni-moderation-latest", input=text)
+        cats = resp.results[0].categories
+        return any(getattr(cats, name, False) for name in _BLOCK_MODERATION_CATEGORIES)
+    except Exception as exc:  # never block on an API/parse error
+        logger.warning("moderation check failed (failing open): %s", exc)
+        return False
+
+
+def _moderation_warning(language: str) -> str:
+    return _MODERATION_WARNING.get(language, _MODERATION_WARNING["en"])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # API 2 — POST /api/v1/chat-stream  (SSE)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -892,12 +975,42 @@ async def chat_stream(request: ChatRequest):
         raise HTTPException(status_code=422, detail="message cannot be empty")
 
     session = _get_session(request.session_id)
-    current_emotion, emotion_scores = await _detect_emotion_from_text(request.message)
-    emotion_key = _resolve_emotion_key(current_emotion)
 
-    logger.info("chat-stream | session=%s | user=%s | lang=%s | turn=%d | emotion=%s(%s) | msg=%.60s",
+    # Content moderation: block abusive/inappropriate input BEFORE it reaches the emotion
+    # model, the chat model, or the persisted turn history. Emotional distress is NOT
+    # blocked (see _is_message_blocked). On a block we emit a single 'warning' SSE frame
+    # (the app shows a notice + speaks it) then 'done', and skip the model entirely.
+    if await _is_message_blocked(request.message):
+        logger.info("chat-stream | session=%s | BLOCKED inappropriate input | msg=%.60s",
+                    request.session_id, request.message)
+        warning_text = _moderation_warning(session.language)
+
+        async def warn_stream() -> AsyncIterator[str]:
+            yield sse_event("warning", warning_text)
+            yield sse_event("done", _json.dumps({
+                "turn": len(session.turns), "words": 0,
+                "language": session.language, "emotion_key": "neutral",
+            }))
+
+        return StreamingResponse(warn_stream(), media_type="text/event-stream", headers={
+            "Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive",
+        })
+
+    # ── ARCH CHANGE 2026-07-10: per-message emotion detection REMOVED from the live path ──
+    # It was a full GPT call on EVERY user message and blocked the reply for ~1.4–4s, which
+    # made the conversation feel laggy. Emotions are now extracted ONCE at call end over the
+    # whole transcript (see _compute_top_emotions_from_transcript, used by call-insights and
+    # the summary). During the call we pass a neutral placeholder so the reply starts right
+    # after moderation. The old per-message detection is kept below (commented) for reference
+    # while we refactor — do NOT delete.
+    #   current_emotion, emotion_scores = await _detect_emotion_from_text(request.message)
+    #   emotion_key = _resolve_emotion_key(current_emotion)
+    current_emotion, emotion_scores = "neutral", []
+    emotion_key = "neutral"
+
+    logger.info("chat-stream | session=%s | user=%s | lang=%s | turn=%d | (emotion at end-of-call) | msg=%.60s",
                 request.session_id, session.user_name, session.language,
-                len(session.turns) + 1, current_emotion, emotion_key, request.message)
+                len(session.turns) + 1, request.message)
 
     turn = session.add_turn(request.message, current_emotion, emotion_scores)
     system_prompt = _build_system_prompt(current_emotion, session.user_name, session.system_name, session.language)
@@ -955,14 +1068,27 @@ async def chat_summary(request: SummaryRequest):
                 request.session_id, session.user_name, session.language,
                 len(session.turns), session.overall_dominant(), elapsed_ms)
 
+    # Normalise the 5-category emotion split the summary GPT returned (this is now the source
+    # of emotions for the summary — per-message detection was removed). Sums to 100; falls back
+    # to a neutral happy-100 split if the GPT call failed or omitted it.
+    _raw_te = gpt_data.get("top_emotions") or {}
+    _te = {c: max(0.0, float(_raw_te.get(c, 0) or 0)) for c in _TOP_EMOTIONS}
+    _te_total = sum(_te.values())
+    top_emotions = ({c: round(v / _te_total * 100, 1) for c, v in _te.items()}
+                    if _te_total > 0 else {**{c: 0.0 for c in _TOP_EMOTIONS}, "happy": 100.0})
+    dominant = max(top_emotions, key=top_emotions.get)
+
     return MoodSummaryResponse(
         session_id=request.session_id, user_name=session.user_name,
         system_name=session.system_name, language=session.language,
         language_name=SUPPORTED_LANGUAGES[session.language], total_turns=len(session.turns),
         mood_detected=gpt_data.get("mood_detected", ""), focus_topic=gpt_data.get("focus_topic", ""),
         energy_shift=gpt_data.get("energy_shift", ""), next_step=gpt_data.get("next_step", ""),
-        dominant_emotion=session.overall_dominant(), emotion_counts=session.dominant_emotion_counts(),
-        emotion_timeline=session.emotion_timeline(), processing_ms=round(elapsed_ms, 1),
+        # dominant_emotion now comes from the transcript-based top_emotions (per-turn was removed):
+        #   dominant_emotion=session.overall_dominant(),
+        dominant_emotion=dominant, emotion_counts=session.dominant_emotion_counts(),
+        emotion_timeline=session.emotion_timeline(), top_emotions=top_emotions,
+        processing_ms=round(elapsed_ms, 1),
     )
 
 
@@ -1066,6 +1192,46 @@ def _compute_top_emotions_from_turns(session: Session) -> Dict[str, float]:
             totals[_map_to_top_emotion(turn.dominant_emotion)] += 1.0
     total = sum(totals.values()) or 1.0
     return {c: round((v / total) * 100, 1) for c, v in totals.items()}
+
+
+# ── ARCH CHANGE 2026-07-10: emotions extracted ONCE at call end over the whole transcript ──
+# Per-message emotion detection was removed from chat-stream (it blocked every reply). This
+# single GPT pass replaces the per-turn aggregation as the source for Top Emotions + summary.
+_EMOTION_MODEL = os.getenv("EMOTION_MODEL", "gpt-4o-mini")  # fast/cheap; classification only
+
+_TOP_EMOTIONS_TRANSCRIPT_PROMPT = (
+    "You are analysing a supportive conversation. Based on the USER's messages below, "
+    "estimate how their OVERALL emotional state across the whole chat splits between "
+    "EXACTLY these five categories: happy, motivated, angry, tired, sad. Return ONLY a JSON "
+    "object mapping each of the five categories to a number; the five numbers MUST sum to "
+    "100. No prose, no code fences.\n\nConversation:\n{convo}"
+)
+
+
+async def _compute_top_emotions_from_transcript(session: "Session") -> Dict[str, float]:
+    """5-category Top-Emotion split via ONE GPT pass over the whole transcript.
+    Replaces the per-turn aggregation now that per-message detection is gone. Falls back to
+    a neutral 'happy 100' split on empty input or any error."""
+    convo = _build_conversation_text(session)
+    if not convo.strip():
+        return {**{c: 0.0 for c in _TOP_EMOTIONS}, "happy": 100.0}
+    try:
+        client = _get_openai_client()
+        resp = await client.chat.completions.create(
+            model=_EMOTION_MODEL,
+            messages=[{"role": "user",
+                       "content": _TOP_EMOTIONS_TRANSCRIPT_PROMPT.format(convo=convo)}],
+            max_tokens=120, temperature=0.0,
+        )
+        raw = (resp.choices[0].message.content or "{}").strip()
+        raw = _re.sub(r"```(?:json)?|```", "", raw).strip()
+        data = _json.loads(raw)
+        vals = {c: max(0.0, float(data.get(c, 0) or 0)) for c in _TOP_EMOTIONS}
+        total = sum(vals.values()) or 1.0
+        return {c: round(v / total * 100, 1) for c, v in vals.items()}
+    except Exception as exc:
+        logger.warning("top-emotions transcript extraction failed (falling back): %s", exc)
+        return {**{c: 0.0 for c in _TOP_EMOTIONS}, "happy": 100.0}
 
 
 def _build_conversation_text(session: Session) -> str:
@@ -1405,7 +1571,10 @@ async def conversation_call_insights(session_id: str):
         raise HTTPException(status_code=422, detail="No turns recorded. Have a conversation first.")
 
     t0         = time.perf_counter()
-    breakdown  = _compute_top_emotions_from_turns(session)
+    # ARCH CHANGE 2026-07-10: emotions now come from ONE GPT pass over the transcript
+    # (per-message detection was removed). Old per-turn aggregation kept for reference:
+    #   breakdown = _compute_top_emotions_from_turns(session)
+    breakdown  = await _compute_top_emotions_from_transcript(session)
     dominant   = max(breakdown, key=breakdown.get)
     phrases    = _extract_canonical_low_mood_phrases(session)
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)

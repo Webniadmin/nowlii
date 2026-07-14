@@ -191,6 +191,14 @@ class AiCallService {
                     type: StreamEventType.word,
                     data: eventData,
                   );
+                } else if (eventType == 'warning') {
+                  // Content moderation blocked the user's message; the server sends
+                  // this instead of a reply (followed by 'done', no 'word' events).
+                  print('⚠️ Moderation warning: $eventData');
+                  yield StreamEvent(
+                    type: StreamEventType.warning,
+                    data: eventData,
+                  );
                 } else if (eventType == 'done') {
                   try {
                     final doneData = DoneEventData.fromJson(jsonDecode(eventData));

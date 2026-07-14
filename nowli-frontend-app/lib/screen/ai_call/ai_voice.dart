@@ -91,7 +91,18 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   // TTS Queue Processing
   final List<String> _ttsQueue = [];
   bool _isSpeaking = false;
-  
+
+  // Barge-in: let the user interrupt the AI mid-reply for a fluid conversation.
+  // The mic stays open while the AI speaks; real user speech stops the AI.
+  // Voice barge-in: the mic stays open while the AI speaks; a real user phrase stops it.
+  // REQUIRES hardware echo cancellation (a real phone) OR headphones on the emulator —
+  // otherwise the mic hears the AI's own TTS and the AI interrupts itself. (Tap-to-
+  // interrupt in _toggleListening works regardless, as a manual fallback.)
+  static const bool _bargeInEnabled = true;
+  // Ignore 1-word blips (echo / noise / TTS tail); require a short real phrase.
+  static const int _bargeInMinWords = 2;
+  bool _bargeInterrupt = false; // set when the user interrupts; breaks the SSE loop
+
   // Live audio streaming
   final AudioStreamService _audioStreamService = AudioStreamService();
   StreamSubscription<String>? _audioStreamSubscription;
@@ -412,6 +423,21 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     }
   }
 
+  /// Barge-in: the user started talking while the AI was speaking/streaming.
+  /// Stop the AI immediately (TTS + any in-flight reply) so the user is heard.
+  Future<void> _interruptAiForBargeIn() async {
+    print('✋ Barge-in: user interrupted the AI');
+    _bargeInterrupt = true;        // breaks the SSE loop in _sendMessageToAi
+    _isHandlingAiResponse = false; // let the incoming user turn through
+    _ttsQueue.clear();
+    _isSpeaking = false;
+    try {
+      if (!kIsWeb) await _flutterTts.stop();
+    } catch (e) {
+      print('Error stopping TTS on barge-in: $e');
+    }
+  }
+
   Future<void> _processTtsQueue() async {
     if (_ttsQueue.isEmpty) {
       _isSpeaking = false;
@@ -430,7 +456,13 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     
     _isSpeaking = true;
     final text = _ttsQueue.removeAt(0);
-    
+
+    // Barge-in: keep the mic open while the AI speaks so the user can interrupt.
+    if (_bargeInEnabled && !_isListening && !_isMuted && !_isPaused &&
+        _currentSession != null && !_questCompleted && mounted) {
+      _startListening();
+    }
+
     try {
       if (kIsWeb) {
         print('🔊 [Web] Speaking: $text');
@@ -463,12 +495,26 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     return 'there';
   }
 
+  /// Resolve the companion (Nowlii) name for the AI session from the stored profile —
+  /// custom name if set, else the chosen predefined companion. Falls back to 'Fuzzy'
+  /// so the AI always has a name to introduce itself with.
+  Future<String> _resolveCompanionName() async {
+    final storage = StorageService();
+    final profile = await storage.getProfileData();
+    final custom = profile?.customNowliiName?.trim() ?? '';
+    if (custom.isNotEmpty) return custom;
+    final predefined = profile?.nowliiName?.trim() ?? '';
+    if (predefined.isNotEmpty) return predefined;
+    return 'Fuzzy';
+  }
+
   Future<void> _createAiSession() async {
     try {
       final userName = await _resolveUserName();
+      final companionName = await _resolveCompanionName();
       final session = await _aiCallService.createSession(
         userName: userName,
-        systemName: 'Aria',
+        systemName: companionName,
         language: 'en',
       );
       
@@ -492,13 +538,15 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   
   Future<void> _startListening() async {
     if (_isMuted) return;
-    
-    // Don't start listening if TTS is still speaking
-    if (_isSpeaking) {
+
+    // Barge-in: we intentionally DO NOT bail out while the AI is speaking — the mic
+    // must stay open during TTS so the user can interrupt. (Previously this returned
+    // early when _isSpeaking, which made barge-in impossible.)
+    if (!_bargeInEnabled && _isSpeaking) {
       print('⏸️ TTS is speaking, waiting to start listening...');
       return;
     }
-    
+
     // Don't start if already listening
     if (_isListening) {
       print('⚠️ Already listening, skipping...');
@@ -560,7 +608,22 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
                 _liveTranscription = recognizedText;
               });
             }
-            
+
+            // Barge-in: the user started talking while the AI is speaking or its reply
+            // is still streaming. Require a short real phrase (>= _bargeInMinWords) so a
+            // single-word blip / echo / TTS tail doesn't cut the AI off. Stops the AI now;
+            // the final-result branch below then sends this turn normally.
+            final wordCount = recognizedText
+                .split(RegExp(r'\s+'))
+                .where((w) => w.isNotEmpty)
+                .length;
+            if (_bargeInEnabled &&
+                (_isSpeaking || _isHandlingAiResponse) &&
+                wordCount >= _bargeInMinWords &&
+                !_bargeInterrupt) {
+              _interruptAiForBargeIn();
+            }
+
             // If this is a final result and we have text, send it immediately
             if (result.finalResult && recognizedText.isNotEmpty && !_isHandlingAiResponse) {
               print('✅ Final result detected, sending immediately');
@@ -635,6 +698,17 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   }
   
   void _toggleListening() {
+    // Tap-to-interrupt: if the AI is speaking or its reply is still streaming, a tap on
+    // the mic stops it and opens the mic so the user can jump in. This is the manual
+    // alternative to voice barge-in (which needs hardware echo cancellation) — it works
+    // everywhere because the mic only opens AFTER the AI is silenced, so there's no echo.
+    if (_isSpeaking || _isHandlingAiResponse) {
+      print('✋ Tap-to-interrupt: stopping the AI and listening');
+      _interruptAiForBargeIn().then((_) {
+        if (mounted) _startListening();
+      });
+      return;
+    }
     if (_isListening) {
       _stopListening();
     } else {
@@ -728,9 +802,10 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   
   Future<void> _sendMessageToAi(String message) async {
     if (message.isEmpty || _isHandlingAiResponse) return;
-    
+
     _isHandlingAiResponse = true;
-    
+    _bargeInterrupt = false; // fresh turn — clear any prior barge-in flag
+
     // Stop listening immediately to avoid feedback
     await _stopListening();
     
@@ -776,6 +851,11 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
         message: message,
         sessionId: _currentSession!.sessionId,
       )) {
+        // Barge-in: the user interrupted mid-stream — stop consuming this reply.
+        if (_bargeInterrupt) {
+          print('✋ Barge-in during stream — abandoning this reply');
+          break;
+        }
         if (event.type == StreamEventType.emotion) {
           if (mounted) {
               setState(() {
@@ -796,6 +876,24 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
              _speakText(currentSentence);
              currentSentence = '';
           }
+        } else if (event.type == StreamEventType.warning) {
+          // Content moderation blocked the user's message. Show a notice + speak a
+          // gentle warning; the AI reply is skipped (server sends no 'word' events).
+          final warningText = event.data.toString();
+          print('⚠️ Moderation warning: $warningText');
+          if (mounted) {
+            setState(() {
+              _aiResponse = warningText;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("Let's keep it kind — please avoid inappropriate language."),
+                backgroundColor: Color(0xFF4542EB),
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+          _speakText(warningText); // spoken warning; TTS queue resumes listening after
         } else if (event.type == StreamEventType.done) {
           if (currentSentence.trim().isNotEmpty) {
              _speakText(currentSentence);
@@ -1296,8 +1394,11 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
 
                   // Controls
                   if (!_questCompleted)
-                    SizedBox(
-                      width: 335,
+                    Padding(
+                      // Match the horizontal inset of the other full-width containers
+                      // (title/timer use horizontal: 20) instead of a fixed 335 width,
+                      // which read narrower than the rest on screens wider than 375.
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [

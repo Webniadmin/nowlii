@@ -13,6 +13,45 @@ trace any later build break back to a change. Newest session on top._
 
 ---
 
+## Session 2026-07-10 — remove voice-note detour, relocate emotion-share flow
+
+Cut the daily-once "share how you feel / voice note" detour so a home **swipe-to-talk goes
+straight to the 5-min AI voice call** (`aiVoice`). The detour screens were **preserved +
+relocated** to `lib/experimental/emotion_share_flow/` (via `git mv`, history kept). All five
+use only `package:` imports (plus one same-folder relative import kept intact by moving them
+together), so no import fixes were needed inside them.
+
+| From | To |
+|---|---|
+| `lib/screen/home/swipe_to_talk/popup_share_how_you_feel.dart` | `lib/experimental/emotion_share_flow/popup_share_how_you_feel.dart` |
+| `lib/screen/home/swipe_to_talk/popup_speaking.dart` | `lib/experimental/emotion_share_flow/popup_speaking.dart` |
+| `lib/screen/home/swipe_to_talk/popup_processing.dart` | `lib/experimental/emotion_share_flow/popup_processing.dart` |
+| `lib/screen/home/swipe_to_talk/voice_saved_popup.dart` | `lib/experimental/emotion_share_flow/voice_saved_popup.dart` |
+| `lib/screen/home/swipe_to_talk/emotion_detection_helper.dart` | `lib/experimental/emotion_share_flow/emotion_detection_helper.dart` |
+
+Wiring changes (references removed so the screens are now unreachable):
+- `lib/core/app_routes/app_pages.dart` — dropped the 3 `GoRoute`s (`emotionShareScreen`,
+  `emotionSpeakingScreen`, `emotionProcessingScreen`) + their imports. Route **path constants**
+  in `app_routes.dart` were left in place (harmless; still referenced by the relocated screens).
+- `lib/screen/home/home_screen.dart` — swipe (`_buildSwipeButton`) and the "Send a quick note"
+  notification now `context.push(aiVoice)` directly; removed `_checkAndShowVoiceSavedPopup()`
+  (the "Your voice note is saved / Fuzzy will check in soon" toast) and its two imports.
+
+Also made the companion name **dynamic** on the swipe→call path (was hardcoded "Fuzzy"):
+- `lib/services/profile_service.dart` — `ProfileData` now parses `nowlii_name` /
+  `custom_nowlii_name` + a `companionName` getter.
+- `lib/screen/home/swipe_to_talk/swipe_button_widget.dart` — takes `companionName`; label is
+  `"Swipe to talk to $companionName"` (falls back to "Fuzzy" until the profile loads).
+- `lib/screen/ai_call/ai_voice.dart` — the AI session `system_name` is now the resolved
+  companion name (`_resolveCompanionName()`) instead of the hardcoded `'Aria'`.
+
+Other hardcoded "Fuzzy" strings across the app are **not** changed yet (pending a client
+decision on whether to make them all dynamic) — see `docs/companion-name-todo.md` for the
+full itemized list so we don't have to re-search. `flutter analyze` → **0 errors** (only
+pre-existing `info`/`warning` lints remain).
+
+---
+
 ## Session 2026-07-06 — TD-008 (relocate dead AI-call screens)
 
 Moved the unrouted/duplicate AI-call screen variants out of `lib/screen/ai_call/` (which now

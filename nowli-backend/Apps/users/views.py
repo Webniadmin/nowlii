@@ -1,7 +1,10 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
+from django.http import HttpResponse
 from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+from urllib.parse import urlencode
 
 from rest_framework import status, viewsets
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -660,6 +663,30 @@ class AppleLoginAPI(APIView):
             },
             'is_new_user': created,
         })
+
+
+# ------------------------------------------------------------------------------
+# APPLE WEB REDIRECT (Android web-flow only)
+# ------------------------------------------------------------------------------
+# The `sign_in_with_apple` Android flow opens Apple's auth page in a Chrome Custom
+# Tab; on success Apple does an HTML `form_post` to this Return URL. We must bounce
+# that POST back into the app via the plugin's custom-scheme intent so it can pick
+# up the identity token. This endpoint is registered as the Services ID "Return URL"
+# (e.g. https://<public-host>/api/auth/apple/callback/) and set as APPLE_REDIRECT_URI
+# on the client. iOS native does NOT use this (it has no redirect). No auth / CSRF:
+# the caller is Apple, not our client.
+@csrf_exempt
+def apple_web_redirect(request):
+    params = request.POST.dict() or request.GET.dict()
+    intent = (
+        "intent://callback?" + urlencode(params) +
+        "#Intent;package=com.nowlii.app;scheme=signinwithapple;end"
+    )
+    # 307 keeps the method/semantics while the Custom Tab hands the intent:// URL to
+    # Android, which routes it to the plugin's SignInWithAppleCallback activity.
+    resp = HttpResponse(status=307)
+    resp['Location'] = intent
+    return resp
 
 
 # ------------------------------------------------------------------------------

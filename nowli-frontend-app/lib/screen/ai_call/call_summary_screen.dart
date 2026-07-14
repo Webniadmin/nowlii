@@ -215,7 +215,7 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                           // Insights
                           _buildInsightCard(
                             title: 'Mood detected',
-                            description: _summary?.moodDetected ?? 'You sounded calm and optimistic',
+                            description: _summary?.moodDetected ?? "I didn't quite catch your mood this time.",
                             backgroundColor: const Color(0xFFFAE3CE),
                             icon: Icons.mood,
                           ),
@@ -224,7 +224,7 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                           
                           _buildInsightCard(
                             title: 'Focus topic',
-                            description: _summary?.focusTopic ?? 'You talked about staying consistent.',
+                            description: _summary?.focusTopic ?? "We didn't land on a specific topic this time.",
                             backgroundColor: const Color(0xFFDFEFFF),
                             icon: Icons.book,
                           ),
@@ -233,7 +233,7 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                           
                           _buildInsightCard(
                             title: 'Energy shift',
-                            description: _summary?.energyShift ?? 'You started tired but ended excited',
+                            description: _summary?.energyShift ?? "Too short a chat for me to tell.",
                             backgroundColor: const Color(0xFFDFEFFF),
                             icon: Icons.bolt,
                           ),
@@ -242,13 +242,15 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                           
                           _buildInsightCard(
                             title: 'Next step',
-                            description: _summary?.nextStep ?? 'Plan your next quest!',
+                            description: _summary?.nextStep ?? "Let's have a proper chat next time. 💜",
                             backgroundColor: const Color(0xFFDFEFFF),
                             icon: Icons.trending_up,
                           ),
                           
                           const SizedBox(height: 32),
-                          
+
+                          _buildEmotionsSection(),
+
                           // Personal note section
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -382,6 +384,93 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                       ),
                     ),
                   ),
+      ),
+    );
+  }
+
+  // Emotions detected across this call (5-category split from the summary GPT pass over the
+  // whole transcript). Hidden when there's no data. Sorted most-present first.
+  Widget _buildEmotionsSection() {
+    final emotions = _summary?.topEmotions ?? const <String, double>{};
+    final entries = emotions.entries.where((e) => e.value > 0).toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    if (entries.isEmpty) return const SizedBox.shrink();
+
+    const labels = {
+      'happy': 'Happy', 'motivated': 'Motivated', 'angry': 'Angry',
+      'tired': 'Tired', 'sad': 'Sad',
+    };
+    const colors = {
+      'happy': Color(0xFF3BB64B), 'motivated': Color(0xFF4542EB), 'angry': Color(0xFFE5484D),
+      'tired': Color(0xFF8B7DF6), 'sad': Color(0xFF3E7BFA),
+    };
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFFFCB9B)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Emotions in this chat',
+            style: TextStyle(
+              color: const Color(0xFF011F54),
+              fontSize: 18,
+              fontFamily: 'Work Sans',
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...entries.map((e) {
+            final c = colors[e.key] ?? const Color(0xFF4542EB);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        labels[e.key] ?? e.key,
+                        style: TextStyle(
+                          color: const Color(0xFF011F54),
+                          fontSize: 14,
+                          fontFamily: 'Work Sans',
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '${e.value.round()}%',
+                        style: TextStyle(
+                          color: c,
+                          fontSize: 14,
+                          fontFamily: 'Work Sans',
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(100),
+                    child: LinearProgressIndicator(
+                      value: (e.value / 100).clamp(0.0, 1.0),
+                      minHeight: 8,
+                      backgroundColor: const Color(0xFFFAE3CE),
+                      valueColor: AlwaysStoppedAnimation<Color>(c),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }
