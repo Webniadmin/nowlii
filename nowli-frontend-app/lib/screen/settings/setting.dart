@@ -88,7 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       width: 40,
                       height: 40,
                     ),
-                    title: 'Nowtli Pro',
+                    title: 'Nowlii Pro',
                     onTap: () => {context.push('/subscriptionPage')},
                   ),
                   const SizedBox(height: 12),

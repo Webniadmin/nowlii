@@ -3,6 +3,16 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/utils/color_palette/color_palette.dart';
+import 'package:nowlii/models/subscription_model.dart';
+import 'package:nowlii/services/subscription_service.dart';
+
+/// One phase in the decreasing-price-then-free schedule (for the "How billing works" boxes).
+class _BillingPhase {
+  final String label;
+  final double price;
+  final bool isFree;
+  const _BillingPhase({required this.label, required this.price, this.isFree = false});
+}
 
 class SubscriptionPage extends StatefulWidget {
   const SubscriptionPage({super.key});
@@ -13,6 +23,8 @@ class SubscriptionPage extends StatefulWidget {
 
 class _SubscriptionPageState extends State<SubscriptionPage> {
   final ScrollController _scrollController = ScrollController();
+  final SubscriptionService _subService = SubscriptionService();
+  SubscriptionPlan? _plan;
 
   @override
   void initState() {
@@ -20,6 +32,40 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     _scrollController.addListener(() {
       setState(() {});
     });
+    _loadPlan();
+  }
+
+  Future<void> _loadPlan() async {
+    final plan = await _subService.getPlan();
+    if (!mounted) return;
+    setState(() => _plan = plan);
+  }
+
+  // The billing phases for the "How billing works" boxes — from the backend price schedule
+  // (single source of truth), with a fallback that matches the backend config.
+  List<_BillingPhase> get _billingPhases {
+    final plan = _plan;
+    if (plan != null && plan.phases.isNotEmpty) {
+      final list = plan.phases
+          .map((p) => _BillingPhase(
+                label: 'Months ${p.fromMonth}–${p.toMonth}',
+                price: p.price,
+              ))
+          .toList();
+      list.add(_BillingPhase(
+        label: 'Month ${plan.freeAfterMonth + 1}+',
+        price: 0,
+        isFree: true,
+      ));
+      return list;
+    }
+    return const [
+      _BillingPhase(label: 'Months 1–3', price: 19.99),
+      _BillingPhase(label: 'Months 4–6', price: 14.99),
+      _BillingPhase(label: 'Months 7–9', price: 9.99),
+      _BillingPhase(label: 'Months 10–12', price: 4.99),
+      _BillingPhase(label: 'Month 13+', price: 0, isFree: true),
+    ];
   }
 
   @override
@@ -351,7 +397,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Youwll get full access to',
+                                "You'll get full access to",
                                 style: GoogleFonts.workSans(
                                   color: const Color(0xFF011F54),
                                   fontSize: 20,
@@ -397,7 +443,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                       _buildTimelineItem(
                         day: 'Now',
                         description:
-                            'Get full access to all features. No payment required during free trial.',
+                            'Get full access to all features. No card required during trial.',
                         color: Colors.orange,
                       ),
                       _buildTimelineItem(
@@ -412,6 +458,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                             'We\'ll remind you to continue with Pro access if you\'d like.',
                         color: const Color(0xFF8BC34A),
                       ),
+                      const SizedBox(height: 30),
+
+                      // How billing works section (philosophy + decreasing-price phases)
+                      _buildBillingSection(),
                       const SizedBox(height: 30),
 
                       // Start Button
@@ -429,7 +479,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                             ),
                           ),
                           child: Text(
-                            'Lets begin 7 days free',
+                            "Let's begin 7 days free",
                             textAlign: TextAlign.center,
                             style: GoogleFonts.workSans(
                               color: const Color(0xFFFFFDF7),
@@ -496,58 +546,148 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     required String description,
     required Color color,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 15),
-      child: Container(
-        width: 361,
-        height: 95,
-        decoration: BoxDecoration(
-          color: AppColorsApps.softCream,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(0.0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 12,
-                height: 15,
-                margin: const EdgeInsets.only(top: 4),
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 15),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      day,
-                      style: GoogleFonts.workSans(
-                        color: const Color(0xFF011F54),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        height: 1,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      description,
-                      style: GoogleFonts.workSans(
-                        color: const Color(0xFF4C586E),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w400,
-                        height: 1.4,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                  ],
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColorsApps.softCream,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  day,
+                  style: GoogleFonts.workSans(
+                    color: const Color(0xFF011F54),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                    letterSpacing: -0.5,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: GoogleFonts.workSans(
+                    color: const Color(0xFF4C586E),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w400,
+                    height: 1.4,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── "How billing works" section ─────────────────────────────────────────────
+  // Same card design as the timeline. Explains NOWLII's philosophy (we're not here to
+  // take money — the more you grow, the less you pay, until it's free) then lists the
+  // decreasing price phases as boxes.
+  Widget _buildBillingSection() {
+    final phases = _billingPhases;
+    const dotColors = [
+      Color(0xFFFF8A00), // 1–3
+      Color(0xFFFFB74D), // 4–6
+      Color(0xFF5C6BC0), // 7–9
+      Color(0xFF4542EB), // 10–12
+      Color(0xFF3BB64B), // free
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'How billing works?',
+          style: GoogleFonts.workSans(
+            color: const Color(0xFF011F54),
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            height: 1.2,
+            letterSpacing: -0.5,
           ),
         ),
+        const SizedBox(height: 12),
+        Text(
+          "Nowlii isn't here to take your money — it's here to help you grow. 🌱\n\n"
+          "The stronger and more consistent you become, the less you pay. Stick with it "
+          "for a year and Nowlii becomes completely free — because once you've healed and "
+          "built your habits, why keep paying for something you no longer need? Your "
+          "progress is the whole point.",
+          style: GoogleFonts.workSans(
+            color: const Color(0xFF4C586E),
+            fontSize: 16,
+            fontWeight: FontWeight.w400,
+            height: 1.5,
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(height: 16),
+        ...List.generate(
+          phases.length,
+          (i) => _buildPhaseBox(phases[i], dotColors[i % dotColors.length]),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPhaseBox(_BillingPhase phase, Color color) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      decoration: BoxDecoration(
+        color: AppColorsApps.softCream,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              phase.label,
+              style: GoogleFonts.workSans(
+                color: const Color(0xFF011F54),
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                height: 1.2,
+                letterSpacing: -0.5,
+              ),
+            ),
+          ),
+          Text(
+            phase.isFree ? 'Free 🌱' : '\$${phase.price.toStringAsFixed(2)}/mo',
+            style: GoogleFonts.workSans(
+              color: phase.isFree
+                  ? const Color(0xFF3BB64B)
+                  : const Color(0xFF011F54),
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ],
       ),
     );
   }
