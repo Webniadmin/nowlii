@@ -946,100 +946,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF8E1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Your mood',
-                        style: GoogleFonts.workSans(
-                          color: const Color(0xFF011F54),
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          height: 1.20,
-                          letterSpacing: -0.50,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          return Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Expanded(
-                                child: _buildMoodBar(
-                                  60,
-                                  const Color(0xFF5DADE2),
-                                  '😰',
-                                  'Mon',
-                                ),
-                              ),
-                              Expanded(
-                                child: _buildMoodBar(
-                                  80,
-                                  const Color(0xFFFFB74D),
-                                  '😊',
-                                  'Tue',
-                                ),
-                              ),
-                              Expanded(
-                                child: _buildMoodBar(
-                                  70,
-                                  const Color(0xFFFF8A65),
-                                  '😠',
-                                  'Wed',
-                                ),
-                              ),
-                              Expanded(
-                                child: _buildMoodBar(
-                                  100,
-                                  const Color(0xFFE57373),
-                                  '😡',
-                                  'Thu',
-                                ),
-                              ),
-                              Expanded(
-                                child: _buildMoodBar(
-                                  90,
-                                  const Color(0xFF81C784),
-                                  '😄',
-                                  'Fri',
-                                ),
-                              ),
-                              Expanded(
-                                child: _buildMoodBar(
-                                  75,
-                                  const Color(0xFFFFD54F),
-                                  '😊',
-                                  'Sat',
-                                ),
-                              ),
-                              Expanded(
-                                child: _buildMoodBar(
-                                  50,
-                                  const Color(0xFFFFB74D),
-                                  '😊',
-                                  'Sun',
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              _buildMoodSection(),
               const SizedBox(height: 24),
               Padding(
                 padding: const EdgeInsets.all(8.0),
@@ -1866,6 +1773,100 @@ class _InsightsScreenState extends State<InsightsScreen> {
         ),
         const SizedBox(width: 10),
         Expanded(child: Text(text, style: AppsTextStyles.regular16l)),
+      ],
+    );
+  }
+
+  // Maps a dominant emotion key to a bar color. Null/unknown → neutral grey stub.
+  Color _moodColor(String? emotion) {
+    switch (emotion) {
+      case 'happy':
+        return const Color(0xFF81C784);
+      case 'motivated':
+        return const Color(0xFFFFB74D);
+      case 'angry':
+        return const Color(0xFFE57373);
+      case 'tired':
+        return const Color(0xFF5DADE2);
+      case 'sad':
+        return const Color(0xFF7986CB);
+      default:
+        return const Color(0xFFE0E0E0);
+    }
+  }
+
+  String _moodEmoji(String? emotion) {
+    switch (emotion) {
+      case 'happy':
+        return '😄';
+      case 'motivated':
+        return '💪';
+      case 'angry':
+        return '😡';
+      case 'tired':
+        return '😴';
+      case 'sad':
+        return '😢';
+      default:
+        return '';
+    }
+  }
+
+  // "Your mood" weekly chart, driven by real per-day voice-call data. Hidden entirely
+  // when the user has no call data for the week (consistent with the Top Emotions card).
+  Widget _buildMoodSection() {
+    final moodWeek = _insightsData?.weekly.moodWeek ?? [];
+    if (!moodWeek.any((d) => d.hasData)) return const SizedBox.shrink();
+
+    return Column(
+      children: [
+        const SizedBox(height: 20),
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your mood',
+                  style: GoogleFonts.workSans(
+                    color: const Color(0xFF011F54),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    height: 1.20,
+                    letterSpacing: -0.50,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: moodWeek.map((d) {
+                    // Map level (0–100) to a bar height with a floor so a real day is
+                    // always visible; empty days get a short grey stub.
+                    final double height = d.hasData
+                        ? (12 + (d.level.clamp(0, 100) / 100.0) * 88)
+                        : 8;
+                    return Expanded(
+                      child: _buildMoodBar(
+                        height,
+                        _moodColor(d.hasData ? d.emotion : null),
+                        d.hasData ? _moodEmoji(d.emotion) : '',
+                        d.day,
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }

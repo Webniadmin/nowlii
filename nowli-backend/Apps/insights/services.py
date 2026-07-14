@@ -6,6 +6,8 @@ that are then passed to the AI for reflection generation.
 from datetime import date, timedelta
 from collections import defaultdict, Counter
 
+from django.utils import timezone
+
 from Apps.quests.models import Quests   # adjust import path if needed
 
 
@@ -387,6 +389,57 @@ def _build_low_mood(user, start: date, end: date):
     return phrases, summary, recommendation
 
 
+# ─────────────────────────────────────────────
+#  "Your mood" weekly chart — one bar per weekday from voice-call snapshots
+# ─────────────────────────────────────────────
+
+_WEEKDAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def _build_mood_week(user, monday: date, ref: date) -> list:
+    """Per-day mood for the ISO week starting ``monday`` (Mon..Sun).
+
+    For each day we average the 5 emotion categories across that day's call snapshots and
+    take the dominant one; ``level`` is its intensity (0–100), ``emotion`` its key. Days with
+    no calls — or future days — get ``level=0, emotion=None, has_data=False`` so the UI can
+    render a neutral stub (or hide the section when the whole week is empty).
+    """
+    # Local import avoids an app-load-time cycle (insights ↔ voice_calls).
+    from Apps.voice_calls.models import CallEmotionSnapshot
+
+    sunday = monday + timedelta(days=6)
+    snaps = list(
+        CallEmotionSnapshot.objects.filter(
+            user=user, created_at__date__gte=monday, created_at__date__lte=sunday
+        )
+    )
+    by_day: dict[date, list] = defaultdict(list)
+    for s in snaps:
+        # localtime keeps day-bucketing consistent with the __date filter above.
+        by_day[timezone.localtime(s.created_at).date()].append(s)
+
+    mood_week = []
+    for i in range(7):
+        d = monday + timedelta(days=i)
+        day_snaps = by_day.get(d, [])
+        if not day_snaps or d > ref:
+            mood_week.append({
+                "day": _WEEKDAY_ABBR[i], "date": d.isoformat(),
+                "level": 0, "emotion": None, "has_data": False,
+            })
+            continue
+        avg = {
+            key: sum(getattr(s, key) for s in day_snaps) / len(day_snaps)
+            for key in _EMOTION_KEYS
+        }
+        dominant = max(_EMOTION_KEYS, key=lambda e: avg[e])
+        mood_week.append({
+            "day": _WEEKDAY_ABBR[i], "date": d.isoformat(),
+            "level": round(avg[dominant]), "emotion": dominant, "has_data": True,
+        })
+    return mood_week
+
+
 def get_weekly_analytics(user, ref: date = None) -> dict:
     ref = ref or date.today()
     monday, sunday = _week_bounds(ref)
@@ -450,6 +503,9 @@ def get_weekly_analytics(user, ref: date = None) -> dict:
     top_emotions, emotions_summary = _build_top_emotions(user, monday, sunday)
     low_mood_phrases, low_mood_summary, low_mood_recommendation = _build_low_mood(user, monday, sunday)
 
+    # ── "Your mood" weekly chart (one bar per weekday) ────────────────────────
+    mood_week = _build_mood_week(user, monday, ref)
+
     return {
         "quests_completed":  completed_quests,
         "total_quests":      total_quests,
@@ -461,6 +517,7 @@ def get_weekly_analytics(user, ref: date = None) -> dict:
         "low_mood_phrases":  low_mood_phrases,
         "low_mood_summary":  low_mood_summary,
         "low_mood_recommendation": low_mood_recommendation,
+        "mood_week":         mood_week,
         # ai_reflections is filled in by the AI layer
     }
 

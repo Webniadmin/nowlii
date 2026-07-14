@@ -68,8 +68,37 @@ Rules:
 """
 
 
+EMOTION_MEANING_PROMPT = """
+You are a warm, emotionally-intelligent wellness companion writing the "What this means"
+interpretation for a user's weekly emotion insights (derived from their AI voice calls).
+
+Input (this week):
+- Top emotions (label + percentage, sorted high→low): {top_emotions}
+- Recurring low-mood phrases the user said (may be empty): {low_mood_phrases}
+
+Write a short, personal, non-clinical interpretation. Rules:
+- "emotions_summary": 1–2 sentences interpreting the dominant emotion mix. Reference the actual
+  dominant emotion. Warm and honest, never generic praise.
+- "low_mood_summary": 1 sentence naming the pattern behind the low-mood phrases (what tends to
+  happen for them when they feel low). If there are no phrases, return "".
+- "low_mood_recommendation": 1 short, concrete, gentle suggestion, prefixed with "→ ". If there
+  are no phrases, return "".
+- Under 25 words each. Second person ("you"). No markdown, no code fences, no extra keys.
+
+Return ONLY a clean JSON object:
+{{"emotions_summary": "...", "low_mood_summary": "...", "low_mood_recommendation": "..."}}
+"""
+
+
 def _build_reflection_prompt(weekly_data: dict) -> str:
     return REFLECTION_PROMPT.format(weekly_data=json.dumps(weekly_data, indent=2))
+
+
+def _build_emotion_meaning_prompt(top_emotions: list, low_mood_phrases: list) -> str:
+    return EMOTION_MEANING_PROMPT.format(
+        top_emotions=json.dumps(top_emotions, ensure_ascii=False),
+        low_mood_phrases=json.dumps(low_mood_phrases, ensure_ascii=False),
+    )
 
 
 def _build_quest_prompt(weekly_data: dict, current_time: str, day_of_week: str) -> str:
@@ -164,3 +193,19 @@ def generate_quest_suggestions(weekly_data: dict, current_time: str, day_of_week
     provider = get_active_provider()
     prompt   = _build_quest_prompt(weekly_data, current_time, day_of_week)
     return _PROVIDERS[provider](prompt)
+
+
+def generate_emotion_meaning(top_emotions: list, low_mood_phrases: list) -> dict:
+    """
+    Calls the auto-detected AI provider and returns the "What this means" dict:
+    {"emotions_summary", "low_mood_summary", "low_mood_recommendation"}.
+
+    Raises (EnvironmentError / json.JSONDecodeError / provider errors) on failure —
+    the caller is expected to fall back to the static placeholder copy.
+    """
+    provider = get_active_provider()
+    prompt   = _build_emotion_meaning_prompt(top_emotions, low_mood_phrases)
+    result   = _PROVIDERS[provider](prompt)
+    if not isinstance(result, dict):
+        raise ValueError("Emotion-meaning response was not a JSON object")
+    return result

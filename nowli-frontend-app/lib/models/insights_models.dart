@@ -34,6 +34,9 @@ class WeeklyInsights {
   final List<String> lowMoodPhrases;
   final String lowMoodSummary;
   final String lowMoodRecommendation;
+  // "Your mood" weekly chart — one entry per weekday (Mon..Sun). Empty when the user has
+  // no voice-call data; the UI hides the section in that case.
+  final List<MoodDay> moodWeek;
 
   WeeklyInsights({
     required this.questsCompleted,
@@ -48,6 +51,7 @@ class WeeklyInsights {
     required this.lowMoodPhrases,
     required this.lowMoodSummary,
     required this.lowMoodRecommendation,
+    required this.moodWeek,
   });
 
   factory WeeklyInsights.fromJson(Map<String, dynamic> json) {
@@ -76,6 +80,38 @@ class WeeklyInsights {
       lowMoodPhrases: List<String>.from(json['low_mood_phrases'] ?? []),
       lowMoodSummary: json['low_mood_summary'] ?? '',
       lowMoodRecommendation: json['low_mood_recommendation'] ?? '',
+      moodWeek: (json['mood_week'] as List?)
+              ?.map((e) => MoodDay.fromJson(e))
+              .toList() ??
+          [],
+    );
+  }
+}
+
+class MoodDay {
+  final String day; // Mon..Sun
+  final String date;
+  final int level; // 0–100 (bar height)
+  final String? emotion; // dominant key (happy|motivated|angry|tired|sad) or null
+  final bool hasData;
+
+  MoodDay({
+    required this.day,
+    required this.date,
+    required this.level,
+    required this.emotion,
+    required this.hasData,
+  });
+
+  factory MoodDay.fromJson(Map<String, dynamic> json) {
+    return MoodDay(
+      day: json['day'] ?? '',
+      date: json['date'] ?? '',
+      level: (json['level'] ?? 0) is int
+          ? (json['level'] ?? 0)
+          : (json['level'] ?? 0).toInt(),
+      emotion: json['emotion'],
+      hasData: json['has_data'] ?? false,
     );
   }
 }

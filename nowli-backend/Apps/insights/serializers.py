@@ -66,6 +66,14 @@ class TopEmotionSerializer(serializers.Serializer):
     pct   = serializers.FloatField()  # 0–100
 
 
+class MoodDaySerializer(serializers.Serializer):
+    day      = serializers.CharField()                       # Mon..Sun
+    date     = serializers.DateField()
+    level    = serializers.IntegerField()                    # 0–100 (bar height)
+    emotion  = serializers.CharField(allow_null=True)        # dominant key or null
+    has_data = serializers.BooleanField()
+
+
 class WeeklyInsightSerializer(serializers.Serializer):
     quests_completed    = serializers.IntegerField()
     total_quests        = serializers.IntegerField()
@@ -82,6 +90,9 @@ class WeeklyInsightSerializer(serializers.Serializer):
     low_mood_phrases        = serializers.ListField(child=serializers.CharField(), required=False)
     low_mood_summary        = serializers.CharField(required=False, allow_blank=True)
     low_mood_recommendation = serializers.CharField(required=False, allow_blank=True)
+    # "Your mood" weekly chart — one entry per weekday (Mon..Sun). Optional so responses
+    # without call data still validate; the UI hides the section when the week is empty.
+    mood_week               = MoodDaySerializer(many=True, required=False)
 
 
 # ── Combined top-level response ───────────────────────────────────────────────
