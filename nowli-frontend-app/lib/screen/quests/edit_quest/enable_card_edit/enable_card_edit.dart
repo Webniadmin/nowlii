@@ -55,7 +55,7 @@ class _EnabableCardEditState extends State<EnabableCardEdit> {
           Padding(
             padding: EdgeInsets.only(left: 4 * s),
             child: Text(
-              '💬 A real-time 10-min support call will help you stay on track. You can add more time later if needed.',
+              '💬 A real-time 5-min support call will help you stay on track. You can add more time later if needed.',
               style: GoogleFonts.workSans(
                 color: const Color(0xFF4C586E), // Text-text-primary-default
                 fontSize: 16,

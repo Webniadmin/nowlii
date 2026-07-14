@@ -15,7 +15,11 @@ import 'package:nowlii/services/audio_stream_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class AiVoice extends StatefulWidget {
-  const AiVoice({super.key});
+  /// Optional quest title. When launched from a quest whose "Enable call" flag is on,
+  /// this is passed as conversation context so the companion knows the task.
+  final String? questTitle;
+
+  const AiVoice({super.key, this.questTitle});
 
   @override
   State<AiVoice> createState() => _AiVoiceState();
@@ -526,6 +530,21 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
         }
         print('✅ Session created: ${session.sessionId}');
         // Optional: you can manually test by calling _sendMessageToAi("Hello, are you there?");
+
+        // Quest context: if this call was started from a quest ("Enable call" on),
+        // seed the conversation so the companion knows the task and can keep the user
+        // focused. Delayed so it doesn't clash with the start notice / auto-listen.
+        final questTitle = widget.questTitle?.trim() ?? '';
+        if (questTitle.isNotEmpty) {
+          Future.delayed(const Duration(milliseconds: 2500), () {
+            if (mounted && _currentSession != null) {
+              _sendMessageToAi(
+                "I'm starting my task now: $questTitle. "
+                "Please keep me company and help me stay focused.",
+              );
+            }
+          });
+        }
       } else {
         print('⚠️ Failed to create session - API may be unavailable');
         // Continue without session for UI testing

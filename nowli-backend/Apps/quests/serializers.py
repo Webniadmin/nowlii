@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.utils import timezone
 from .models import Quests, SubTasks
 
 
@@ -29,6 +30,15 @@ class QuestsSerializers(serializers.ModelSerializer):
     class Meta:
         model = Quests
         exclude = ['user']
+
+    def validate_select_a_date(self, value):
+        # No past scheduling. Enforce on create only — editing an existing quest
+        # must not be blocked just because its original date has since passed.
+        # Date-level check against the server's local date keeps this timezone-safe
+        # (the same-day past-*time* case is guarded precisely on the client).
+        if self.instance is None and value is not None and value < timezone.localdate():
+            raise serializers.ValidationError("Quest date cannot be in the past.")
+        return value
 
     def create(self, validated_data):
         subtasks_data = validated_data.pop('subtasks', [])

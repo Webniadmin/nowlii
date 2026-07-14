@@ -245,7 +245,7 @@ class _CleanTheHouseScreenState extends State<CleanTheHouseScreen> {
                     SizedBox(
                       width: 288,
                       child: Text(
-                        'You’re having a 10-minute call with your Bestie during this task.',
+                        'You’re having a 5-minute call with your Bestie during this task.',
                         style: GoogleFonts.workSans(
                           color: const Color(
                             0xFF4C586E,

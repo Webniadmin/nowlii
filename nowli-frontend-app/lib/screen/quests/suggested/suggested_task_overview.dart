@@ -28,7 +28,7 @@ class _SuggestedTaskOverviewState extends State<SuggestedTaskOverview> {
   String get taskZone => widget.suggestion?.zone ?? 'Soft steps';
   String get taskTime => widget.suggestion?.suggestedTime ?? '22:00';
   String get taskDescription => widget.suggestion?.description ?? 
-      "You're having a 10-minute call with your Bestie Fizzy during this task.";
+      "You're having a 5-minute call with your Bestie Fizzy during this task.";
   
   Color get zoneColor {
     switch (taskZone.toLowerCase()) {
@@ -369,7 +369,7 @@ class _SuggestedTaskOverviewState extends State<SuggestedTaskOverview> {
           Padding(
             padding: EdgeInsets.only(left: 4 * s),
             child: Text(
-              '💬 A real-time 10-min support call will help you stay on track. You can add more time later if needed.',
+              '💬 A real-time 5-min support call will help you stay on track. You can add more time later if needed.',
               style: GoogleFonts.workSans(
                 color: const Color(0xFF4C586E),
                 fontSize: 16,

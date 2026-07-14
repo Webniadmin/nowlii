@@ -258,7 +258,10 @@ class AppPages {
       // AI Voice Calling
       GoRoute(
         path: AppRoutespath.aiVoice,
-        builder: (context, state) => const AiVoice(),
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          return AiVoice(questTitle: extra?['questTitle'] as String?);
+        },
       ),
       GoRoute(
         path: AppRoutespath.callSummary,

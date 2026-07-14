@@ -18,12 +18,12 @@ class EnableCallCard extends StatefulWidget {
 }
 
 class _EnableCallCardState extends State<EnableCallCard> {
-  bool isCallEnabled = true;
+  bool isCallEnabled = false;
 
   @override
   void initState() {
     super.initState();
-    isCallEnabled = widget.initialValue ?? true;
+    isCallEnabled = widget.initialValue ?? false;
   }
 
   @override
@@ -65,7 +65,7 @@ class _EnableCallCardState extends State<EnableCallCard> {
             children: [
               Expanded(
                 child: Text(
-                  'A real-time 10-min support call will help you stay on track.',
+                  'A real-time 5-min support call will help you stay on track.',
                   style: AppTextStylesQutes.workSansRegular16,
                 ),
               ),

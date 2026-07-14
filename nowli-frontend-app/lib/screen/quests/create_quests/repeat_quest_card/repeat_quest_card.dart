@@ -18,12 +18,12 @@ class RepeatQuestCard extends StatefulWidget {
 }
 
 class _RepeatQuestCardState extends State<RepeatQuestCard> {
-  bool isCallEnabled = true;
+  bool isCallEnabled = false;
 
   @override
   void initState() {
     super.initState();
-    isCallEnabled = widget.initialValue ?? true;
+    isCallEnabled = widget.initialValue ?? false;
   }
 
   @override

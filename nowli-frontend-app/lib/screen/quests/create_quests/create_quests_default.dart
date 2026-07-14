@@ -32,8 +32,8 @@ class _CreateQuestPageState extends State<CreateQuestPage> {
   String? selectedZone;
   DateTime selectedDate = DateTime.now();
   String? selectedTime; // Add time state
-  bool enableCall = true;
-  bool repeatQuest = true;
+  bool enableCall = false;
+  bool repeatQuest = false;
   List<String> subtasks = [];
   bool _isCreating = false;
   
@@ -143,6 +143,30 @@ class _CreateQuestPageState extends State<CreateQuestPage> {
       return;
     }
 
+    // No past scheduling: a quest can only be created for the present/future.
+    // The date picker already limits dates to today..+6 days; this also blocks a
+    // *time* in the past when "Today" is selected. A 1-minute grace absorbs the
+    // gap between the picker's default (now-at-open) and the moment of tapping.
+    final now = DateTime.now();
+    int hh = now.hour, mm = now.minute;
+    if (selectedTime != null && selectedTime!.contains(':')) {
+      final parts = selectedTime!.split(':');
+      hh = int.tryParse(parts[0]) ?? hh;
+      mm = int.tryParse(parts[1]) ?? mm;
+    }
+    final selectedDateTime = DateTime(
+      selectedDate.year, selectedDate.month, selectedDate.day, hh, mm,
+    );
+    if (selectedDateTime.isBefore(now.subtract(const Duration(minutes: 1)))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("You can't schedule a quest in the past — pick a future time."),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isCreating = true);
 
     final questService = QuestService();
@@ -166,6 +190,26 @@ class _CreateQuestPageState extends State<CreateQuestPage> {
       setAlarm: true,
       subtasks: subtasksList,
     );
+
+    // "Repeat quest": there is no backend scheduler, so recurrence is materialized
+    // up-front here — copies for the next 6 days (7 days total incl. the selected date).
+    // Copies keep repeat_quest=true for display but are not themselves re-materialized
+    // (materialization only happens on this create screen, never on the backend).
+    if (quest != null && repeatQuest) {
+      for (int i = 1; i <= 6; i++) {
+        final date = selectedDate.add(Duration(days: i));
+        await questService.createQuest(
+          task: _taskController.text.trim(),
+          zone: selectedZone!,
+          selectADate: DateFormat('yyyy-MM-dd').format(date),
+          selectATime: selectedTime,
+          enableCall: enableCall,
+          repeatQuest: repeatQuest,
+          setAlarm: true,
+          subtasks: subtasksList,
+        );
+      }
+    }
 
     setState(() => _isCreating = false);
 

@@ -387,6 +387,43 @@ class QuestCard extends StatelessWidget {
               ),
             ],
           ),
+          // "Enable call" quest flag: when on, offer a real 5-min AI call for this quest.
+          // The quest title is passed as conversation context to the companion.
+          if (quest.enableCall) ...[
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () {
+                context.push(
+                  AppRoutespath.aiVoice,
+                  extra: {'questTitle': quest.task},
+                );
+              },
+              child: Container(
+                width: double.infinity,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4542EB),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.phone, size: 20, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Call Nowlii (5 min)',
+                      style: GoogleFonts.workSans(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
