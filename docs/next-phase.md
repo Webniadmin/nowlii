@@ -8,12 +8,21 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
-## ▶ RESUME HERE (2026-07-03 end of day)
+## ▶ RESUME HERE (2026-07-14 end of day)
 
-**Where we are:** cleanup done; Google login works on Android; email/SMTP, companion avatars,
-and support chat all working; Apple login fully prepared (keys pending). Full detail in the
-STATUS table below + the feature docs (`google-login.md`, `apple-login.md`, `support-feature.md`,
-`running-on-android.md`).
+**Where we are:** core loop + AI voice call + Insights all working on the emulator. Big 2026-07-14
+session — full detail + a **DETAILED TO-DO for tomorrow in `daily-reports/2026-07-14.md`** (read its
+"Recommended next start"). Today shipped: Add-Quest **Enable call / Repeat quest** toggles wired to real
+behavior + **5-min** call copy + **no-past-scheduling** guard (`quest-toggles-wiring` memory); Insights
+**"What this means" AI summary** + **dynamic "Your mood" chart**; **Subscriptions Phase 1** — backend
+lifecycle engine (`Apps/subscriptions`, decreasing-price-then-free, mock activation, tested) + frontend
+data layer (`subscription-model` memory); **Nowli Pro screen** spelling fixes + "How it works" matched to
+Figma + new **"How billing works"** section with the phase boxes. For earlier sessions read
+`daily-reports/2026-07-10.md` (fluid voice, moderation, barge-in, Apple web-redirect) and `2026-07-07.md`
+(Insights Top-Emotions / When-feeling-low). Base (cleanup, Google login, email, avatars, support) is in
+the STATUS table below + the feature docs.
+
+> ⚠️ **Nothing is committed to git yet** — the whole session is on disk only. Commit early tomorrow.
 
 **Restart everything tomorrow** (each in its own terminal; background servers don't survive a
 reboot). Details in `running-locally.md` / `running-on-android.md`:
@@ -40,16 +49,36 @@ flutter run -d emulator-5554 --dart-define-from-file=dart_defines.android.json
   `running-on-android.md`; a repeatable management command is still a TODO).
 - Apple: everything built; **empty** `APPLE_CLIENT_IDS` etc. — fill in to enable (`apple-login.md`).
 
-**Next up (in order):**
-1. **Build the phone `.apk`** — everything's ready:
-   `flutter build apk --debug --dart-define-from-file=dart_defines.phone.json`
-   → `build\app\outputs\flutter-apk\app-debug.apk`. Phone needs same-network + firewall open for
-   `:8000`/`:8001` (see `running-on-android.md`).
-2. **A5 — rotate secrets** (still the previous dev's keys in some places).
-3. **Apple keys** when you have the Apple Developer account → enable B2.
-4. Small follow-ups: `editFrom` avatar screen → send `predefined_option`; seed-as-management-command;
-   the app runs on the default `auth.User` (the custom `users.CustomUserModel` is defined but unused —
-   worth reconciling).
+**Next up (in order) — the authoritative day-by-day list is in `daily-reports/2026-07-14.md`
+"Recommended next start". Summary:**
+
+0. **Commit the session's work first** (nothing is committed yet).
+
+1. **SUBSCRIPTIONS (primary thread — continue this):**
+   - **A. Wire the subscribe flow:** `subscription_popup.dart` "Let's begin 7 days free" button is still
+     empty (`onPressed: () {}`) → call `SubscriptionService.activateMock()` + SnackBar + status refresh;
+     show current status (month/price/next/"Free forever") when already subscribed; add a cancel action.
+   - **B. Client/design decisions:** (i) reconcile the two pricing models on the Pro screen — it now
+     shows BOTH the Figma trial cards (Yearly $25.99 / "7 days free") AND the new decreasing-phase
+     billing explanation; decide which is the real purchase path. (ii) Decide exactly which features
+     "Pro" gates, then enforce (`subscriptions.services.user_has_pro` backend + frontend gating).
+   - **C. Phase 2 — real IAP:** `in_app_purchase` plugin + per-phase products in App Store Connect /
+     Play Console (verify current offer templates) + backend receipt verification (fill the
+     `verify-receipt/` stub → drive the engine, set `platform`/store token). Mobile-only; no Stripe
+     in-app. See `subscription-model` memory.
+
+2. **Add-Quest toggle client decisions:** (a) "Call Nowlii" button on Scheduled/Blocking too (Today
+   only now)? (b) does "Repeat quest" need real recurrence (linked series) vs the 7-day materialization?
+   Real recurrence/scheduled calls → deferred `flutter_local_notifications` + backend reminder model
+   (`voice-check-and-scheduling.md`).
+
+3. **Carryovers:** barge-in headphones test + mic earcon; **Apple login** `intent://` fix + permanent
+   https URL before any device build (`apple-login.md`); **A5 rotate secrets**; build the phone `.apk`
+   (`flutter build apk --debug --dart-define-from-file=dart_defines.phone.json`).
+
+4. **Small follow-ups:** `editFrom` avatar → send `predefined_option`; seed-as-management-command;
+   reconcile unused `users.CustomUserModel` vs default `auth.User`.
+   _(Done 2026-07-14: Insights "What this means" AI summary + dynamic "Your mood" chart.)_
 
 ---
 

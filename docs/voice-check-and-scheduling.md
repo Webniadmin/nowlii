@@ -8,6 +8,11 @@ codebase, and the decisions taken so far, so nothing is lost while these are def
   no scheduling job; frontend has **no** local-notification/scheduling packages). The
   `reminder_notification/ai_call_reminder/*` screens are static mockups; `my_quests/scheduled/`
   is scheduled **quests** (by date), not calls.
+- **Update 2026-07-14:** the Add-Quest **"Repeat quest"** toggle was implemented **without** a
+  scheduler — it materializes copies of the quest for the next 7 days up-front on create (client-side).
+  The **"Enable call"** toggle shows an on-demand "Call Nowlii" button on the quest, **not** a
+  scheduled/auto call. So this section's real-scheduler work (§A) is still fully open — these were
+  deliberately built to avoid it. See `daily-reports/2026-07-14.md` / the `quest-toggles-wiring` memory.
 - The **voice-check popup was a mock** (recorded/sent nothing; a 2s delay + a fake "Your voice
   note is saved" toast). On 2026-07-10 it was removed from the swipe→call path and the screens
   were preserved in `lib/experimental/emotion_share_flow/` (see `cleanup-log.md`). Swipe now

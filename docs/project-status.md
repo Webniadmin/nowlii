@@ -1,6 +1,6 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-07-10_
+_Last reviewed: 2026-07-14_
 
 ## What the app does
 
@@ -10,6 +10,45 @@ call/alarm/repeat flags), track completion streaks, view progress analytics, and
 interact with a personalized companion (Milo, Bloop, Gumo, etc.) via text and **voice
 calls** — including AI-generated subtask suggestions, weekly reflections, and quest
 recommendations.
+
+## Completed this session (2026-07-14)
+
+_Full detail in `daily-reports/2026-07-14.md`; design notes in the `quest-toggles-wiring` memory._
+
+- **Add-Quest toggles wired to real behavior.** "Enable call" and "Repeat quest" were persisted but
+  did nothing. Now (client-chosen behavior; **no scheduler exists**, so both are done without one):
+  - **Enable call** → the Today quest card shows a **"📞 Call Nowlii (5 min)"** button only when
+    `enable_call=true`; it launches the existing 5-min AI call and passes the quest title as a spoken
+    opener context (`today.dart`, `ai_voice.dart` `questTitle` param, `app_pages.dart` route).
+  - **Repeat quest** → recurrence is **materialized up-front** in `_createQuest`: copies for the next 6
+    days (7 total incl. selected date). Copies aren't re-materialized (no recursion).
+  - Both toggles now **default to `false`** (frontend matched to the backend `default=False`); before
+    they were forced `true`.
+- **Call-duration copy fixed 10-min → 5-min** in 5 places (`enable_card.dart`, `enable_card_edit.dart`,
+  `suggested_task_overview.dart` ×2, `experimental/clean_the_house_screen.dart`). Real call = 5 min +
+  one 2.5-min extension. (Left "10 mins" task-duration chips and "call 10 minutes before" timing copy.)
+- **No past scheduling (new).** The date picker already limited dates to today..+6, but a **past time on
+  "Today"** was allowed and the **backend had no validation**. Added a frontend guard in `_createQuest`
+  (blocks a selected date+time before now, 1-min grace) **and** `QuestsSerializers.validate_select_a_date`
+  (rejects a past date **on create only**, date-level vs `timezone.localdate()` — tz-safe; edits and the
+  seed command are unaffected).
+- Verified: `flutter analyze` (touched files) = 0 errors; `manage.py check` = no issues.
+- **Insights "What this means" is now AI-generated** (was a static placeholder). New
+  `generate_emotion_meaning()` fills `emotions_summary` / `low_mood_summary` /
+  `low_mood_recommendation`, cached weekly in `InsightCache`, with **fallback to the placeholder copy**
+  on any AI failure. Called only when the user has voice-call data. Verified live (provider = chatgpt).
+- **Insights "Your mood" weekly chart is now dynamic** (was demo data). `services._build_mood_week`
+  gives per-weekday dominant emotion + intensity from `CallEmotionSnapshot`; new `mood_week` serializer
+  field + `MoodDay` model; the chart renders real bars (emotion→color/emoji) and **hides when the week
+  has no call data**. No migration needed.
+- **Subscriptions — backend lifecycle engine started (Phase 1).** New `Apps/subscriptions`: config-driven
+  decreasing-price-then-free schedule (**1–3mo $19.99 → 4–6 $14.99 → 7–9 $9.99 → 10–12 $4.99 → 13+ free**),
+  `Subscription` model, pure phase/entitlement engine, and `/api/subscriptions/` API (`plan`, `me`,
+  **mock** `activate`, `cancel`, `verify-receipt` **stub**). 8 tests pass; verified live. Frontend data
+  layer (`subscription_service.dart` + model) + minimal pro-screen wiring. **Sold mobile-only → Phase 2
+  is real Apple IAP / Google Play Billing** (Stripe not allowed in-app); paywall UI still needs redesign
+  to the phase model. See `subscription-model` memory + `daily-reports/2026-07-14.md`. Resolves the
+  "subscriptions are UI-only" gap (#1 below) at the backend layer.
 
 ## Completed this session (2026-07-10)
 
