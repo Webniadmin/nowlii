@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/utils/color_palette/color_palette.dart';
+import 'package:nowlii/models/subscription_model.dart';
+import 'package:nowlii/services/subscription_service.dart';
 
 class NowliProSubscription extends StatefulWidget {
   const NowliProSubscription({super.key});
@@ -13,6 +15,57 @@ class NowliProSubscription extends StatefulWidget {
 class _NowliProSubscriptionState extends State<NowliProSubscription> {
   /// 0 = Monthly, 1 = Yearly (default selected)
   int _selectedPlan = 1;
+
+  final SubscriptionService _subService = SubscriptionService();
+  SubscriptionStatus? _status;
+  SubscriptionPlan? _plan;
+  bool _activating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSubscription();
+  }
+
+  Future<void> _loadSubscription() async {
+    final results = await Future.wait([
+      _subService.getPlan(),
+      _subService.getMyStatus(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _plan = results[0] as SubscriptionPlan?;
+      _status = results[1] as SubscriptionStatus?;
+    });
+  }
+
+  // Real full/first-phase monthly price from the backend; falls back to the design value.
+  double get _monthlyPrice {
+    if (_status?.subscribed == true && !(_status?.isFree ?? false)) {
+      return _status!.currentPrice;
+    }
+    if (_plan != null && _plan!.phases.isNotEmpty) return _plan!.phases.first.price;
+    return 19.99;
+  }
+
+  // Phase-1 MOCK activation (real Apple IAP / Google Play Billing comes later).
+  Future<void> _subscribe() async {
+    setState(() => _activating = true);
+    final status = await _subService.activateMock();
+    if (!mounted) return;
+    setState(() {
+      _activating = false;
+      if (status != null) _status = status;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(status != null
+            ? 'Subscription active — month ${status.monthIndex}, \$${status.currentPrice.toStringAsFixed(2)}/mo'
+            : 'Could not activate subscription. Please try again.'),
+        backgroundColor: status != null ? Colors.green : Colors.red,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -256,7 +309,7 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
                                 ),
                               ),
                               Text(
-                                '\$19.99',
+                                '\$${_monthlyPrice.toStringAsFixed(2)}',
                                 style: GoogleFonts.workSans(
                                   color: const Color(0xFF011F54),
                                   fontSize: 22,
@@ -341,7 +394,7 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
                         width: double.infinity,
                         height: 72,
                         child: ElevatedButton(
-                          onPressed: () {},
+                          onPressed: _activating ? null : _subscribe,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF3F3CD6),
                             shape: RoundedRectangleBorder(
@@ -349,18 +402,31 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
                             ),
                             elevation: 0,
                           ),
-                          child: Text(
-                            _selectedPlan == 1
-                                ? 'Renew for \$25.99'
-                                : 'Renew for \$19.99',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.workSans(
-                              color: const Color(0xFFFFFDF7),
-                              fontSize: 24,
-                              fontWeight: FontWeight.w900,
-                              height: 0.8,
-                            ),
-                          ),
+                          child: _activating
+                              ? const SizedBox(
+                                  height: 26,
+                                  width: 26,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Color(0xFFFFFDF7),
+                                    ),
+                                  ),
+                                )
+                              : Text(
+                                  _status?.hasAccess == true
+                                      ? (_status?.lifetimeFree == true
+                                          ? 'Active — free forever 🌱'
+                                          : 'Active — \$${_monthlyPrice.toStringAsFixed(2)}/mo')
+                                      : 'Subscribe for \$${_monthlyPrice.toStringAsFixed(2)}',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.workSans(
+                                    color: const Color(0xFFFFFDF7),
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w900,
+                                    height: 0.8,
+                                  ),
+                                ),
                         ),
                       ),
                       const SizedBox(height: 14),

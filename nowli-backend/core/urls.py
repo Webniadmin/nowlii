@@ -35,6 +35,7 @@ urlpatterns = [
     path("api/", include("Apps.insights.urls")),
     path("api/support/", include("Apps.support.urls")),
     path("api/voice-calls/", include("Apps.voice_calls.urls")),
+    path("api/subscriptions/", include("Apps.subscriptions.urls")),
 
     path('accounts/', include('allauth.urls')),
     

@@ -44,6 +44,13 @@ class ApiConstants {
   // Support endpoints
   static const String supportMessages = '/api/support/messages/';
 
+  // Subscription endpoints (baseUrl / Django). Backend is the source of truth for the
+  // decreasing-price-then-free lifecycle. See Apps.subscriptions.
+  static const String subscriptionPlan = '/api/subscriptions/plan/';
+  static const String subscriptionMe = '/api/subscriptions/me/';
+  static const String subscriptionActivate = '/api/subscriptions/activate/';
+  static const String subscriptionCancel = '/api/subscriptions/cancel/';
+
   // AI voice-call limit endpoints (use baseUrl / Django — the authority for the
   // per-user daily limit). See Apps.voice_calls on the backend.
   static const String voiceCallQuota = '/api/voice-calls/quota/';
