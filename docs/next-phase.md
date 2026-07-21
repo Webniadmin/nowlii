@@ -8,7 +8,29 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
-## ▶ RESUME HERE (2026-07-14 end of day)
+## ▶ RESUME HERE (2026-07-21 end of day)
+
+**Where we are:** the app is now **deployed to AWS and being tested on a physical phone against the live
+backend** (not just the emulator). Full detail in `daily-reports/2026-07-21.md`; the authoritative deploy
+runbook is now **`deploy-aws.md`** (rewritten — the old git-pull assumption was wrong; deploy = `git
+archive | ssh tar -x` → `docker compose build && up -d`). **SSH to EC2 is fixed** (`ssh -i ~/.ssh/id_ed25519
+ubuntu@16.170.191.239`). Google login works on-device. Core API (auth/quests/subtasks/profiles/avatars/
+subscriptions/support) verified live.
+
+**Top blocker — AI is down everywhere:** the shared **OpenAI key is out of quota** (`insufficient_quota`),
+which kills AI voice, Insights (500), and AI subtask-gen on both AWS *and* local. **Next action: add OpenAI
+billing credits** (or rotate to a funded key / set a backend `ANTHROPIC_API_KEY`), then verify the AI trio.
+
+**Next up (2026-07-21):**
+1. Add OpenAI credits → re-verify AI voice / insights / subtask-gen end-to-end on the phone.
+2. Fix **Insights 500 → graceful fallback** (`insights/views.py`) + redeploy backend.
+3. Sign up a fresh account on the phone (prod RDS ≠ local DB) → test quests + AI voice on-device.
+4. Then continue the pre-2026-07-14 threads below (subscribe button 1A, secrets rotation A5, Apple login,
+   and HTTPS/domain before any release/Play build).
+
+---
+
+## ▶ RESUME HERE (2026-07-14 end of day — superseded by 2026-07-21 above)
 
 **Where we are:** core loop + AI voice call + Insights all working on the emulator. Big 2026-07-14
 session — full detail + a **DETAILED TO-DO for tomorrow in `daily-reports/2026-07-14.md`** (read its
@@ -93,7 +115,8 @@ flutter run -d emulator-5554 --dart-define-from-file=dart_defines.android.json
 | **A5** rotate API keys | ⏳ pending | Needs YOU to rotate at the providers (OpenAI/AWS/Hume/Google); then paste values → I update both `.env`s + fresh `SECRET_KEY`. |
 | **B1** Google login | ✅ **verified on Android** | `/api/auth/google/` (id_token → JWT) + button on all auth screens. Working end-to-end on the emulator with Google Cloud project `274971792537`. Web `signIn()` remains finicky (Android is the target). See `google-login.md`. |
 | **B2** Apple Sign-In | 🔶 prepared (keys pending) | Full flow built like Google: `/api/auth/apple/` (verifies identity token, 503 until configured) + `sign_in_with_apple` + button on all 4 auth screens. Fill in `APPLE_CLIENT_IDS` etc. to enable. See `docs/apple-login.md`. |
-| **B3** mobile build (device) | 🔶 in progress | Android toolchain working; app runs on the emulator; debug `.apk` build for a physical phone underway. See `docs/running-on-android.md`. iOS still needs macOS. |
+| **B3** mobile build (device) | ✅ **on real device vs AWS** | Debug `.apk` built with `dart_defines.prod.json` (→ AWS), installed on a physical phone via file transfer, runs against the **live AWS backend**; Google login verified on-device (2026-07-21). Release/Play build still needs HTTPS + signing. iOS still needs macOS. See `deploy-aws.md`. |
+| **AWS deploy** | ✅ **live (2026-07-21)** | Both services rebuilt on EC2 from `main`; runbook in `deploy-aws.md`; rollback images `:backup-20260721`. Prod `.env` gaps fixed (hosts/CSRF/Google id). Blocker: OpenAI quota for AI features. |
 | **Email/SMTP** | ✅ done | env-driven; sender = `nowliiapp@gmail.com`; test email delivered. |
 | **Companion avatars** | ✅ fixed | DB seeded (6 companions on S3); update sends `predefined_option`; empty-list fallback + broken-asset fix. |
 | **Support / contact chat** | ✅ done | `Apps/support` + `/api/support/messages/` (per-user); admin "Reply" box; email both ways. Superuser `justweb.rs@gmail.com`. See `docs/support-feature.md`. |

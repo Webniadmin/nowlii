@@ -1,6 +1,6 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-07-14_
+_Last reviewed: 2026-07-21_
 
 ## What the app does
 
@@ -10,6 +10,29 @@ call/alarm/repeat flags), track completion streaks, view progress analytics, and
 interact with a personalized companion (Milo, Bloop, Gumo, etc.) via text and **voice
 calls** — including AI-generated subtask suggestions, weekly reflections, and quest
 recommendations.
+
+## Completed this session (2026-07-21)
+
+_Full detail in `daily-reports/2026-07-21.md`; runbook in `deploy-aws.md`._
+
+- **First full AWS deploy from this repo.** Both services rebuilt on EC2 `16.170.191.239` from `main` and
+  verified live (previously the box ran ~3-month-old images from the original dev's Docker Hub). Deploy is
+  `git -c core.autocrlf=false archive HEAD:<svc> | ssh tar -x` → `docker compose build && up -d`;
+  old images tagged `:backup-20260721` for rollback. **SSH access blocker resolved** (our key added via
+  AWS CloudShell `ec2-instance-connect`; the real hold-up was a 2h dev-machine **clock skew** faking
+  `Signature expired` errors). Authored the missing **`nowli-ai/Dockerfile`** so its image is rebuildable.
+- **On-device testing against live AWS started** (debug APK, `dart_defines.prod.json`, installed via file
+  transfer). **Google login works on the phone.**
+- **Prod `.env` gaps fixed** (the "works local, fails AWS" pattern): added `ALLOWED_HOSTS` (was 400 on every
+  request), `CSRF_TRUSTED_ORIGINS`, and `SOCIAL_AUTH_GOOGLE_CLIENT_ID` (Google login was 503→now works).
+- **Frontend error handling improved** — `api_service.dart` now surfaces the real server status/message and
+  network exception instead of a blanket "Request failed" (debug build).
+- **Full live endpoint + env audit** (`deploy-aws.md`): core app healthy (auth, quests, subtasks, profiles,
+  avatars/S3, subscriptions, voice-quota, support). **All AI features are down via one root cause — the
+  shared OpenAI key hit `insufficient_quota` (429)**: AI voice → silence, Insights → 500, AI subtask-gen.
+  Resolves when OpenAI billing is topped up (or a funded key / backend `ANTHROPIC_API_KEY`). Apple login
+  503 (deferred). Found a robustness bug: Insights returns a raw 500 instead of graceful fallback on AI
+  failure.
 
 ## Completed this session (2026-07-14)
 

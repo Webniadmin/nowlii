@@ -88,3 +88,4 @@ FastAPI app **"Emotion AI — Human Friend System"** (v4.2). This is the `:8001`
 - `docs/running-locally.md` — verified first-run/setup procedure (toolchain install + per-service commands). Read before trying to run anything.
 - `docs/architecture.md` — how the three services connect, data/auth flow, ports, per-service directories and env vars.
 - `docs/project-status.md` — current state: what's complete, what's unfinished, and a dated session log.
+- **`docs/deploy-aws.md` — AWS deploy runbook** (live on EC2 `16.170.191.239`). SSH + `git archive | ssh tar -x` → `docker compose build && up -d`; prod `.env` gotchas, rollback tags, and the known OpenAI-quota blocker on AI features.
