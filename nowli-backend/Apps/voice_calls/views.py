@@ -89,6 +89,24 @@ def _calls_used_today(user):
     return VoiceCall.objects.filter(user=user, started_at__date=today).count()
 
 
+def _is_unlimited_user(user):
+    """True if this user bypasses the daily voice-call limit (QA/test accounts).
+
+    Matches the user's username OR email (case-insensitively) against
+    ``settings.VOICE_CALL_UNLIMITED_USERS``. Used to let dev/test accounts (e.g. "pavle")
+    make unlimited AI voice calls without changing the limit for real users.
+    """
+    allowlist = getattr(settings, 'VOICE_CALL_UNLIMITED_USERS', None) or []
+    if not allowlist:
+        return False
+    identifiers = {
+        str(getattr(user, 'username', '') or '').strip().lower(),
+        str(getattr(user, 'email', '') or '').strip().lower(),
+    }
+    identifiers.discard('')
+    return bool(identifiers & set(allowlist))
+
+
 class VoiceCallQuotaView(APIView):
     """`GET /api/voice-calls/quota/` — how many AI voice calls the user has left today."""
 
@@ -100,6 +118,10 @@ class VoiceCallQuotaView(APIView):
     )
     def get(self, request):
         used = _calls_used_today(request.user)
+        if _is_unlimited_user(request.user):
+            # Test/QA account: report an effectively unlimited quota so the app never
+            # blocks the call button. -1 signals "no limit" to the frontend.
+            return Response({'limit': -1, 'used': used, 'remaining': -1, 'unlimited': True})
         limit = settings.VOICE_CALL_DAILY_LIMIT
         return Response({
             'limit': limit,
@@ -132,6 +154,7 @@ class VoiceCallStartView(APIView):
     )
     def post(self, request):
         limit = settings.VOICE_CALL_DAILY_LIMIT
+        unlimited = _is_unlimited_user(request.user)
 
         with transaction.atomic():
             # Race protection: serialize concurrent start requests for THIS user so two
@@ -141,7 +164,7 @@ class VoiceCallStartView(APIView):
             User.objects.select_for_update().filter(pk=request.user.pk).first()
 
             used = _calls_used_today(request.user)
-            if used >= limit:
+            if not unlimited and used >= limit:
                 return Response(
                     {
                         'detail': 'Daily AI voice-call limit reached.',
@@ -158,8 +181,13 @@ class VoiceCallStartView(APIView):
             )
 
         data = VoiceCallSerializer(call).data
-        data['limit'] = limit
-        data['remaining'] = max(0, limit - (used + 1))
+        if unlimited:
+            data['limit'] = -1
+            data['remaining'] = -1
+            data['unlimited'] = True
+        else:
+            data['limit'] = limit
+            data['remaining'] = max(0, limit - (used + 1))
         return Response(data, status=status.HTTP_201_CREATED)
 
 

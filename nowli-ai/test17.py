@@ -811,6 +811,154 @@ async def delete_session(session_id: str):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Realtime voice — OpenAI Realtime API over WebRTC (speech-to-speech)
+# ══════════════════════════════════════════════════════════════════════════════
+# The mobile app runs the live voice call directly against the OpenAI Realtime API
+# (native server-VAD turn-taking + barge-in). We only (1) mint a short-lived ephemeral
+# token here so the real API key never reaches the client, and (2) let the app hand back
+# the finished transcript so the existing summary / emotion / low-mood endpoints (which
+# all read session.turns) keep working unchanged.
+
+# Env-overridable; defaults chosen for cost (mini) + a calm female voice.
+REALTIME_MODEL: str = os.getenv("REALTIME_MODEL", "gpt-realtime-mini")
+REALTIME_VOICE: str = os.getenv("REALTIME_VOICE", "marin")
+REALTIME_TRANSCRIBE_MODEL: str = os.getenv("REALTIME_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
+
+# Calm, professional psychological-companion persona used ONLY for the Realtime voice call.
+# The original _FRIEND_PROMPTS persona (used by the text/SSE path) is intentionally left
+# untouched — to roll back, point realtime_token's `instructions` back to
+# _build_system_prompt("neutral", ...).
+_REALTIME_PERSONA_EN = """You are {system_name}, a calm and caring companion for {user_name} — a warm, steady presence who helps them feel heard, safe, and a little lighter.
+Speak slowly and softly, with a gentle, grounded calm. Leave small pauses. Never rush, never overwhelm.
+Listen closely and gently reflect back what you hear before anything else, so {user_name} feels truly understood. Validate their feelings first — whatever they feel is okay and welcome here.
+Don't rush to fix, and don't give advice unless they ask for it. Never brush feelings aside with empty reassurance like "it'll be fine".
+When {user_name} is low, anxious, or overwhelmed, slow down and steady them — be their calm anchor. When something is good, gently celebrate it with them.
+Ask one soft, curious, open question at a time, and let {user_name} lead the pace.
+Be warm, human, and fully present — a caring companion, not a clinician, assistant, or coach. If {user_name} is ever in real danger or crisis, gently and warmly encourage them to reach out to someone they trust or local professional or emergency support, and gently stay with them.
+Remember what {user_name} shares and bring it back naturally. Never say you are an AI — you are simply {system_name}, here for {user_name}."""
+
+
+def _realtime_instructions(session) -> str:
+    """Persona for the Realtime voice call: calm, professional psychological companion.
+
+    English uses the dedicated calm persona above; other languages fall back to the original
+    _build_system_prompt so nothing else regresses. Voice-format rules are appended so the
+    model speaks in short, natural spoken sentences.
+    """
+    lang = session.language if session.language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+    if lang == "en":
+        base = _REALTIME_PERSONA_EN.format(
+            system_name=session.system_name, user_name=session.user_name,
+        )
+        return base + _VOICE_RULES.get("en", "")
+    return _build_system_prompt("neutral", session.user_name, session.system_name, lang)
+
+
+class RealtimeTokenRequest(BaseModel):
+    session_id: str = Field(..., description="Existing nowli-ai session id (from /session/new).")
+
+
+@app.post("/api/v1/realtime/token")
+async def realtime_token(request: RealtimeTokenRequest):
+    """Mint a short-lived ephemeral token for a client-side WebRTC Realtime session.
+
+    The Nowlii persona (same prompt as the text chat), server-VAD turn detection and input
+    transcription are baked into the session so the client just connects. The real
+    OPENAI_API_KEY stays server-side; the client only ever sees the ek_... token.
+    """
+    session = _get_session(request.session_id)
+    api_key = _resolve_openai_key()
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured")
+
+    instructions = _realtime_instructions(session)
+
+    payload = {
+        "session": {
+            "type": "realtime",
+            "model": REALTIME_MODEL,
+            "instructions": instructions,
+            "audio": {
+                "input": {
+                    "transcription": {"model": REALTIME_TRANSCRIBE_MODEL},
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.5,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 500,
+                        "create_response": True,
+                        "interrupt_response": True,
+                    },
+                },
+                "output": {"voice": REALTIME_VOICE},
+            },
+        }
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(
+                "https://api.openai.com/v1/realtime/client_secrets",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload,
+            )
+    except Exception as exc:
+        logger.error("Realtime token mint failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Failed to reach OpenAI Realtime")
+
+    if resp.status_code != 200:
+        logger.error("Realtime token mint HTTP %s: %s", resp.status_code, resp.text[:300])
+        raise HTTPException(status_code=502, detail="OpenAI Realtime token request rejected")
+
+    data = resp.json()
+    return {
+        "session_id": session.session_id,
+        "client_secret": data.get("value"),
+        "expires_at": data.get("expires_at"),
+        "model": REALTIME_MODEL,
+        "voice": REALTIME_VOICE,
+        "sdp_url": "https://api.openai.com/v1/realtime/calls",
+        "user_name": session.user_name,
+        "system_name": session.system_name,
+    }
+
+
+class RealtimeTurn(BaseModel):
+    user_message: str = ""
+    ai_reply: str = ""
+
+
+class RealtimeTurnsRequest(BaseModel):
+    session_id: str = Field(...)
+    turns: List[RealtimeTurn] = Field(default_factory=list)
+
+
+@app.post("/api/v1/session/turns")
+async def set_session_turns(request: RealtimeTurnsRequest):
+    """Replace a session's turn log with the transcript the Realtime client collected.
+
+    Realtime conversations happen client<->OpenAI directly, so nowli-ai never sees them.
+    The app posts the finished transcript here (at call end) so the summary / emotion /
+    low-mood endpoints — which all read session.turns — keep working exactly as before.
+    Emotions default to "neutral"; those endpoints re-derive real emotions from the
+    transcript with GPT, same as the live text path did.
+    """
+    session = _get_session(request.session_id)
+    session.turns = []
+    added = 0
+    for t in request.turns:
+        user_msg = (t.user_message or "").strip()
+        ai_reply = (t.ai_reply or "").strip()
+        if not user_msg and not ai_reply:
+            continue
+        session.add_turn(user_msg, "neutral", [])
+        session.set_reply(ai_reply)
+        added += 1
+    logger.info("Session turns set | id=%s | turns=%d", session.session_id, added)
+    return {"session_id": session.session_id, "turns": added}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # API 1 — POST /api/v1/detect-emotion
 # ══════════════════════════════════════════════════════════════════════════════
 

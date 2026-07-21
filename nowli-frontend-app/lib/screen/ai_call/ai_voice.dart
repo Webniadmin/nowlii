@@ -12,6 +12,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:nowlii/services/audio_stream_service.dart';
+import 'package:nowlii/services/realtime_call_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class AiVoice extends StatefulWidget {
@@ -69,6 +70,8 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   bool _authorizing = true; // checking the daily limit with the backend
   bool _callBlocked = false; // limit reached or the check failed
   String _blockMessage = '';
+  bool _connecting = false; // realtime: connecting / waiting for Nowlii's first words
+  bool _callStarted = false; // realtime: timer started (on Nowlii's first words)
   int? _callId; // server-side VoiceCall id, for the end report
   bool _callEndReported = false;
 
@@ -76,6 +79,15 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   final AiCallService _aiCallService = AiCallService();
   AiSession? _currentSession;
   String _aiResponse = '';
+
+  // Realtime (OpenAI speech-to-speech) engine. When _useRealtime is true the live call
+  // runs over WebRTC with native turn-taking/barge-in (smooth, ChatGPT-like) instead of
+  // the old speech-to-text → GPT → text-to-speech pipeline below. The old pipeline is kept
+  // intact as a fallback (flip this to false). Design + all features are unchanged either
+  // way — only the audio engine differs. The summary still works: we feed the Realtime
+  // transcript into the nowli-ai session at call end (see _reportCallEnd).
+  final RealtimeCallService _realtime = RealtimeCallService();
+  bool _useRealtime = true;
   EmotionData? _currentEmotion;
   bool _isListening = false;
 
@@ -96,15 +108,28 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   final List<String> _ttsQueue = [];
   bool _isSpeaking = false;
 
-  // Barge-in: let the user interrupt the AI mid-reply for a fluid conversation.
-  // The mic stays open while the AI speaks; real user speech stops the AI.
-  // Voice barge-in: the mic stays open while the AI speaks; a real user phrase stops it.
-  // REQUIRES hardware echo cancellation (a real phone) OR headphones on the emulator —
-  // otherwise the mic hears the AI's own TTS and the AI interrupts itself. (Tap-to-
-  // interrupt in _toggleListening works regardless, as a manual fallback.)
+  // Hands-free "barge-in": the mic stays OPEN while the AI speaks so the user can cut it
+  // off just by talking — no button press. The hard part is echo: without perfect hardware
+  // echo-cancellation the mic also hears the AI's OWN voice, and naively that makes the AI
+  // interrupt itself non-stop. We defeat that with TWO guards so the AI can NEVER interrupt
+  // itself, while a real human voice still stops it instantly:
+  //   1) CONTENT match — we know exactly what the AI is currently saying (`_aiResponse`).
+  //      A transcription made mostly of the AI's own words is echo → ignored. Only speech
+  //      with enough NEW words (not in the AI's output) counts as the user talking.
+  //   2) LOUDNESS gate — the user speaking into the phone is louder than the AI's speaker
+  //      bleed, so we also require the recent mic level to cross a threshold.
+  // Tap-to-interrupt (_toggleListening) still works as a manual fallback.
   static const bool _bargeInEnabled = true;
-  // Ignore 1-word blips (echo / noise / TTS tail); require a short real phrase.
+  // A real interruption needs at least this many words total AND this many NEW words
+  // (words the AI is not currently saying), so the AI's own echo never trips it.
   static const int _bargeInMinWords = 2;
+  static const int _bargeInMinNovelWords = 2;
+  static const double _bargeInNovelRatio = 0.5; // >=50% of heard words must be new
+  // Recent mic loudness must exceed this to allow a barge-in while the AI is speaking —
+  // the user's voice is louder than the AI's speaker echo. Tune per device if needed.
+  static const double _bargeInLevelThreshold = 2.5;
+  double _recentMicLevel = 0.0; // most recent mic sound level (rms-ish), for the loudness gate
+  bool _micLevelReported = false; // some platforms never report levels; only gate on loudness if they do
   bool _bargeInterrupt = false; // set when the user interrupts; breaks the SSE loop
 
   // Live audio streaming
@@ -171,6 +196,11 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
 
   /// Start the AI session, the timer and listening — only after the call is authorized.
   void _beginCall() {
+    if (_useRealtime) {
+      _beginRealtimeCall();
+      return;
+    }
+
     // Initialize speech and TTS
     _initializeSpeech();
     _initializeTts();
@@ -195,6 +225,133 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     _startListeningCheck();
   }
 
+  /// Realtime (OpenAI speech-to-speech) call. Same screen/design/features; only the audio
+  /// engine differs. OpenAI handles turn-taking + barge-in natively over WebRTC, so there
+  /// is no client-side STT/TTS or barge-in heuristics here.
+  Future<void> _beginRealtimeCall() async {
+    try {
+      await _startRealtimeCall();
+    } catch (e, st) {
+      print('❌ Realtime start crashed: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _callBlocked = true;
+        _blockMessage = "Couldn't start the voice call.\n$e";
+      });
+    }
+  }
+
+  Future<void> _startRealtimeCall() async {
+    // Show a "connecting" indicator until Nowlii actually starts talking. The call timer is
+    // NOT started here — it starts on her first words (_onRealtimeStarted) so the timed
+    // duration reflects the real conversation, not the connection/setup wait.
+    if (mounted) setState(() => _connecting = true);
+
+    // WebRTC's getUserMedia does NOT prompt for the mic on its own — request it up front,
+    // otherwise the native audio capture fails hard (crash) on Android.
+    if (!kIsWeb) {
+      final micStatus = await Permission.microphone.request();
+      if (!micStatus.isGranted) {
+        if (!mounted) return;
+        setState(() {
+          _callBlocked = true;
+          _blockMessage =
+              "Microphone permission is required for the call.\nEnable it in Settings and try again.";
+        });
+        return;
+      }
+      // Let the audio subsystem settle after the permission grant before WebRTC captures
+      // the mic — capturing the instant RECORD_AUDIO is granted can crash the native ADM.
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+    }
+
+    // Create the nowli-ai session first — we need its id to mint the Realtime token, and it
+    // keeps the end-of-call summary/emotion endpoints working (we feed the transcript in).
+    await _createAiSession();
+    if (!mounted) return;
+    final sessionId = _currentSession?.sessionId;
+    if (sessionId == null || sessionId.isEmpty) {
+      setState(() {
+        _callBlocked = true;
+        _blockMessage =
+            "Couldn't reach the voice service.\nPlease check your connection and try again.";
+      });
+      return;
+    }
+
+    // Wire the engine's events to the existing UI state (animation, caption, mic icon).
+    _realtime
+      ..onAiSpeakingChange = (speaking) {
+        if (!mounted) return;
+        // First time Nowlii speaks → drop the connecting overlay and start the timer.
+        if (speaking) _onRealtimeStarted();
+        setState(() {
+          _isSpeaking = speaking;
+          if (speaking) _markMicActive();
+        });
+      }
+      ..onUserSpeakingChange = (listening) {
+        if (!mounted) return;
+        setState(() {
+          _isListening = listening;
+          if (listening) _markMicActive();
+        });
+      }
+      ..onAssistantText = (text) {
+        if (!mounted) return;
+        setState(() => _aiResponse = text);
+      }
+      ..onUserText = (text) {
+        if (!mounted) return;
+        setState(() => _liveTranscription = text);
+      }
+      ..onError = (message) {
+        print('❌ Realtime: $message');
+      };
+
+    final ok = await _realtime.connect(sessionId);
+    if (!mounted) return;
+    if (!ok) {
+      setState(() {
+        _connecting = false;
+        _callBlocked = true;
+        _blockMessage =
+            "Couldn't start the voice call right now.\nPlease check your connection and try again.";
+      });
+      return;
+    }
+
+    // Safety net: if Nowlii's first words don't arrive (rare event delay), drop the
+    // connecting overlay and start the timer anyway after a few seconds.
+    Future.delayed(const Duration(seconds: 8), () {
+      if (mounted && !_callStarted) _onRealtimeStarted();
+    });
+
+    // Seed quest context if launched from a quest, otherwise let Nowlii open warmly.
+    final questTitle = widget.questTitle?.trim() ?? '';
+    final userName = await _resolveUserName();
+    if (questTitle.isNotEmpty) {
+      _realtime.sendUserText(
+        "I'm starting my task now: $questTitle. "
+        "Please keep me company and help me stay focused.",
+      );
+    } else {
+      _realtime.greet(userName);
+    }
+  }
+
+  /// Runs once, the moment Nowlii first starts talking (or after the fallback timeout):
+  /// hides the connecting indicator and starts the call timer — so the timed duration
+  /// reflects the real conversation, not the connection wait.
+  void _onRealtimeStarted() {
+    if (_callStarted) return;
+    _callStarted = true;
+    if (mounted) setState(() => _connecting = false);
+    _startCall();
+    _showStartDurationNotice();
+  }
+
   void _showStartDurationNotice() {
     setState(() => _showStartNotice = true);
     Future.delayed(const Duration(seconds: 4), () {
@@ -217,6 +374,11 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     List<Map<String, dynamic>>? lowMoodPhrases;
     final sessionId = _currentSession?.sessionId;
     if (sessionId != null && sessionId.isNotEmpty) {
+      // Realtime: hand the collected transcript to nowli-ai FIRST so the insight/summary
+      // endpoints (which read the session's turns) have the conversation to analyze.
+      if (_useRealtime) {
+        await _realtime.flushTranscript(sessionId);
+      }
       final data = await _aiCallService.getCallInsights(sessionId);
       final raw = data?['emotion_breakdown'];
       if (raw is Map) {
@@ -318,7 +480,7 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
           print('❌ Speech error: $error');
           
           // Check if it's a "no match" error (user paused speaking)
-          final errorMsg = error.errorMsg?.toLowerCase() ?? '';
+          final errorMsg = error.errorMsg.toLowerCase();
           
           if (errorMsg.contains('no_match') || errorMsg.contains('no match')) {
             print('⚠️ No speech detected, will restart listening...');
@@ -427,6 +589,44 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     }
   }
 
+  /// Split text into lowercase word tokens (letters/digits only) for echo comparison.
+  List<String> _wordTokens(String text) => text
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+      .split(RegExp(r'\s+'))
+      .where((w) => w.isNotEmpty)
+      .toList();
+
+  /// True when a transcription heard *while the AI is speaking* looks like the real user
+  /// talking rather than the mic picking up the AI's own TTS. Echo is made of the AI's own
+  /// words (`_aiResponse`), so we require enough NEW words AND a loud-enough mic level.
+  /// This is the guard that stops the AI interrupting itself while still allowing the user
+  /// to barge in hands-free.
+  bool _isLikelyUserInterruption(String transcription) {
+    final heard = _wordTokens(transcription);
+    if (heard.length < _bargeInMinWords) return false;
+    final aiWords = _wordTokens(_aiResponse).toSet();
+    final novel = heard.where((w) => !aiWords.contains(w)).length;
+    if (novel < _bargeInMinNovelWords) return false;
+    if (novel / heard.length < _bargeInNovelRatio) return false;
+    // Loudness gate — but only if this platform actually reports mic levels, otherwise a
+    // permanently-zero level would block every voice interruption. Content match still holds.
+    if (_micLevelReported && _recentMicLevel < _bargeInLevelThreshold) return false;
+    return true;
+  }
+
+  /// True when a transcription is (near-)verbatim the AI's own words — i.e. speaker echo
+  /// picked up right as/after the AI spoke. Used to make sure such echo is never sent back
+  /// as a user turn (which would make the AI talk to itself in a loop).
+  bool _isEchoOfAi(String text) {
+    final heard = _wordTokens(text);
+    if (heard.isEmpty) return false;
+    final aiWords = _wordTokens(_aiResponse).toSet();
+    if (aiWords.isEmpty) return false;
+    final overlap = heard.where((w) => aiWords.contains(w)).length;
+    return overlap / heard.length >= 0.8; // ~verbatim echo of the AI's own words
+  }
+
   /// Barge-in: the user started talking while the AI was speaking/streaming.
   /// Stop the AI immediately (TTS + any in-flight reply) so the user is heard.
   Future<void> _interruptAiForBargeIn() async {
@@ -448,8 +648,9 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
       print('🔇 TTS queue empty, all speech completed');
       // If AI stream finished and we are done speaking, auto-resume listening after a small delay
       if (!_isHandlingAiResponse && !_isMuted && _currentSession != null && !_isPaused && mounted) {
-        // Add a small delay to avoid picking up TTS tail or system sounds
-        await Future.delayed(Duration(milliseconds: 1000)); // Increased delay
+        // Brief delay to avoid picking up the TTS tail, then resume listening quickly so
+        // the user can reply without a noticeable gap.
+        await Future.delayed(Duration(milliseconds: 300));
         if (!_isHandlingAiResponse && !_isMuted && _currentSession != null && !_isPaused && mounted && !_isListening) {
           print('✅ Ready to listen again');
           _startListening();
@@ -534,8 +735,10 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
         // Quest context: if this call was started from a quest ("Enable call" on),
         // seed the conversation so the companion knows the task and can keep the user
         // focused. Delayed so it doesn't clash with the start notice / auto-listen.
+        // Quest seeding is handled by the Realtime engine in _beginRealtimeCall; only the
+        // old SSE pipeline seeds it here.
         final questTitle = widget.questTitle?.trim() ?? '';
-        if (questTitle.isNotEmpty) {
+        if (questTitle.isNotEmpty && !_useRealtime) {
           Future.delayed(const Duration(milliseconds: 2500), () {
             if (mounted && _currentSession != null) {
               _sendMessageToAi(
@@ -628,23 +831,29 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
               });
             }
 
-            // Barge-in: the user started talking while the AI is speaking or its reply
-            // is still streaming. Require a short real phrase (>= _bargeInMinWords) so a
-            // single-word blip / echo / TTS tail doesn't cut the AI off. Stops the AI now;
-            // the final-result branch below then sends this turn normally.
-            final wordCount = recognizedText
-                .split(RegExp(r'\s+'))
-                .where((w) => w.isNotEmpty)
-                .length;
+            // Barge-in: the user started talking while the AI is speaking or its reply is
+            // still streaming. We ONLY interrupt when the transcript looks like real user
+            // speech (enough NEW words vs. the AI's own words + loud enough) — this is what
+            // stops the AI from hearing its own TTS and interrupting itself. Stops the AI
+            // now; the final-result branch below then sends this turn normally.
             if (_bargeInEnabled &&
                 (_isSpeaking || _isHandlingAiResponse) &&
-                wordCount >= _bargeInMinWords &&
-                !_bargeInterrupt) {
+                !_bargeInterrupt &&
+                _isLikelyUserInterruption(recognizedText)) {
+              print('✋ Real user interruption detected — stopping the AI');
               _interruptAiForBargeIn();
             }
 
-            // If this is a final result and we have text, send it immediately
-            if (result.finalResult && recognizedText.isNotEmpty && !_isHandlingAiResponse) {
+            // Send a completed user turn. Guards, besides the usual ones:
+            //  - !_isSpeaking: never send while the AI's TTS is still playing (that text is
+            //    almost certainly the mic hearing the AI — closes the self-reply window).
+            //  - !_isEchoOfAi: drop a (near-)verbatim echo of the AI's own words so the AI
+            //    can't end up talking to itself.
+            if (result.finalResult &&
+                recognizedText.isNotEmpty &&
+                !_isHandlingAiResponse &&
+                !_isSpeaking &&
+                !_isEchoOfAi(recognizedText)) {
               print('✅ Final result detected, sending immediately');
               final textToSend = recognizedText;
               if (mounted) {
@@ -660,6 +869,8 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
           // UI-TD-001: voice-activity drives the mic icon — active while the user
           // is actually speaking (sound above threshold), off ~1s after they stop.
           onSoundLevelChange: (level) {
+            _recentMicLevel = level; // feeds the barge-in loudness gate (_isLikelyUserInterruption)
+            if (level > 0) _micLevelReported = true;
             if (level >= _micSpeakingThreshold) {
               _markMicActive();
             } else {
@@ -667,7 +878,10 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
             }
           },
           listenFor: Duration(minutes: 5), // Matches the 5-min base call duration (TD-010)
-          pauseFor: Duration(seconds: 30), // Increased pause tolerance to 30 seconds
+          // End the user's turn after a short silence so the AI replies promptly (natural
+          // conversation pacing). 30s felt like a long dead-air lag; 3s ends the turn fast
+          // without cutting off normal mid-sentence pauses.
+          pauseFor: Duration(seconds: 3),
           partialResults: true,
           cancelOnError: false, // Don't cancel on errors
           listenMode: stt.ListenMode.dictation,
@@ -717,6 +931,16 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   }
   
   void _toggleListening() {
+    if (_useRealtime) {
+      // Realtime is hands-free (you interrupt just by talking). The mic button becomes a
+      // manual mute toggle: mute silences your mic, unmute re-opens it.
+      setState(() {
+        _isMuted = !_isMuted;
+        _realtime.setMuted(_isMuted);
+        _isListening = !_isMuted;
+      });
+      return;
+    }
     // Tap-to-interrupt: if the AI is speaking or its reply is still streaming, a tap on
     // the mic stops it and opens the mic so the user can jump in. This is the manual
     // alternative to voice barge-in (which needs hardware echo cancellation) — it works
@@ -973,6 +1197,12 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   void _togglePause() {
     setState(() {
       _isPaused = !_isPaused;
+      if (_useRealtime) {
+        // Realtime: pausing mutes the mic so Nowlii can't hear you; the timer pause is
+        // handled by _isPaused in _startCall. Unpausing re-opens the mic.
+        _realtime.setMuted(_isPaused || _isMuted);
+        return;
+      }
       if (_isPaused) {
         // Paused - stop listening
         _stopListening();
@@ -1155,9 +1385,12 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     _testInputController.dispose();
     _audioStreamSubscription?.cancel();
     _audioStreamService.dispose();
+    _realtime.disconnect(); // tear down the WebRTC call (no-op if not connected)
     try {
-      _speech.stop();
-      _flutterTts.stop();
+      if (!_useRealtime) {
+        _speech.stop();
+        _flutterTts.stop();
+      }
     } catch (e) {
       print('Dispose error: $e');
     }
@@ -1424,11 +1657,10 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
                           Row(
                             children: [
                               GestureDetector(
-                                onTap: () {
-                                  if (!_isMuted) {
-                                    _toggleListening();
-                                  }
-                                },
+                                // Always toggle: tap to mute, tap again to unmute. (The old
+                                // guard skipped the tap while muted, so you could never
+                                // unmute.) _toggleListening() flips mute both ways.
+                                onTap: _toggleListening,
                                 child: Container(
                                   width: 64,
                                   height: 64,
@@ -1549,6 +1781,8 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
               // Daily-limit gate: checking with the backend / blocked.
               if (_authorizing)
                 _buildAuthorizingOverlay(),
+              if (_connecting && !_callBlocked)
+                _buildConnectingOverlay(),
               if (_callBlocked)
                 _buildBlockedOverlay(),
             ],
@@ -1828,6 +2062,52 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   }
   */
 
+  // Full-screen overlay while the Realtime call is connecting and we wait for Nowlii's
+  // first words. It disappears the moment she starts talking (then the timer starts).
+  Widget _buildConnectingOverlay() {
+    return Positioned.fill(
+      child: Container(
+        color: const Color(0xFF91BBF9),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            SizedBox(
+              width: 54,
+              height: 54,
+              child: CircularProgressIndicator(
+                color: Color(0xFF4542EB),
+                strokeWidth: 3,
+              ),
+            ),
+            SizedBox(height: 22),
+            Text(
+              'Connecting…',
+              style: TextStyle(
+                color: Color(0xFF011F54),
+                fontSize: 20,
+                fontFamily: 'Work Sans',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'One moment — the conversation will\nbegin as soon as you hear a voice.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF011F54),
+                fontSize: 14,
+                fontFamily: 'Work Sans',
+                fontWeight: FontWeight.w500,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // Full-screen overlay while the backend daily-limit check is in flight.
   Widget _buildAuthorizingOverlay() {
     return Positioned.fill(
@@ -2073,7 +2353,13 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
               onPressed: () {
                 final message = _testInputController.text.trim();
                 if (message.isNotEmpty) {
-                  _sendMessageToAi(message);
+                  // Typed input: in Realtime mode send it over the data channel (Nowlii
+                  // replies in voice); otherwise use the old SSE path.
+                  if (_useRealtime) {
+                    _realtime.sendUserText(message);
+                  } else {
+                    _sendMessageToAi(message);
+                  }
                   _testInputController.clear();
                   setState(() {
                     _showTestInput = false;

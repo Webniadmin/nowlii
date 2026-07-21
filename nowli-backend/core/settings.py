@@ -307,6 +307,16 @@ SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL") or DEFAULT_FROM_EMAIL
 # Apps.voice_calls — the frontend is never the authority for this limit.
 VOICE_CALL_DAILY_LIMIT = int(os.getenv("VOICE_CALL_DAILY_LIMIT", "2"))
 
+# Test users who bypass VOICE_CALL_DAILY_LIMIT entirely (unlimited AI voice calls).
+# Comma-separated list of usernames and/or emails, matched case-insensitively. Meant for
+# QA/dev accounts (e.g. "pavle") that need to exceed the normal daily cap while testing —
+# never for real end users. Enforced server-side in Apps.voice_calls alongside the limit.
+VOICE_CALL_UNLIMITED_USERS = [
+    u.strip().lower()
+    for u in os.getenv("VOICE_CALL_UNLIMITED_USERS", "pavle").split(",")
+    if u.strip()
+]
+
 
 # ------------------------------------------------------------------------------
 # Google OAuth credentials 

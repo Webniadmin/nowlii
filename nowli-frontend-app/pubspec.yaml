@@ -59,6 +59,7 @@ dependencies:
   flutter_tts: ^4.2.0
   google_sign_in: ^6.2.1
   sign_in_with_apple: ^6.1.0
+  flutter_webrtc: ^1.5.2
   # evry dependencies must be added below this line
 
 

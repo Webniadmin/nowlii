@@ -460,19 +460,23 @@ class LoginAPI(APIView):
         }
     )
     def post(self, request, *args, **kwargs):
-        serializer = LoginSerializer(data=request.data)
+        # Normalize the email before validation: mobile autofill/keyboards often append a
+        # trailing space or newline, which makes EmailField reject the login with a 400
+        # before credentials are ever checked. Trimming is always safe for an email.
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        if data.get('email'):
+            data['email'] = str(data['email']).strip()
+        serializer = LoginSerializer(data=data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
+
         email = serializer.validated_data['email']
         password = serializer.validated_data['password']
 
-        try:
-            user = get_user_model().objects.get(email=email)
-        except get_user_model().DoesNotExist:
-            return Response({'error': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
-        
-        if not user.check_password(password):
+        # Case-insensitive lookup so an auto-capitalized first letter (common on phone
+        # keyboards) doesn't turn a correct login into "Invalid credentials".
+        user = get_user_model().objects.filter(email__iexact=email).first()
+        if user is None or not user.check_password(password):
             return Response({'error': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         refresh = RefreshToken.for_user(user)

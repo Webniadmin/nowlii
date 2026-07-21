@@ -8,6 +8,43 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
+## ▶ RESUME HERE (2026-07-22)
+
+**Where we are:** the **AI voice call was rebuilt on the OpenAI Realtime API (speech-to-speech over
+WebRTC, model `gpt-realtime-mini`)** — smooth, ChatGPT-voice-like, native turn-taking + barge-in. It is
+**working on the physical phone** (calm **`marin`** female voice + a calm psychological-companion persona).
+The old STT→GPT→TTS pipeline is kept as a fallback behind `_useRealtime` in `ai_voice.dart`. Summary/emotions
+still work (the transcript is fed back into the nowli-ai session at call end). Full detail: **`realtime-voice.md`**
+and `daily-reports/2026-07-22.md`.
+
+Also shipped today: **login fix** (email trim + case-insensitive lookup — the real bug was the AWS Gmail app
+password was revoked → signup/reset 500; switched prod to `nowliiapp@gmail.com`), and **`pavle` = unlimited
+AI calls** (`VOICE_CALL_UNLIMITED_USERS`). AI-quota note: the **Realtime path is funded and works** (nowli-ai
+OpenAI key has credit); the Django **Insights/subtask-gen** may still `insufficient_quota` (separate key) — see
+the 2026-07-21 block below.
+
+> ⚠️ **Servers were host-patched** (Django + nowli-ai on EC2, divergent from git). Local repo has the same
+> changes and is now committed on branch **`feat/realtime-voice-call`**. A future `git archive` redeploy will
+> only carry them once that branch is merged/pushed and re-deployed. See `realtime-voice.md` → "Deploy".
+
+**Next up — TO-DO (2026-07-22, from on-phone testing):**
+1. **Keep the screen awake on the call screen.** When the phone locks / screen sleeps during a call, the
+   WebRTC connection drops (timeout, call lost). **Do:** add a wakelock while on the AI-call screen (enable on
+   call start, release on dispose). **Files:** `pubspec.yaml` (+`wakelock_plus`), `lib/screen/ai_call/ai_voice.dart`
+   (`WakelockPlus.enable()` in `_onRealtimeStarted`, `WakelockPlus.disable()` in `dispose`). **Gotcha:** also
+   consider re-connecting gracefully if the OS backgrounds the app.
+2. **Small noise makes the AI restart talking.** Server VAD is too sensitive — faint background noise is heard
+   as the user starting to speak, so Nowlii interrupts itself and starts over. **Do:** raise the Realtime
+   `turn_detection.threshold` (e.g. 0.5→0.7) and/or `silence_duration_ms`, and consider enabling input noise
+   reduction. **Files:** `nowli-ai/test17.py` → `realtime_token` payload (`audio.input.turn_detection`, add
+   `"noise_reduction": {"type": "near_field"}`). Redeploy nowli-ai. Make these env-tunable.
+3. **Dynamic emotion emoji in the call summary.** The summary screen always shows the same smiley; make it
+   reflect the detected dominant emotion (sad→sad face, happy→happy, tired, angry, motivated). **Files:**
+   `lib/screen/ai_call/call_summary_screen.dart` (map `dominant_emotion`/`top_emotions` → icon/asset). The
+   data is already returned by `/chat/summary` (`dominant_emotion`, `top_emotions`) and `getCallInsights`.
+
+---
+
 ## ▶ RESUME HERE (2026-07-21 end of day)
 
 **Where we are:** the app is now **deployed to AWS and being tested on a physical phone against the live
