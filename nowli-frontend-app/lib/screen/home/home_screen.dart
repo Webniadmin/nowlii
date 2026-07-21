@@ -548,7 +548,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Container(
                 width: 100,
                 height: 100,
-                padding: const EdgeInsets.all(24),
+                clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
                   color: const Color(0xFF4542EB),
                   borderRadius: BorderRadius.circular(20),
@@ -556,20 +556,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: _profileData?.avatarLogo.isNotEmpty == true
                     ? Image.network(
                         _profileData!.avatarLogo,
-                        width: 90.28,
-                        height: 90.37,
+                        width: 100,
+                        height: 100,
+                        fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
                           return Image.asset(
-                            Assets.svgIcons.readyToMakeTodayCount.path,
-                            width: 90.28,
-                            height: 90.37,
+                            Assets.svgIcons.avatar.path,
+                            width: 100,
+                            height: 100,
+                            fit: BoxFit.cover,
                           );
                         },
                       )
                     : Image.asset(
-                        Assets.svgIcons.readyToMakeTodayCount.path,
-                        width: 90.28,
-                        height: 90.37,
+                        Assets.svgIcons.avatar.path,
+                        width: 100,
+                        height: 100,
+                        fit: BoxFit.cover,
                       ),
               ),
             ],
