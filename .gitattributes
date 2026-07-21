@@ -1,0 +1,4 @@
+# Shell scripts must always use LF — CRLF breaks the shebang inside Linux Docker
+# containers (`exec /app/entrypoint.sh: no such file or directory`). See docs/deploy-aws.md.
+*.sh text eol=lf
+entrypoint.sh text eol=lf
