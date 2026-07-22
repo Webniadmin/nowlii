@@ -824,6 +824,20 @@ REALTIME_MODEL: str = os.getenv("REALTIME_MODEL", "gpt-realtime-mini")
 REALTIME_VOICE: str = os.getenv("REALTIME_VOICE", "marin")
 REALTIME_TRANSCRIBE_MODEL: str = os.getenv("REALTIME_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
 
+# ── Cost controls for the Realtime call (audio tokens are OpenAI's priciest tier) ──
+# 1) Cap each spoken reply so a single turn can't run away into a long (expensive) monologue.
+#    Counts total output tokens (audio + its text transcript); ~1024 ≈ a few calm sentences.
+REALTIME_MAX_OUTPUT_TOKENS: int = int(os.getenv("REALTIME_MAX_OUTPUT_TOKENS", "1024"))
+# 2) Raise the voice-activity threshold so small background noise no longer triggers a whole
+#    extra response (each spurious response re-bills the growing conversation). Real barge-in
+#    (the user actually speaking over her) still interrupts — interrupt_response stays on.
+REALTIME_VAD_THRESHOLD: float = float(os.getenv("REALTIME_VAD_THRESHOLD", "0.7"))
+# 3) Silence (ms) before her reply starts — how snappy the turn-taking feels. 400ms is more
+#    natural than the 500ms default WITHOUT adding cost: it's still long enough that normal
+#    mid-sentence pauses (thinking/breathing) aren't chopped into extra (billed) responses.
+#    Going much lower (~200ms) would fragment turns → more responses → higher cost, so don't.
+REALTIME_SILENCE_MS: int = int(os.getenv("REALTIME_SILENCE_MS", "400"))
+
 # Calm, professional psychological-companion persona used ONLY for the Realtime voice call.
 # The original _FRIEND_PROMPTS persona (used by the text/SSE path) is intentionally left
 # untouched — to roll back, point realtime_token's `instructions` back to
@@ -878,14 +892,23 @@ async def realtime_token(request: RealtimeTokenRequest):
             "type": "realtime",
             "model": REALTIME_MODEL,
             "instructions": instructions,
+            # Cost cap: bound the length of any single spoken reply (see REALTIME_MAX_OUTPUT_TOKENS).
+            "max_output_tokens": REALTIME_MAX_OUTPUT_TOKENS,
             "audio": {
                 "input": {
+                    # Kept: transcribes the user's side so the end-of-call summary works. Cheap
+                    # relative to the speech-to-speech audio; the real savings are the caps below.
                     "transcription": {"model": REALTIME_TRANSCRIBE_MODEL},
+                    # Filter background noise before VAD so quiet room noise doesn't fire spurious
+                    # (billed) responses; "near_field" suits a phone held to / near the face.
+                    "noise_reduction": {"type": "near_field"},
                     "turn_detection": {
                         "type": "server_vad",
-                        "threshold": 0.5,
+                        # Higher threshold = ignore small noise; real speech still interrupts her.
+                        "threshold": REALTIME_VAD_THRESHOLD,
                         "prefix_padding_ms": 300,
-                        "silence_duration_ms": 500,
+                        # Snappier turn-taking (400ms vs 500ms) with no cost impact; see REALTIME_SILENCE_MS.
+                        "silence_duration_ms": REALTIME_SILENCE_MS,
                         "create_response": True,
                         "interrupt_response": True,
                     },
