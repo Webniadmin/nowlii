@@ -105,8 +105,31 @@ The Django and nowli-ai changes were **host-patched directly on EC2** (files edi
 carry these once the branch is merged and re-deployed. Server backups: `~/ai/test17.py.bak-*`,
 `~/backend/*.bak-*`, `~/backend/.env.bak-email`.
 
+## Cost controls (added 2026-07-23 — deployed to EC2)
+
+A few test calls billed ~$16–20 **each**. The server was **already on `gpt-realtime-mini`** (the cheapest
+realtime model — the `.env` had no `REALTIME_MODEL`, so it used the code default), so the blow-up was NOT the
+model. It was the uncapped, noise-amplified session: no reply cap + a low VAD threshold that let background
+noise fire spurious responses, each re-billing the growing (audio) conversation. Fixes in `realtime_token`'s
+session payload (`test17.py`), all env-tunable:
+
+- `max_output_tokens=1024` (`REALTIME_MAX_OUTPUT_TOKENS`) — caps each spoken reply.
+- `audio.input.noise_reduction={"type":"near_field"}` — filters room noise before VAD.
+- `turn_detection.threshold` `0.5 → 0.7` (`REALTIME_VAD_THRESHOLD`) — only real speech triggers/interrupts;
+  `interrupt_response` stays on so genuine barge-in still works.
+- `turn_detection.silence_duration_ms` `500 → 400` (`REALTIME_SILENCE_MS`) — snappier turn-taking, no cost
+  impact (still long enough not to chop mid-sentence pauses into extra turns).
+- `~/ai/.env` on EC2 now pins `REALTIME_MODEL=gpt-realtime-mini` explicitly (backup `~/ai/.env.bak-realtime-cost-*`).
+
+Estimated after-cost on mini with these caps: **~$0.03 per minute of talk** + **~$0.03 one-time summary** →
+a full 5+2.5 min call ≈ **$0.25** (was ~$16–20). Verify actual spend in the OpenAI usage dashboard.
+Deployed via the `deploy-aws.md` `git archive HEAD:nowli-ai` flow (commit on `feat/realtime-voice-call`).
+
 ## Known follow-ups (see `next-phase.md` → 2026-07-22 TO-DO)
 
 1. Keep the screen awake on the call screen (screen lock drops the WebRTC connection).
-2. Small noise makes the AI restart talking — raise `turn_detection.threshold` / add input noise reduction.
+2. ~~Small noise makes the AI restart talking — raise `turn_detection.threshold` / add input noise reduction.~~
+   **Done 2026-07-23** (see Cost controls above).
 3. Dynamic emotion emoji in the call summary (currently a static smiley).
+4. Optional further saving: `LLM_MODEL=gpt-4o` drives the end-of-call summary/insights; switching to
+   `gpt-4o-mini` would cut that (already-small) cost ~10× — decide vs. summary quality.

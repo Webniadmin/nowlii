@@ -8,6 +8,44 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
+## ▶ RESUME HERE (2026-07-23)
+
+**Done today:** cut the Realtime voice-call cost (test calls were ~$16–20 each). The server was **already on
+`gpt-realtime-mini`** (not a pricey model) — the blow-up was an uncapped, noise-amplified session. Deployed to
+EC2 (`nowli-ai`, committed on `feat/realtime-voice-call`): reply cap `max_output_tokens=1024`, input
+`noise_reduction=near_field`, VAD `threshold 0.5→0.7`, `silence_duration_ms 500→400`, all env-tunable; pinned
+`REALTIME_MODEL=gpt-realtime-mini` in `~/ai/.env`. Est. after-cost ≈ **$0.25/call** (~$0.03/min + ~$0.03
+summary). Talk/barge-in/summary all preserved. Full detail: `realtime-voice.md` → "Cost controls".
+**Decision:** keep the summary on `gpt-4o` (do NOT downgrade to mini).
+
+**TOP TO-DO (2026-07-24) — persist each call's summary in the DB, per user.**
+- **What to do:** every voice call's conversational summary must be **saved to the database tied to the user**
+  (survives nowli-ai restarts; enables per-user call history + richer Insights). Today only the 5-category
+  **emotion** breakdown is persisted (`CallEmotionSnapshot`); the **text summary is generated at call end and
+  then thrown away**. The summary content comes from nowli-ai `POST /api/v1/chat/summary` →
+  `mood_detected`, `focus_topic`, `energy_shift`, `next_step` (+ `dominant_emotion`, `top_emotions`).
+- **Files likely touched:**
+  - `nowli-backend/Apps/voice_calls/models.py` — new `CallSummary` model (OneToOne→`VoiceCall`, denormalized
+    `user` FK exactly like `CallEmotionSnapshot`) with `mood_detected` / `focus_topic` / `energy_shift` /
+    `next_step` text fields (+ optional raw JSON). Then `makemigrations` / `migrate`.
+  - `nowli-backend/Apps/voice_calls/views.py` (+ serializers) — extend the call-`end` endpoint to accept &
+    store these summary fields (mirror how `emotion_breakdown`/`dominant_emotion` are handled now).
+  - `nowli-frontend-app/lib/screen/ai_call/ai_voice.dart` → `_reportCallEnd` — after `flushTranscript`, also
+    fetch the summary (`/chat/summary` or extend `getCallInsights`) and pass its fields into `endCall`.
+  - `nowli-frontend-app/lib/services/voice_call_service.dart` → `endCall` — add the summary params to the body.
+  - (Optional) surface saved summaries in an Insights/history screen.
+- **Gotchas/blockers:**
+  - **nowli-ai sessions are in-memory only** → the summary MUST be fetched at call end **while the session is
+    still alive** (same window `CallEmotionSnapshot` already uses), and **after** the realtime `flushTranscript`
+    populates `session.turns` — otherwise the summary is empty.
+  - **Avoid paying GPT twice:** `getCallInsights` (call-insights) already runs a GPT pass for emotions; adding
+    a separate `/chat/summary` GPT-4o call doubles the end-of-call GPT cost. Prefer one combined call, or
+    reuse the emotions already fetched and only call summary once.
+  - **Idempotency:** call-end can fire more than once — the `_callEndReported` guard + an idempotent backend
+    `end` (upsert the summary) must not create duplicate rows.
+
+---
+
 ## ▶ RESUME HERE (2026-07-22)
 
 **Where we are:** the **AI voice call was rebuilt on the OpenAI Realtime API (speech-to-speech over
