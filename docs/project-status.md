@@ -1,6 +1,6 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-07-21_
+_Last reviewed: 2026-07-23_
 
 ## What the app does
 
@@ -10,6 +10,20 @@ call/alarm/repeat flags), track completion streaks, view progress analytics, and
 interact with a personalized companion (Milo, Bloop, Gumo, etc.) via text and **voice
 calls** — including AI-generated subtask suggestions, weekly reflections, and quest
 recommendations.
+
+## Completed this session (2026-07-23)
+
+_Full detail in `daily-reports/2026-07-23.md`._
+
+- **Traced a large OpenAI bill to a leaked API key, not the app.** A "1-minute call" appeared to cost ~$18;
+  logs proved today had exactly one capped `gpt-realtime-mini` session (~67s), which can't bill that. The
+  OpenAI dashboard showed spend on a model we never call (`gpt-5…-sol`) → the **old raw key leaked** and was
+  used by a third party. Confirmed the leak is **not** from current code (no key in git history, frontend,
+  `dart_defines`, or hardcoded — only in git-ignored `.env`).
+- **Rotated the OpenAI key and redeployed both services from git** (`git archive → build → up -d`). New key
+  verified live on nowli-ai (`realtime/token` → 200) and backend (`/api/` → 200); old key revoked everywhere.
+- **Open (user side):** set a hard OpenAI budget cap, check for unrecognized API keys, dispute the fraudulent
+  usage, and verify the `fahad1000mir/*` Docker Hub images aren't a leak source.
 
 ## Completed this session (2026-07-21)
 
