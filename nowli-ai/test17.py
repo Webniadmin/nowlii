@@ -361,13 +361,29 @@ class TurnRecord:
         self.ts               = time.time()
 
 
+def _normalize_voice_gender(value: str) -> str:
+    """Normalize the client's voice choice (Profile.voice: 'Male'/'Female') to 'male'/'female'.
+
+    Anything unrecognized returns '' → the Realtime call uses the default voice.
+    """
+    v = (value or "").strip().lower()
+    if v.startswith("m"):
+        return "male"
+    if v.startswith("f"):
+        return "female"
+    return ""
+
+
 class Session:
     def __init__(self, session_id: str, user_name: str = "User",
-                 system_name: str = "Aria", language: str = DEFAULT_LANGUAGE):
+                 system_name: str = "Aria", language: str = DEFAULT_LANGUAGE,
+                 voice: str = ""):
         self.session_id  = session_id
         self.user_name   = user_name.strip()   or "User"
         self.system_name = system_name.strip() or "Aria"
         self.language    = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+        # Chosen companion voice ('male'/'female' or '' for default) — drives the Realtime voice.
+        self.voice_gender = _normalize_voice_gender(voice)
         self.turns: List[TurnRecord] = []
         self.created_at  = time.time()
 
@@ -447,6 +463,9 @@ class NewSessionRequest(BaseModel):
     user_name:   str = Field(default="User")
     system_name: str = Field(default="Aria")
     language:    str = Field(default="en")
+    # Chosen companion voice: 'Male'/'Female' (from the user's profile). Optional — an unset
+    # or unknown value keeps the default Realtime voice.
+    voice:       str = Field(default="")
 
     @field_validator("language")
     @classmethod
@@ -787,9 +806,11 @@ async def new_session(request: NewSessionRequest = NewSessionRequest()):
     _sessions[sid] = Session(
         session_id=sid, user_name=request.user_name,
         system_name=request.system_name, language=request.language,
+        voice=request.voice,
     )
     s = _sessions[sid]
-    logger.info("New session | id=%s | user=%s | friend=%s | lang=%s", sid, s.user_name, s.system_name, s.language)
+    logger.info("New session | id=%s | user=%s | friend=%s | lang=%s | voice=%s",
+                sid, s.user_name, s.system_name, s.language, s.voice_gender or "default")
     return {
         "session_id": sid, "user_name": s.user_name, "system_name": s.system_name,
         "language": s.language, "language_name": SUPPORTED_LANGUAGES[s.language],
@@ -822,6 +843,26 @@ async def delete_session(session_id: str):
 # Env-overridable; defaults chosen for cost (mini) + a calm female voice.
 REALTIME_MODEL: str = os.getenv("REALTIME_MODEL", "gpt-realtime-mini")
 REALTIME_VOICE: str = os.getenv("REALTIME_VOICE", "marin")
+# The spoken voice is chosen per call from the companion the user picked (Profile.voice →
+# session.voice_gender). Both are env-overridable so the exact OpenAI voice can be tuned
+# without a code change. Defaults: calm female = "marin", calm male = "cedar" (both are the
+# newer gpt-realtime natural voices). REALTIME_VOICE stays the fallback when gender is unset.
+REALTIME_VOICE_FEMALE: str = os.getenv("REALTIME_VOICE_FEMALE", "marin")
+REALTIME_VOICE_MALE: str = os.getenv("REALTIME_VOICE_MALE", "cedar")
+
+
+def _resolve_realtime_voice(voice_gender: str) -> str:
+    """Pick the OpenAI Realtime voice for a call from the user's chosen companion gender.
+
+    ``voice_gender`` is the normalized 'male'/'female' stored on the session. Anything else
+    (unset/unknown) falls back to REALTIME_VOICE so existing calls are unaffected.
+    """
+    g = (voice_gender or "").strip().lower()
+    if g == "male":
+        return REALTIME_VOICE_MALE
+    if g == "female":
+        return REALTIME_VOICE_FEMALE
+    return REALTIME_VOICE
 REALTIME_TRANSCRIBE_MODEL: str = os.getenv("REALTIME_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
 
 # ── Cost controls for the Realtime call (audio tokens are OpenAI's priciest tier) ──
@@ -842,13 +883,14 @@ REALTIME_SILENCE_MS: int = int(os.getenv("REALTIME_SILENCE_MS", "400"))
 # The original _FRIEND_PROMPTS persona (used by the text/SSE path) is intentionally left
 # untouched — to roll back, point realtime_token's `instructions` back to
 # _build_system_prompt("neutral", ...).
-_REALTIME_PERSONA_EN = """You are {system_name}, a calm and caring companion for {user_name} — a warm, steady presence who helps them feel heard, safe, and a little lighter.
-Speak slowly and softly, with a gentle, grounded calm. Leave small pauses. Never rush, never overwhelm.
-Listen closely and gently reflect back what you hear before anything else, so {user_name} feels truly understood. Validate their feelings first — whatever they feel is okay and welcome here.
-Don't rush to fix, and don't give advice unless they ask for it. Never brush feelings aside with empty reassurance like "it'll be fine".
-When {user_name} is low, anxious, or overwhelmed, slow down and steady them — be their calm anchor. When something is good, gently celebrate it with them.
-Ask one soft, curious, open question at a time, and let {user_name} lead the pace.
-Be warm, human, and fully present — a caring companion, not a clinician, assistant, or coach. If {user_name} is ever in real danger or crisis, gently and warmly encourage them to reach out to someone they trust or local professional or emergency support, and gently stay with them.
+_REALTIME_PERSONA_EN = """You are {system_name}, a calm, grounded companion for {user_name} — a warm, steady presence who is easy to talk to.
+Speak slowly and softly, in short, natural sentences. Leave small pauses. Never rush, never overwhelm.
+Listen closely and let {user_name} lead. Take what they say at face value — do NOT guess, label, or assume how they feel, and do NOT ask leading mood questions like "are you sad?" or "are you happy or stressed?". If you're unsure how they're doing, ask gently and openly ("How's your day going?", "What's on your mind?") and let them put it into their own words.
+Stay neutral and even — don't swing the mood up or down, and don't read emotion into small things. Match {user_name}'s tone rather than setting it.
+Reflect back what you actually hear before responding, so {user_name} feels understood. Don't rush to fix, and don't give advice unless they ask. Never brush feelings aside with empty reassurance like "it'll be fine".
+Only if {user_name} clearly signals they're having a hard time, slow down and steady them — without making it bigger than they made it. If something is clearly going well, share in it lightly.
+Ask one soft, open question at a time, and let {user_name} set the pace.
+Be warm, human, and present — a companion, not a clinician, assistant, or coach. If {user_name} is ever in real danger or crisis, gently and warmly encourage them to reach out to someone they trust or local professional or emergency support, and gently stay with them.
 Remember what {user_name} shares and bring it back naturally. Never say you are an AI — you are simply {system_name}, here for {user_name}."""
 
 
@@ -886,6 +928,8 @@ async def realtime_token(request: RealtimeTokenRequest):
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured")
 
     instructions = _realtime_instructions(session)
+    # Male or female voice, chosen from the companion the user picked (default if unset).
+    voice = _resolve_realtime_voice(session.voice_gender)
 
     payload = {
         "session": {
@@ -913,7 +957,7 @@ async def realtime_token(request: RealtimeTokenRequest):
                         "interrupt_response": True,
                     },
                 },
-                "output": {"voice": REALTIME_VOICE},
+                "output": {"voice": voice},
             },
         }
     }
@@ -939,7 +983,7 @@ async def realtime_token(request: RealtimeTokenRequest):
         "client_secret": data.get("value"),
         "expires_at": data.get("expires_at"),
         "model": REALTIME_MODEL,
-        "voice": REALTIME_VOICE,
+        "voice": voice,
         "sdp_url": "https://api.openai.com/v1/realtime/calls",
         "user_name": session.user_name,
         "system_name": session.system_name,

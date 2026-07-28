@@ -61,6 +61,7 @@ dependencies:
   sign_in_with_apple: ^6.1.0
   flutter_webrtc: ^1.5.2
   # evry dependencies must be added below this line
+  wakelock_plus: ^1.2.8
 
 
 dev_dependencies:

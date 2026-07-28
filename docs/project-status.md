@@ -1,6 +1,6 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-07-23_
+_Last reviewed: 2026-07-29_
 
 ## What the app does
 
@@ -10,6 +10,31 @@ call/alarm/repeat flags), track completion streaks, view progress analytics, and
 interact with a personalized companion (Milo, Bloop, Gumo, etc.) via text and **voice
 calls** — including AI-generated subtask suggestions, weekly reflections, and quest
 recommendations.
+
+## Completed this session (2026-07-28 → 07-29)
+
+_Full detail in `next-phase.md` (RESUME HERE blocks for 07-28 and 07-29). All on branch
+`feat/realtime-voice-call`; **not yet deployed to EC2**._
+
+- **Voice-call summaries persisted per user.** New `voice_calls.CallSummary` model + `POST
+  /voice-calls/<id>/summary/` (idempotent) + `GET /voice-calls/summaries/`; saved from the summary
+  screen (zero extra GPT — the summary was already fetched to display it). New **Call History screen**
+  consumes the list. Migration `voice_calls.0004`.
+- **Voice-call polish:** wakelock on the call screen (screen no longer sleeps → WebRTC won't drop);
+  summary avatar emoji/colour now reflect the dominant emotion; "Save reflection" note now persists
+  (per-user, shows in Insights).
+- **Male/female voice per chosen avatar.** `NowliiPredefinedOption.voice` (Male/Female, default Male,
+  admin-editable) → `Profile.voice` on companion pick → nowli-ai Realtime voice (Male=`cedar`,
+  Female=`marin`). Voice selector now actually persists. Migrations `users.0013`, `0014` (seed mix).
+- **AI persona made more neutral** — no longer guesses/labels mood or asks leading "are you sad?"
+  questions (`_REALTIME_PERSONA_EN` in test17.py).
+- **Swipe-to-talk name reverted** to fixed "Fuzzy" (no longer the dynamic companion name).
+- **Progress + Insights made fully dynamic (de-faked).** Most-productive **hour** now computed
+  (`select_a_time`); **rest-day** feature (`Profile.rest_days` + `/insights/rest-days/`) — the button
+  works and excludes those days from skipped/calendar; skipped-days text, "Your moves" rings
+  (`completed/assigned`), and "% to 30 days" (`streak/30`) all real; **streak card** background is now
+  milestone-tier gradient logic + progress-to-next-badge (was fixed `120Days.png`). Migration
+  `users.0015`. All 8 `Apps.insights` tests pass.
 
 ## Completed this session (2026-07-23)
 

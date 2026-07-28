@@ -41,11 +41,30 @@ def _all_subtasks_done(quest) -> bool:
 #  Calendar Helper
 # ─────────────────────────────────────────────
 
-def _generate_calendar(start_date: date, end_date: date, quests: list, ref_date: date) -> list:
+def _get_rest_weekdays(user) -> set:
+    """The weekday names the user marked as intentional rest days (from their profile).
+
+    Returns an empty set when there's no profile or nothing marked. Normalized to
+    capitalized names ("Sunday") to match WEEKDAY_NAMES / strftime("%A").
+    """
+    try:
+        profile = getattr(user, "profile", None)
+        days = getattr(profile, "rest_days", None) or []
+        return {str(d).strip().capitalize() for d in days if str(d).strip()}
+    except Exception:
+        return set()
+
+
+def _generate_calendar(start_date: date, end_date: date, quests: list, ref_date: date,
+                       rest_weekdays: set = None) -> list:
     """
     Generates a list of day statuses for the range [start_date, end_date].
     Status can be: consistent, skipped, streak, none.
+
+    ``rest_weekdays`` (capitalized weekday names) are treated as intentional days off: a
+    day with incomplete quests that falls on a rest weekday is 'none', not 'skipped'.
     """
+    rest_weekdays = rest_weekdays or set()
     days_with_quests: dict[date, list] = defaultdict(list)
     for q in quests:
         if q.select_a_date:
@@ -85,7 +104,13 @@ def _generate_calendar(start_date: date, end_date: date, quests: list, ref_date:
             day_qs = days_with_quests[current]
             assigned = len(day_qs)
             completed = sum(1 for q in day_qs if _all_subtasks_done(q) or q.task_done)
-            status = "consistent" if (completed == assigned and assigned > 0) else "skipped"
+            if completed == assigned and assigned > 0:
+                status = "consistent"
+            elif current.strftime("%A") in rest_weekdays:
+                # Intentional rest day — don't flag it as a miss.
+                status = "none"
+            else:
+                status = "skipped"
         else:
             status = "none"
             assigned = 0
@@ -148,6 +173,22 @@ def get_monthly_analytics(user, ref: date = None) -> dict:
         best_date = day_scores.most_common(1)[0][0]
         most_productive_day = best_date.strftime("%A")
 
+    # ── 2b. Most productive hour (by the scheduled quest time) ──────────
+    # Only signal we have for time-of-day is Quests.select_a_time; weight completed quests
+    # double, same as the day scoring. Empty string when no quest has a time set.
+    hour_scores: Counter = Counter()
+    for q in quests:
+        if q.select_a_time:
+            hour = q.select_a_time.hour
+            hour_scores[hour] += 1
+            if _all_subtasks_done(q) or q.task_done:
+                hour_scores[hour] += 1
+
+    most_productive_hour = ""
+    if hour_scores:
+        best_hour = hour_scores.most_common(1)[0][0]
+        most_productive_hour = f"{best_hour:02d}:00"
+
     # ── 3. Preferred quest types (Soft steps vs Power moves) ────────────
     soft_count  = sum(1 for q in quests if q.zone == "Soft steps")
     power_count = sum(1 for q in quests if q.zone == "Power move")
@@ -192,7 +233,7 @@ def get_monthly_analytics(user, ref: date = None) -> dict:
     ]
 
     # ── 5. Calendar (consistent / skipped / streak) ──────────────────────
-    calendar = _generate_calendar(first, last, quests, ref)
+    calendar = _generate_calendar(first, last, quests, ref, _get_rest_weekdays(user))
 
     # ── 6. Milestones ────────────────────────────────────────────────────
     days_with_quests: dict[date, list] = defaultdict(list)
@@ -221,6 +262,7 @@ def get_monthly_analytics(user, ref: date = None) -> dict:
     return {
         "most_completed_quests": most_completed,
         "most_productive_day":   most_productive_day,
+        "most_productive_hour":  most_productive_hour,
         "preferred_quest_types": preferred_quest_types,
         "quests_completed":      quests_completed,
         "zone_progress":         zone_progress,
@@ -484,6 +526,7 @@ def get_weekly_analytics(user, ref: date = None) -> dict:
         if q.select_a_date:
             days_with_quests[q.select_a_date].append(q)
 
+    rest_weekdays = _get_rest_weekdays(user)
     skipped_days = []
     for i in range(7):
         d = monday + timedelta(days=i)
@@ -492,12 +535,14 @@ def get_weekly_analytics(user, ref: date = None) -> dict:
         if d in days_with_quests:
             day_qs = days_with_quests[d]
             all_done = all(_all_subtasks_done(q) or q.task_done for q in day_qs)
-            if not all_done:
-                skipped_days.append(WEEKDAY_NAMES[d.weekday()])
+            weekday_name = WEEKDAY_NAMES[d.weekday()]
+            # A day the user marked as a rest day is not a "skip".
+            if not all_done and weekday_name not in rest_weekdays:
+                skipped_days.append(weekday_name)
         # days with no quests at all are not "skipped" — just empty
 
     # ── Calendar ─────────────────────────────────────────────────────────
-    calendar = _generate_calendar(monday, sunday, quests, ref)
+    calendar = _generate_calendar(monday, sunday, quests, ref, rest_weekdays)
 
     # ── Top Emotions + When-feeling-low (from voice-call snapshots this week) ──
     top_emotions, emotions_summary = _build_top_emotions(user, monday, sunday)

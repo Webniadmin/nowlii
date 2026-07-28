@@ -63,6 +63,7 @@ MOCK_ANALYTICS = {
             {"task": "cooking", "completed_count": 2, "repeat_quest": True},
         ],
         "most_productive_day": "Sunday",
+        "most_productive_hour": "10:00",
         "preferred_quest_types": {
             "soft_steps_pct":  72.0,
             "power_moves_pct": 28.0,

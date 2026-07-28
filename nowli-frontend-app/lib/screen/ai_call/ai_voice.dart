@@ -13,6 +13,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:nowlii/services/audio_stream_service.dart';
 import 'package:nowlii/services/realtime_call_service.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class AiVoice extends StatefulWidget {
@@ -146,6 +147,10 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     super.initState();
     _totalDuration = _initialDuration;
     _elapsedTime = Duration.zero;
+
+    // Keep the screen awake for the whole call: if the phone locks / screen sleeps mid-call
+    // the WebRTC connection drops and the call is lost. Released in dispose(). Best-effort.
+    WakelockPlus.enable().catchError((e) => print('⚠️ Wakelock enable failed: $e'));
 
     // Progress animation
     _progressController = AnimationController(
@@ -713,14 +718,25 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     return 'Fuzzy';
   }
 
+  /// Resolve the companion's voice ('Male'/'Female') from the stored profile so the AI call
+  /// speaks in the voice the user chose for their companion. Empty when unset → the AI
+  /// service falls back to its default voice.
+  Future<String> _resolveCompanionVoice() async {
+    final storage = StorageService();
+    final profile = await storage.getProfileData();
+    return profile?.voice.trim() ?? '';
+  }
+
   Future<void> _createAiSession() async {
     try {
       final userName = await _resolveUserName();
       final companionName = await _resolveCompanionName();
+      final companionVoice = await _resolveCompanionVoice();
       final session = await _aiCallService.createSession(
         userName: userName,
         systemName: companionName,
         language: 'en',
+        voice: companionVoice,
       );
       
       if (session != null) {
@@ -1336,12 +1352,9 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
-        // Pass session ID to call summary screen
-        if (_currentSession != null) {
-          context.go('${AppRoutespath.callSummary}?sessionId=${_currentSession!.sessionId}');
-        } else {
-          context.go(AppRoutespath.callSummary);
-        }
+        // Pass session ID + call id to the summary screen (callId lets it persist the
+        // generated summary to the backend for this user).
+        context.go(_callSummaryRoute());
       }
     });
   }
@@ -1357,14 +1370,23 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     _timer?.cancel();
     _listeningCheckTimer?.cancel(); // Stop listening check
     
-    // Navigate to call summary with session ID
+    // Navigate to call summary with session ID + call id (see _callSummaryRoute).
     if (mounted) {
-      if (_currentSession != null) {
-        context.go('${AppRoutespath.callSummary}?sessionId=${_currentSession!.sessionId}');
-      } else {
-        context.go(AppRoutespath.callSummary);
-      }
+      context.go(_callSummaryRoute());
     }
+  }
+
+  /// Build the call-summary route, carrying the nowli-ai session id (so the screen can
+  /// generate the summary) and the backend call id (so it can persist that summary for
+  /// this user). Both are optional — either may be absent if the call never fully started.
+  String _callSummaryRoute() {
+    final params = <String, String>{
+      if (_currentSession != null) 'sessionId': _currentSession!.sessionId,
+      if (_callId != null) 'callId': '$_callId',
+    };
+    if (params.isEmpty) return AppRoutespath.callSummary;
+    final query = params.entries.map((e) => '${e.key}=${e.value}').join('&');
+    return '${AppRoutespath.callSummary}?$query';
   }
 
   void _onWrapUpContinue() {
@@ -1377,6 +1399,8 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   void dispose() {
     // Best-effort: if the user leaves the screen mid-call, still record the end.
     _reportCallEnd();
+    // Let the screen sleep normally again now that the call is over.
+    WakelockPlus.disable().catchError((e) => print('⚠️ Wakelock disable failed: $e'));
     _timer?.cancel();
     _listeningCheckTimer?.cancel(); // Cancel listening check timer
     _micOffTimer?.cancel(); // UI-TD-001: cancel the mic-icon debounce timer

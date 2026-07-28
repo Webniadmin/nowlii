@@ -251,6 +251,8 @@ import 'package:nowlii/screen/settings/api_personalization_screen/restricted_top
 import 'package:nowlii/screen/settings/api_personalization_screen/voice_selector_popup/voice_selector_popup.dart';
 import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
+import 'package:nowlii/api/profile_controller.dart';
+import 'package:nowlii/api/storage.dart';
 
 class AIPersonalizationScreen extends StatefulWidget {
   const AIPersonalizationScreen({super.key});
@@ -358,9 +360,21 @@ class _AIPersonalizationScreenState extends State<AIPersonalizationScreen> {
                         context,
                       );
                       if (selectedVoice != null) {
+                        // Persist the choice so the AI voice call speaks in it. Save to the
+                        // local profile cache (what the call reads via StorageService) and
+                        // best-effort to the backend so it survives a reinstall.
+                        final storage = StorageService();
+                        final profile = await storage.getProfileData();
+                        if (profile != null) {
+                          await storage.saveProfileData(
+                            profile.copyWith(voice: selectedVoice),
+                          );
+                        }
+                        // Best-effort backend sync; ignore failures (local cache already set).
+                        ProfileController().updateProfile(voice: selectedVoice);
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Selected: $selectedVoice')),
+                            SnackBar(content: Text('Voice set to $selectedVoice')),
                           );
                         }
                       }

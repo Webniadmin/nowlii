@@ -139,6 +139,7 @@ class TopEmotion {
 class MonthlyInsights {
   final List<MostCompletedQuest> mostCompletedQuests;
   final String mostProductiveDay;
+  final String mostProductiveHour;
   final PreferredQuestTypes preferredQuestTypes;
   final QuestsCompleted questsCompleted;
   final List<ZoneProgress> zoneProgress;
@@ -148,6 +149,7 @@ class MonthlyInsights {
   MonthlyInsights({
     required this.mostCompletedQuests,
     required this.mostProductiveDay,
+    required this.mostProductiveHour,
     required this.preferredQuestTypes,
     required this.questsCompleted,
     required this.zoneProgress,
@@ -162,6 +164,7 @@ class MonthlyInsights {
               .toList() ??
           [],
       mostProductiveDay: json['most_productive_day'] ?? '',
+      mostProductiveHour: json['most_productive_hour'] ?? '',
       preferredQuestTypes:
           PreferredQuestTypes.fromJson(json['preferred_quest_types'] ?? {}),
       questsCompleted:

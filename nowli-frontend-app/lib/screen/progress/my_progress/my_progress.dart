@@ -120,19 +120,51 @@ class _MyProgressState extends State<MyProgress> {
     );
   }
 
+  // Milestone thresholds a streak can reach; the card targets the next one up and tints
+  // its background by tier so it visibly "levels up" as the streak grows.
+  static const List<int> _streakMilestones = [3, 7, 14, 30, 60, 90, 120, 180, 365];
+
+  LinearGradient _streakGradient(int days) {
+    List<Color> colors;
+    if (days >= 120) {
+      colors = [const Color(0xFFFFE39A), const Color(0xFFFFB74D)]; // gold
+    } else if (days >= 30) {
+      colors = [const Color(0xFFFFE3C2), const Color(0xFFFFC078)]; // warm orange
+    } else if (days >= 7) {
+      colors = [const Color(0xFFFFF1DD), const Color(0xFFFFD9A8)]; // peach
+    } else if (days >= 1) {
+      colors = [const Color(0xFFEAF1FF), const Color(0xFFC3DBFF)]; // light blue
+    } else {
+      colors = [const Color(0xFFF2F4F8), const Color(0xFFE2E8F2)]; // neutral
+    }
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: colors,
+    );
+  }
+
   Widget _buildStreakCard() {
     // Use streak API data, fallback to insights data
     final streakDays = _streak?.streak ?? _insights?.monthly.milestones.longestStreakDays ?? 0;
-    
+
+    // Next milestone above the current streak (0 = already past the last one), plus the
+    // baseline milestone below it, to draw real progress toward the next badge.
+    final nextMilestone =
+        _streakMilestones.firstWhere((m) => m > streakDays, orElse: () => 0);
+    final prevMilestone =
+        _streakMilestones.lastWhere((m) => m <= streakDays, orElse: () => 0);
+    final daysToGo = nextMilestone > 0 ? nextMilestone - streakDays : 0;
+    final span = nextMilestone > prevMilestone ? nextMilestone - prevMilestone : 1;
+    final milestoneProgress = nextMilestone > 0
+        ? ((streakDays - prevMilestone) / span).clamp(0.0, 1.0)
+        : 1.0;
+
     return Container(
-      height: 410,
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        image: const DecorationImage(
-          image: AssetImage("assets/svg_icons/120Days.png"),
-          fit: BoxFit.cover,
-        ),
+        gradient: _streakGradient(streakDays),
         borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
@@ -156,9 +188,11 @@ class _MyProgressState extends State<MyProgress> {
           SizedBox(
             width: 302,
             child: Text(
-              streakDays > 0
-                  ? "You've stayed consistent for \n$streakDays days straight!"
-                  : "Start your streak today!",
+              streakDays <= 0
+                  ? "Start your streak today!"
+                  : nextMilestone > 0
+                      ? "You've stayed consistent for $streakDays days!\n$daysToGo to go to your $nextMilestone-day badge."
+                      : "Legendary — $streakDays days and counting!",
               style: GoogleFonts.workSans(
                 color: const Color(0xFF011F54),
                 fontSize: 18,
@@ -200,6 +234,36 @@ class _MyProgressState extends State<MyProgress> {
               ],
             ),
           ),
+          // Progress toward the next milestone badge (real streak data).
+          if (nextMilestone > 0) ...[
+            const SizedBox(height: 20),
+            SizedBox(
+              width: 302,
+              child: Column(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(100),
+                    child: LinearProgressIndicator(
+                      value: milestoneProgress,
+                      minHeight: 10,
+                      backgroundColor: Colors.white.withValues(alpha: 0.6),
+                      valueColor:
+                          const AlwaysStoppedAnimation<Color>(Color(0xFF4542EB)),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$streakDays / $nextMilestone days',
+                    style: GoogleFonts.workSans(
+                      color: const Color(0xFF011F54),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           // 1A: "Share" button hidden per request — commented out (not deleted).
           /*
           const SizedBox(height: 20),
@@ -244,7 +308,10 @@ class _MyProgressState extends State<MyProgress> {
     
     int completedDays = weeklyCalendar.where((day) => day.status == 'consistent').length;
     double progressPercentage = weeklyCalendar.isNotEmpty ? (completedDays / 7.0) : 0.0;
-    int percentTo30Days = (progressPercentage * 100).toInt();
+    // "% to 30 days" = how far the real current streak is toward a 30-day streak (not this
+    // week's completion). Uses the same streak source as the streak card.
+    final streakDays = _streak?.streak ?? _insights?.monthly.milestones.longestStreakDays ?? 0;
+    int percentTo30Days = ((streakDays / 30.0) * 100).clamp(0, 100).toInt();
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -355,6 +422,7 @@ class _MyProgressState extends State<MyProgress> {
   Widget _buildMovesSection() {
     int softSteps = 0;
     int powerMoves = 0;
+    int softAssigned = 0;
 
     // Real per-zone completed counts from the backend — weekly or monthly zone_progress
     // (both have the same shape). No client-side approximation.
@@ -364,10 +432,15 @@ class _MyProgressState extends State<MyProgress> {
     for (var zone in zoneProgress) {
       if (zone.zone == 'Soft steps') {
         softSteps = zone.completed;
+        softAssigned = zone.assigned;
       } else if (zone.zone == 'Power move') {
         powerMoves = zone.completed;
       }
     }
+
+    // Ring fill = completed / assigned for that zone (real ratio, not a fixed fraction).
+    final softFraction =
+        softAssigned > 0 ? (softSteps / softAssigned).clamp(0.0, 1.0) : 0.0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -441,7 +514,7 @@ class _MyProgressState extends State<MyProgress> {
                   colors: [Color(0xFF3BB64B), Color(0x003BB64B)],
                   stops: [0.0, 1.075],
                 ),
-                softSteps > 0 ? 0.75 : 0.0,
+                softFraction,
                 isPartial: true,
                 trackColor: const Color(0xFFE8EDE0),
               ),

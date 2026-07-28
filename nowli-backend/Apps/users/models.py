@@ -152,8 +152,17 @@ class ForgotPasswordRequest(models.Model):
 # NOWLII PREDEFINED OPTIONS
 # ------------------------------------------------------------------------------
 class NowliiPredefinedOption(models.Model):
+    VOICE_CHOICES = [
+        ('Male', 'Male'),
+        ('Female', 'Female'),
+    ]
+
     name = models.CharField(max_length=50, unique=True, help_text="The unique name of the Nowlii character (e.g., 'Sparky')")
     avatar_logo = models.ImageField(upload_to='nowlii_logos/', null=True, blank=True, help_text="The avatar image/logo for this Nowlii character")
+    # Voice/gender for this companion — drives the AI voice-call voice when the user picks it.
+    # There is no per-avatar gender concept beyond this; default is Male.
+    voice = models.CharField(max_length=10, choices=VOICE_CHOICES, default='Male',
+                             help_text="Voice used for this companion's AI call (Male/Female).")
 
     def __str__(self):
         return self.name
@@ -193,6 +202,9 @@ class Profile(models.Model):
     
     language = models.CharField(max_length=50, choices=LANGUAGE_CHOICES, default='English', blank=True, null=True)
     voice = models.CharField(max_length=50, choices=VOICE_CHOOSE, default='Male', blank=True, null=True)
+    # Weekday names (e.g. ["Sunday"]) the user marked as intentional rest days. These are
+    # excluded from Insights "skipped days" so a deliberate day off isn't nagged as a miss.
+    rest_days = models.JSONField(default=list, blank=True)
 
     def save(self, *args, **kwargs):
         # Handle nowlii name and logo logic
@@ -204,11 +216,19 @@ class Profile(models.Model):
                 self.nowlii_name = self.custom_nowlii_name
             else:
                 self.nowlii_name = self.predefined_option.name
+
+            # Voice follows the chosen companion: when the user picks a (new) companion,
+            # adopt that companion's voice. Only on change, so a later manual voice override
+            # (from the Voice & Personality selector) isn't clobbered on every profile save.
+            previous = Profile.objects.filter(pk=self.pk).first() if self.pk else None
+            if previous is None or previous.predefined_option_id != self.predefined_option_id:
+                if self.predefined_option.voice:
+                    self.voice = self.predefined_option.voice
         else:
             # If no predefined option, but custom name exists
             if self.custom_nowlii_name:
                 self.nowlii_name = self.custom_nowlii_name
-            
+
         super().save(*args, **kwargs)
 
     def __str__(self):

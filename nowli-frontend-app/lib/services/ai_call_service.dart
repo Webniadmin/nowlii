@@ -10,6 +10,8 @@ class AiCallService {
     required String userName,
     String systemName = 'Aria',
     String language = 'en',
+    // Chosen companion voice ('Male'/'Female') — selects the male/female Realtime voice.
+    String voice = '',
   }) async {
     try {
       final url = Uri.parse('${ApiConstants.aiBaseUrl}${ApiConstants.createSession}');
@@ -27,6 +29,7 @@ class AiCallService {
           'user_name': userName,
           'system_name': systemName,
           'language': language,
+          if (voice.isNotEmpty) 'voice': voice,
         }),
       ).timeout(
         const Duration(seconds: 10),

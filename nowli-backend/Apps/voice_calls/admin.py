@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CallEmotionSnapshot, CallLowMoodSnapshot, VoiceCall
+from .models import CallEmotionSnapshot, CallLowMoodSnapshot, CallSummary, VoiceCall
 
 
 @admin.register(VoiceCall)
@@ -29,6 +29,21 @@ class CallEmotionSnapshotAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         # Snapshots are written by the app at call end, never by hand.
+        return False
+
+
+@admin.register(CallSummary)
+class CallSummaryAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'user', 'dominant_emotion', 'focus_topic', 'total_turns')
+    list_filter = ('dominant_emotion', 'language', 'created_at')
+    search_fields = ('user__email', 'mood_detected', 'focus_topic')
+    readonly_fields = ('call', 'user', 'mood_detected', 'focus_topic', 'energy_shift',
+                       'next_step', 'dominant_emotion', 'top_emotions', 'language',
+                       'total_turns', 'created_at')
+    list_select_related = ('user',)
+
+    def has_add_permission(self, request):
+        # Summaries are written by the app at call end, never by hand.
         return False
 
 

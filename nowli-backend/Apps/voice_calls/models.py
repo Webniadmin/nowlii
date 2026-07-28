@@ -85,6 +85,55 @@ class CallEmotionSnapshot(models.Model):
         return f"emotions for call {self.call_id} ({self.dominant_emotion or 'n/a'})"
 
 
+class CallSummary(models.Model):
+    """The conversational summary of a single voice call, captured at call end.
+
+    ``nowli-ai`` generates this summary (``mood_detected`` / ``focus_topic`` /
+    ``energy_shift`` / ``next_step``) with a GPT pass over the whole transcript when the
+    call ends, then shows it on the call-summary screen. That service keeps sessions in
+    memory only, so the summary would be lost on restart — the app persists it here, tied
+    to the user, right after it is displayed. Storing it per user gives each call a lasting
+    record and lets us look back across a user's calls to see how they progress over time.
+    One summary per call.
+    """
+
+    call = models.OneToOneField(
+        VoiceCall,
+        on_delete=models.CASCADE,
+        related_name='summary',
+    )
+    # Denormalized from ``call.user`` so a user's call history can be queried/ordered by
+    # date without joining through VoiceCall (mirrors CallEmotionSnapshot).
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='call_summaries',
+    )
+    # The four friend-voice summary sentences shown on the call-summary screen.
+    mood_detected = models.TextField(blank=True)
+    focus_topic   = models.TextField(blank=True)
+    energy_shift  = models.TextField(blank=True)
+    next_step     = models.TextField(blank=True)
+    # The call's dominant emotion + the full 5-category split (happy/motivated/angry/tired/sad),
+    # kept alongside the text so history/progress views don't need CallEmotionSnapshot too.
+    dominant_emotion = models.CharField(max_length=20, blank=True)
+    top_emotions     = models.JSONField(default=dict, blank=True)
+    language     = models.CharField(max_length=8, blank=True)
+    total_turns  = models.PositiveIntegerField(default=0)
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Call summary'
+        verbose_name_plural = 'Call summaries'
+        indexes = [
+            models.Index(fields=['user', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"summary for call {self.call_id} ({self.dominant_emotion or 'n/a'})"
+
+
 class CallLowMoodSnapshot(models.Model):
     """Recurring low-mood phrases detected in a single voice call, captured at call end.
 

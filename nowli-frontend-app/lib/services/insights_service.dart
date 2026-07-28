@@ -60,4 +60,30 @@ class InsightsService {
       return null;
     }
   }
+
+  /// Mark one or more weekdays as intentional rest days so they're no longer counted as
+  /// "skipped" in Insights. Returns true on success. `action` is 'add' (default), 'remove'
+  /// or 'set'.
+  Future<bool> markRestDays(List<String> days, {String action = 'add'}) async {
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return false;
+      final response = await http
+          .post(
+            Uri.parse('${ApiConstants.baseUrl}${ApiConstants.insightsRestDays}'),
+            headers: {
+              'Content-Type': ApiConstants.contentType,
+              'Accept': ApiConstants.accept,
+              'Authorization': 'Bearer $token',
+              'ngrok-skip-browser-warning': 'true',
+            },
+            body: jsonEncode({'days': days, 'action': action}),
+          )
+          .timeout(const Duration(seconds: 10));
+      return response.statusCode == 200;
+    } catch (e) {
+      print('❌ markRestDays error: $e');
+      return false;
+    }
+  }
 }

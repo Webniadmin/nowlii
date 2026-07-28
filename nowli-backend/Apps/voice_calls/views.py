@@ -12,8 +12,8 @@ from rest_framework.views import APIView
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 
-from .models import CallEmotionSnapshot, CallLowMoodSnapshot, VoiceCall
-from .serializers import VoiceCallSerializer
+from .models import CallEmotionSnapshot, CallLowMoodSnapshot, CallSummary, VoiceCall
+from .serializers import CallSummarySerializer, VoiceCallSerializer
 
 # The five Insights "Top Emotions" categories (must match nowli-ai's breakdown keys).
 _EMOTION_KEYS = ('happy', 'motivated', 'angry', 'tired', 'sad')
@@ -76,6 +76,57 @@ def _persist_low_mood_snapshot(call, data):
         call=call,
         defaults={'user': call.user, 'phrases': phrases, 'dominant_category': dominant_category},
     )
+
+
+# The five Insights "Top Emotions" categories used inside the summary's emotion split.
+_TOP_EMOTION_KEYS = ('happy', 'motivated', 'angry', 'tired', 'sad')
+
+
+def _persist_call_summary(call, data):
+    """Store the conversational summary for a call if the app sent one.
+
+    Best-effort and idempotent (one summary per call, upserted). The summary text comes
+    from nowli-ai's GPT pass over the transcript at call end; the app fetches it to show
+    the call-summary screen and hands the same payload here so it survives nowli-ai
+    restarts and builds the user's call history.
+    """
+    mood = str(data.get('mood_detected') or '').strip()
+    focus = str(data.get('focus_topic') or '').strip()
+    energy = str(data.get('energy_shift') or '').strip()
+    nxt = str(data.get('next_step') or '').strip()
+    # Nothing worth saving if all four summary sentences are empty.
+    if not any((mood, focus, energy, nxt)):
+        return None
+
+    raw_top = data.get('top_emotions')
+    top_emotions = {}
+    if isinstance(raw_top, dict):
+        for key in _TOP_EMOTION_KEYS:
+            try:
+                top_emotions[key] = max(0.0, float(raw_top.get(key, 0) or 0))
+            except (TypeError, ValueError):
+                top_emotions[key] = 0.0
+
+    try:
+        total_turns = max(0, int(data.get('total_turns') or 0))
+    except (TypeError, ValueError):
+        total_turns = 0
+
+    summary, _ = CallSummary.objects.update_or_create(
+        call=call,
+        defaults={
+            'user': call.user,
+            'mood_detected': mood,
+            'focus_topic': focus,
+            'energy_shift': energy,
+            'next_step': nxt,
+            'dominant_emotion': str(data.get('dominant_emotion') or '')[:20],
+            'top_emotions': top_emotions,
+            'language': str(data.get('language') or '')[:8],
+            'total_turns': total_turns,
+        },
+    )
+    return summary
 
 
 def _calls_used_today(user):
@@ -245,3 +296,71 @@ class VoiceCallEndView(APIView):
         _persist_low_mood_snapshot(call, request.data)
 
         return Response(VoiceCallSerializer(call).data, status=status.HTTP_200_OK)
+
+
+class VoiceCallSummaryView(APIView):
+    """`POST /api/voice-calls/<id>/summary/` — save the call's conversational summary.
+
+    The app generates the summary via nowli-ai at call end (to show the summary screen)
+    and posts it here so it is persisted per user. Idempotent: re-posting upserts the one
+    summary for the call. Separate from the `end` endpoint because the summary is produced
+    by (and posted from) the summary screen, after the call has already been finalized.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Save an AI voice call's summary",
+        tags=['Voice calls'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'mood_detected': openapi.Schema(type=openapi.TYPE_STRING),
+                'focus_topic': openapi.Schema(type=openapi.TYPE_STRING),
+                'energy_shift': openapi.Schema(type=openapi.TYPE_STRING),
+                'next_step': openapi.Schema(type=openapi.TYPE_STRING),
+                'dominant_emotion': openapi.Schema(type=openapi.TYPE_STRING),
+                'top_emotions': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    description='5-category split: happy/motivated/angry/tired/sad.',
+                ),
+                'language': openapi.Schema(type=openapi.TYPE_STRING),
+                'total_turns': openapi.Schema(type=openapi.TYPE_INTEGER),
+            },
+        ),
+        responses={200: CallSummarySerializer, 201: CallSummarySerializer},
+    )
+    def post(self, request, pk):
+        call = get_object_or_404(VoiceCall, pk=pk, user=request.user)
+        existed = CallSummary.objects.filter(call=call).exists()
+        summary = _persist_call_summary(call, request.data)
+        if summary is None:
+            # Nothing worth saving (empty payload) — surface it without erroring the app.
+            return Response(
+                {'detail': 'No summary content to save.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        code = status.HTTP_200_OK if existed else status.HTTP_201_CREATED
+        return Response(CallSummarySerializer(summary).data, status=code)
+
+
+class VoiceCallSummaryListView(APIView):
+    """`GET /api/voice-calls/summaries/` — the current user's saved call summaries.
+
+    Newest first, for the user's call history and to review progress over time.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="My saved AI voice-call summaries",
+        tags=['Voice calls'],
+        responses={200: CallSummarySerializer(many=True)},
+    )
+    def get(self, request):
+        summaries = (
+            CallSummary.objects
+            .filter(user=request.user)
+            .select_related('call')
+        )
+        return Response(CallSummarySerializer(summaries, many=True).data)

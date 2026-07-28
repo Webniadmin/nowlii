@@ -8,6 +8,132 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
+## ✅ TOMORROW (2026-07-30) — do in this order
+
+**Everything from 07-28/07-29 is committed on `feat/realtime-voice-call` but NOT on EC2. Deploy is step 1.**
+
+1. **Deploy `feat/realtime-voice-call` to EC2** (runbook: `deploy-aws.md`).
+   - Backend: `git archive` → `docker compose build && up -d`. **4 new migrations must run**
+     (`voice_calls.0004`, `users.0013`/`0014`/`0015`) — `entrypoint.sh` runs `migrate` on boot; confirm
+     it did (`docker compose logs`), else run `migrate` manually.
+   - nowli-ai: redeploy `test17.py` (persona + male/female voice + `REALTIME_VOICE_MALE`/`_FEMALE`).
+     Set `REALTIME_VOICE_MALE=cedar` / `REALTIME_VOICE_FEMALE=marin` in `~/ai/.env` (or accept defaults).
+   - Smoke test after: `/api/` 200, `realtime/token` 200, `/api/insights/` 200, `/api/voice-calls/summaries/` 200.
+
+2. **On-phone verification** (against live AWS) of everything shipped:
+   - Voice call: male vs female voice switches with the chosen avatar / voice selector; persona feels
+     less "moody"; screen stays awake for a long call; summary saves → appears in **Call History**.
+   - Insights: productive **hour** shows a real value; tap **"Yes, it's my rest day"** → that day drops
+     out of "skipped" and its calendar cell stops being red; streak card gradient + progress bar look right.
+
+3. **Decide the two open voice questions** (see `realtime-voice-gender-persona` memory):
+   - Existing users default to **Male** until they re-pick an avatar or use the selector — OK, or backfill?
+   - Confirm the female-voice avatar assignments (`bloop/fizzy/zee/cloudy/glowy`) match the intended art.
+
+4. **Then pick up the real backlog** (unchanged, biggest first):
+   - **Subscriptions** — wire the empty "Let's begin 7 days free" button (`subscription_popup.dart`),
+     reconcile the two Pro pricing models, decide + enforce Pro feature gating, then Phase 2 real IAP.
+   - **Apple Sign-In** — needs a permanent HTTPS URL (temp trycloudflare tunnel) before any device build.
+   - **Prod hardening** — fresh Django `SECRET_KEY` (still the dev `django-insecure-…`), HTTPS/domain +
+     signing before any Play/release build.
+   - **Insights 500 → graceful fallback** when the AI key fails (`insights/views.py`).
+
+### Nice-to-haves noticed while working (not blockers)
+- Streak-card old asset `120Days.png` is now unused (kept, not deleted).
+- The `Quests` model has **no completion timestamp** — "most productive hour" uses `select_a_time`
+  (scheduled time) as a proxy. If real completion-time analytics are wanted later, add a `completed_at`.
+- Rest-day exclusion is by **weekday** (recurring), not a one-off date — fine for the current UX.
+
+---
+
+## ▶ RESUME HERE (2026-07-29) — Progress/Insights made production-dynamic
+
+Made the Progress + Insights screens fully dynamic (no more faked/hardcoded data):
+- **Most productive HOUR** — now computed in `insights/services.py` (`get_monthly_analytics`) from
+  `Quests.select_a_time` (weighted by completion, like the day), serialized as
+  `most_productive_hour`, shown in the Insights "Hour" tile (was hardcoded `10:00`). Frontend model
+  `MonthlyInsights.mostProductiveHour`; empty → `—`.
+- **Rest-day button works + persists** — new `Profile.rest_days` JSONField (migration
+  `users.0015_profile_rest_days`) + `POST/GET /api/insights/rest-days/` (`RestDaysView`, add/remove/set,
+  weekday-validated). Weekly `skipped_days` AND the calendar now exclude rest days (a marked day off
+  is `none`, not `skipped`). Frontend: `InsightsService.markRestDays()`, the "Yes, it's my rest day"
+  button now taps → posts the skipped days → reloads; hidden when there are none.
+- **Skipped-days text dynamic** — reads `weekly.skipped_days` (was hardcoded "Sundays"); positive
+  fallback when none.
+- **"Your moves" rings** — fill = real `completed/assigned` (was fixed 0.75/1.0).
+- **"% to 30 days"** — now real `streak/30` (was this-week's `completedDays/7`, mislabeled).
+- **Streak card** — replaced fixed `120Days.png` background with **milestone-tier gradient logic**
+  (`_streakGradient` + `_streakMilestones`); subtitle shows days-to-next-badge; added a real progress
+  bar toward the next milestone. `my_progress.dart`.
+
+Verified: insights end-to-end test (hour=14:00, rest-day drops the skip + flips calendar to none),
+all 8 `Apps.insights` tests pass, `flutter analyze` clean. **Migrations `0015` (rest_days) not yet on
+EC2.**
+
+---
+
+## ▶ RESUME HERE (2026-07-28)
+
+**Done today: persist each voice call's conversational summary in the DB, per user** (was the
+top 2026-07-24 TODO below). Key finding that changed the plan: the summary **GPT-4o pass already
+happens at call end** — the `CallSummaryScreen` fetches `/api/v1/chat/summary` to display it, then
+threw it away. So we persist that already-fetched summary with **zero extra GPT cost** (no double
+pay), from the summary screen where it's created + displayed.
+
+**What shipped:**
+- **Backend** (`Apps/voice_calls/`): new **`CallSummary`** model (OneToOne→`VoiceCall`, denormalized
+  `user` FK like `CallEmotionSnapshot`; fields `mood_detected`/`focus_topic`/`energy_shift`/
+  `next_step`, `dominant_emotion`, `top_emotions` JSON, `language`, `total_turns`). Migration
+  `0004_callsummary` applied. Endpoints: **`POST /api/voice-calls/<id>/summary/`** (idempotent
+  upsert) + **`GET /api/voice-calls/summaries/`** (the user's saved summaries, newest first — for
+  reviewing progress over time). Registered in admin. Serializer `CallSummarySerializer`.
+- **Frontend**: `callId` threaded into `CallSummaryScreen` via the route (`ai_voice.dart`
+  `_callSummaryRoute()`); after `getSummary()` the screen calls `VoiceCallService.saveSummary()` to
+  persist it (best-effort, fire-and-forget). New `voiceCallSummary(id)` / `voiceCallSummaries` in
+  `api_constant.dart`.
+- **Verified**: backend end-to-end test (201 create → 200 upsert single row → GET list → 400 on empty
+  → 404 cross-user); `flutter analyze` clean (only pre-existing info lints).
+
+**Not yet deployed to EC2** — changes are local on `feat/realtime-voice-call`. Redeploy the backend
+(migration runs via `entrypoint.sh`) when pushing this branch.
+
+**Also shipped 2026-07-28 (5-item batch):**
+1. **Call history screen** — `GET /summaries/` is now consumed. New `CallHistoryScreen`
+   (`lib/screen/ai_call/call_history_screen.dart`, route `callHistory`) + `CallSummaryHistoryItem`
+   model + `VoiceCallService.getSummaries()`; entered via a "Call history" card at the top of the
+   Insights tab (`insights.dart` `_buildCallHistoryEntry`).
+2. **Wakelock on the call screen** — `wakelock_plus` added; `WakelockPlus.enable()` in
+   `ai_voice.dart` initState, `disable()` in dispose (screen no longer sleeps mid-call → WebRTC
+   won't drop).
+3. **Dynamic emotion emoji** — the call-summary avatar icon + colour now reflect `dominant_emotion`
+   (`call_summary_screen.dart` `_emotionIcon`/`_emotionColor`).
+4. **Male/female voice per companion** — the Realtime voice is chosen from `Profile.voice`
+   (Male→`cedar`, Female→`marin`, both env-overridable `REALTIME_VOICE_MALE`/`_FEMALE`). Wired
+   nowli-ai `session/new` (`voice`) → `Session.voice_gender` → `realtime_token`; frontend
+   `createSession(voice:)` reads the profile; **the Voice & Personality selector now actually
+   persists** the choice (local cache + backend) — it was a no-op SnackBar before.
+
+   **Update — voice is now AVATAR-driven.** `NowliiPredefinedOption` got a `voice` field
+   (Male/Female, default Male, admin-editable inline). `Profile.save()` adopts the chosen
+   companion's voice **on companion change** (manual selector still overrides). Migrations
+   `users.0013_nowliipredefinedoption_voice` + `0014_seed_companion_voices` (bloop/fizzy/zee/
+   cloudy/glowy = Female, rest Male). ⚠️ Existing users only get the avatar's voice when they
+   re-pick an avatar (or use the selector); default Male.
+
+6. **Swipe-to-talk name reverted to fixed "Fuzzy"** — `home_screen.dart` `_buildSwipeButton`
+   no longer passes the dynamic companion name; the label is always "Swipe to talk to Fuzzy".
+5. **More neutral AI persona** — `_REALTIME_PERSONA_EN` rewritten to NOT assume/label the user's
+   mood or ask leading questions ("are you sad or happy?"); stays neutral, lets the user lead.
+
+**Coverage gap (unchanged):** summaries persist only when the user reaches the summary screen; a
+force-quit mid-call saves emotions but no summary. Acceptable (no summary is generated then anyway).
+
+**NEXT UP:** deploy the whole `feat/realtime-voice-call` branch to EC2 (backend migration + nowli-ai
+`test17.py` persona/voice changes + rebuild). Then on-phone: confirm male vs female voice switches
+with the profile setting, and that the persona feels less "moody".
+
+---
+
 ## ▶ RESUME HERE (2026-07-23)
 
 **Done today:** cut the Realtime voice-call cost (test calls were ~$16–20 each). The server was **already on

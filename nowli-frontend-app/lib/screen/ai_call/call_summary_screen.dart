@@ -2,14 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/services/call_summary_service.dart';
+import 'package:nowlii/services/voice_call_service.dart';
+import 'package:nowlii/services/personal_notes_service.dart';
 import 'package:nowlii/models/call_summary_model.dart';
 
 class CallSummaryScreen extends StatefulWidget {
   final String? sessionId;
-  
+  // Backend VoiceCall id for this call. When present, the generated summary is persisted
+  // to the backend for this user (so it can be reviewed later to track progress).
+  final int? callId;
+
   const CallSummaryScreen({
     super.key,
     this.sessionId,
+    this.callId,
   });
 
   @override
@@ -18,6 +24,8 @@ class CallSummaryScreen extends StatefulWidget {
 
 class _CallSummaryScreenState extends State<CallSummaryScreen> {
   final CallSummaryService _summaryService = CallSummaryService();
+  final VoiceCallService _voiceCallService = VoiceCallService();
+  final PersonalNotesService _notesService = PersonalNotesService();
   final TextEditingController _noteController = TextEditingController();
   
   CallSummaryResponse? _summary;
@@ -47,6 +55,10 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
     try {
       final summary = await _summaryService.getSummary(widget.sessionId!);
 
+      // Persist the generated summary for this user so it survives nowli-ai restarts and
+      // can be reviewed later to track progress. Best-effort; never blocks the UI.
+      _persistSummary(summary);
+
       if (mounted) {
         setState(() {
           // summary may be null (e.g. nowli-ai 422 for an empty session, or the AI
@@ -67,6 +79,31 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
         });
       }
     }
+  }
+
+  /// Save the generated summary to the backend for this user. Only runs when we have a
+  /// backend call id and a summary with real content. Fire-and-forget: the backend upsert
+  /// is idempotent, so a retry (or a re-open of this screen) won't create duplicates.
+  void _persistSummary(CallSummaryResponse? summary) {
+    final callId = widget.callId;
+    if (callId == null || summary == null) return;
+    final hasContent = summary.moodDetected.isNotEmpty ||
+        summary.focusTopic.isNotEmpty ||
+        summary.energyShift.isNotEmpty ||
+        summary.nextStep.isNotEmpty;
+    if (!hasContent) return;
+
+    _voiceCallService.saveSummary(
+      callId: callId,
+      moodDetected: summary.moodDetected,
+      focusTopic: summary.focusTopic,
+      energyShift: summary.energyShift,
+      nextStep: summary.nextStep,
+      dominantEmotion: summary.dominantEmotion,
+      topEmotions: summary.topEmotions,
+      language: summary.language,
+      totalTurns: summary.totalTurns,
+    );
   }
 
   @override
@@ -160,19 +197,20 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                         children: [
                           const SizedBox(height: 54),
                           
-                          // Avatar
+                          // Avatar — reflects the call's dominant emotion (falls back to a
+                          // neutral happy face when there's no summary yet).
                           Container(
                             width: 100,
                             height: 100,
                             decoration: ShapeDecoration(
-                              color: const Color(0xFF4542EB),
+                              color: _emotionColor(_summary?.dominantEmotion),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
                               ),
                             ),
                             child: Center(
                               child: Icon(
-                                Icons.check_circle,
+                                _emotionIcon(_summary?.dominantEmotion),
                                 size: 60,
                                 color: Colors.white,
                               ),
@@ -339,23 +377,29 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                               Expanded(
                                 flex: 3,
                                 child: ElevatedButton(
-                                  onPressed: () {
-                                    // Save reflection logic
+                                  onPressed: () async {
+                                    // Persist the reflection as a personal note (per user,
+                                    // via the same store the Insights screen reads), so it
+                                    // survives and shows up there. Empty note → just leave.
                                     final note = _noteController.text.trim();
                                     if (note.isNotEmpty) {
-                                      print('💾 Saving note: $note');
-                                      // TODO: Save to backend or local storage
+                                      await _notesService.addNote(note);
                                     }
-                                    
+                                    if (!mounted) return;
+
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text('Reflection saved!'),
-                                        backgroundColor: Colors.green,
+                                        content: Text(note.isEmpty
+                                            ? 'Nothing to save yet.'
+                                            : 'Reflection saved!'),
+                                        backgroundColor: note.isEmpty
+                                            ? Colors.orange
+                                            : Colors.green,
                                       ),
                                     );
-                                    
-                                    Future.delayed(Duration(seconds: 1), () {
-                                      context.go(AppRoutespath.homeScreen);
+
+                                    Future.delayed(const Duration(seconds: 1), () {
+                                      if (mounted) context.go(AppRoutespath.homeScreen);
                                     });
                                   },
                                   style: ElevatedButton.styleFrom(
@@ -473,6 +517,43 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
         ],
       ),
     );
+  }
+
+  // Map the call's dominant emotion (happy/motivated/angry/tired/sad) to a face/icon shown
+  // on the summary avatar. Unknown/empty → a warm neutral face.
+  IconData _emotionIcon(String? emotion) {
+    switch ((emotion ?? '').toLowerCase()) {
+      case 'happy':
+        return Icons.sentiment_very_satisfied;
+      case 'motivated':
+        return Icons.local_fire_department;
+      case 'angry':
+        return Icons.sentiment_very_dissatisfied;
+      case 'tired':
+        return Icons.bedtime;
+      case 'sad':
+        return Icons.sentiment_dissatisfied;
+      default:
+        return Icons.sentiment_satisfied;
+    }
+  }
+
+  // Avatar background colour per emotion — matches the bars in "Emotions in this chat".
+  Color _emotionColor(String? emotion) {
+    switch ((emotion ?? '').toLowerCase()) {
+      case 'happy':
+        return const Color(0xFF3BB64B);
+      case 'motivated':
+        return const Color(0xFF4542EB);
+      case 'angry':
+        return const Color(0xFFE5484D);
+      case 'tired':
+        return const Color(0xFF8B7DF6);
+      case 'sad':
+        return const Color(0xFF3E7BFA);
+      default:
+        return const Color(0xFF4542EB);
+    }
   }
 
   Widget _buildInsightCard({

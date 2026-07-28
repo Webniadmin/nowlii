@@ -996,9 +996,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildSwipeButton() {
     return SwipeButtonWidget(
-      companionName: (_profileData?.companionName.isNotEmpty ?? false)
-          ? _profileData!.companionName
-          : 'Fuzzy',
+      // Fixed name by design — the swipe-to-talk label always says "Fuzzy" (no longer the
+      // user's dynamic companion name).
+      companionName: 'Fuzzy',
       onSwipe: () {
         // Go straight to the 5-min AI voice call (emotion-share detour removed).
         context.push(AppRoutespath.aiVoice);

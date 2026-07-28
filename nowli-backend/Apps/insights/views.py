@@ -18,8 +18,12 @@ from .ai_client import (
 )
 from .serializers import AIInsightResponseSerializer
 from .models import InsightCache
+from Apps.users.models import Profile
 
 logger = logging.getLogger(__name__)
+
+_WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_WEEKDAYS_LOWER = {d.lower(): d for d in _WEEKDAYS}
 
 
 class AIInsightView(APIView):
@@ -154,3 +158,53 @@ class AIInsightView(APIView):
             return Response(serializer.errors, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class RestDaysView(APIView):
+    """`/api/insights/rest-days/` — the weekdays the user marks as intentional rest days.
+
+    Those days are excluded from Insights "skipped days" so a deliberate day off isn't
+    counted as a miss. GET returns the current list; POST updates it.
+
+    POST body: {"days": ["Sunday", ...], "action": "add" | "remove" | "set"} (default "add").
+    Weekday names are validated + normalized (case-insensitive). Returns the updated list.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        return Response({"rest_days": list(profile.rest_days or [])})
+
+    def post(self, request):
+        raw_days = request.data.get("days") or []
+        if not isinstance(raw_days, list):
+            return Response({"detail": "`days` must be a list of weekday names."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate + normalize each requested weekday (case-insensitive → canonical name).
+        normalized = []
+        for d in raw_days:
+            key = str(d).strip().lower()
+            if key not in _WEEKDAYS_LOWER:
+                return Response({"detail": f"Invalid weekday: {d!r}."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            canonical = _WEEKDAYS_LOWER[key]
+            if canonical not in normalized:
+                normalized.append(canonical)
+
+        action = str(request.data.get("action") or "add").lower()
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        current = [d for d in (profile.rest_days or []) if d in _WEEKDAYS]
+
+        if action == "set":
+            updated = normalized
+        elif action == "remove":
+            updated = [d for d in current if d not in normalized]
+        else:  # add (default)
+            updated = current + [d for d in normalized if d not in current]
+
+        # Keep them in canonical weekday order for a stable response.
+        updated = [d for d in _WEEKDAYS if d in updated]
+        profile.rest_days = updated
+        profile.save(update_fields=["rest_days"])
+        return Response({"rest_days": updated}, status=status.HTTP_200_OK)

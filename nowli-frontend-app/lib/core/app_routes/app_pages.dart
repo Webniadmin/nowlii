@@ -14,6 +14,7 @@ import 'package:nowlii/screen/onboarding/onboarding_features/onboarding_features
 import 'package:nowlii/screen/onboarding/onboarding_flow_file/onboarding_flow.dart';
 import 'package:nowlii/screen/ai_call/ai_voice.dart';
 import 'package:nowlii/screen/ai_call/call_summary_screen.dart';
+import 'package:nowlii/screen/ai_call/call_history_screen.dart';
 import 'package:nowlii/screen/ai_call/pop_po_sahre.dart';
 import 'package:nowlii/screen/auth/enter_new_password.dart';
 import 'package:nowlii/screen/auth/password_updated_popup_screen.dart';
@@ -267,8 +268,13 @@ class AppPages {
         path: AppRoutespath.callSummary,
         builder: (context, state) {
           final sessionId = state.uri.queryParameters['sessionId'];
-          return CallSummaryScreen(sessionId: sessionId);
+          final callId = int.tryParse(state.uri.queryParameters['callId'] ?? '');
+          return CallSummaryScreen(sessionId: sessionId, callId: callId);
         },
+      ),
+      GoRoute(
+        path: AppRoutespath.callHistory,
+        builder: (context, state) => const CallHistoryScreen(),
       ),
       GoRoute(
         path: AppRoutespath.popPoSahre,

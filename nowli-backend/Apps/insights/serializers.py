@@ -44,6 +44,7 @@ class ZoneProgressSerializer(serializers.Serializer):
 class MonthlyInsightSerializer(serializers.Serializer):
     most_completed_quests  = MostCompletedQuestSerializer(many=True)
     most_productive_day    = serializers.CharField(allow_blank=True, allow_null=True)
+    most_productive_hour   = serializers.CharField(allow_blank=True, allow_null=True)
     preferred_quest_types  = PreferredQuestTypesSerializer()
     quests_completed       = MonthlyQuestsCompletedSerializer()
     zone_progress          = ZoneProgressSerializer(many=True)

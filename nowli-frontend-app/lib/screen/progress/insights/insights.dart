@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/themes/text_styles.dart' show AppsTextStyles;
 import 'package:nowlii/utils/color_palette/color_palette.dart';
@@ -54,6 +56,23 @@ class _InsightsScreenState extends State<InsightsScreen> {
   Future<void> _deleteNote(String id) async {
     final notes = await _notesService.deleteNote(id);
     if (mounted) setState(() => _personalNotes = notes);
+  }
+
+  // Mark the days the user usually skips as intentional rest days (persisted on the backend),
+  // then refresh so they drop out of "skipped days".
+  Future<void> _markRestDays(List<String> days) async {
+    if (days.isEmpty) return;
+    final ok = await _insightsService.markRestDays(days);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? 'Got it — marked as your rest day.'
+            : "Couldn't save that right now. Please try again."),
+        backgroundColor: ok ? Colors.green : Colors.orange,
+      ),
+    );
+    if (ok) _loadInsights();
   }
 
   @override
@@ -129,6 +148,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildAIInsights(),
+                  _buildCallHistoryEntry(),
                   _buildTopEmotions(),
                   _buildWhenFeelingLow(),
                   _buildWeeklyReflection(),
@@ -137,6 +157,67 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Call history entry ────────────────────────────────────────────────────
+  // Tappable card that opens the full list of saved voice-call summaries so the user can
+  // look back and see how they've been progressing over time.
+  Widget _buildCallHistoryEntry() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => context.push(AppRoutespath.callHistory),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEDECFF),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFC3DBFF)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4542EB),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.history, color: Colors.white, size: 26),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Call history',
+                      style: TextStyle(
+                        color: const Color(0xFF011F54),
+                        fontSize: 16,
+                        fontFamily: 'Work Sans',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Look back on your past calls and progress',
+                      style: TextStyle(
+                        color: const Color(0xFF4C586E),
+                        fontSize: 13,
+                        fontFamily: 'Work Sans',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Color(0xFF4542EB)),
+            ],
           ),
         ),
       ),
@@ -525,7 +606,9 @@ class _InsightsScreenState extends State<InsightsScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              monthly.mostProductiveDay,
+                              monthly.mostProductiveDay.isNotEmpty
+                                  ? monthly.mostProductiveDay
+                                  : '—',
                               style: GoogleFonts.workSans(
                                 color: const Color(0xFFFFFDF7),
                                 fontSize: 28,
@@ -561,7 +644,9 @@ class _InsightsScreenState extends State<InsightsScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '10:00',
+                              monthly.mostProductiveHour.isNotEmpty
+                                  ? monthly.mostProductiveHour
+                                  : '—',
                               style: GoogleFonts.workSans(
                                 color: const Color(0xFF4542EB),
                                 fontSize: 32,
@@ -798,6 +883,12 @@ class _InsightsScreenState extends State<InsightsScreen> {
     final completionRate = weekly.totalQuests > 0
         ? weekly.questsCompleted / weekly.totalQuests
         : 0.0;
+    // Real skipped weekdays from the backend (e.g. ["Sunday", "Wednesday"]) — no longer the
+    // hardcoded "Sundays". Pluralized + joined for the sentence below.
+    final skippedDays = weekly.skippedDays;
+    final skippedLabel = skippedDays
+        .map((d) => d.endsWith('s') ? d : '${d}s')
+        .join(', ');
     
     return Container(
       decoration: BoxDecoration(color: AppColorsApps.lightBlueBackground),
@@ -1013,34 +1104,9 @@ class _InsightsScreenState extends State<InsightsScreen> {
                       const SizedBox(height: 8),
                       SizedBox(
                         width: 276,
-                        height: 39,
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              TextSpan(
-                                text: 'You usually skip ',
-                                style: GoogleFonts.workSans(
-                                  color: const Color(
-                                    0xFF011F54,
-                                  ), // Text-text-default
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w400,
-                                  height: 1.40,
-                                  letterSpacing: -0.50,
-                                ),
-                              ),
-                              TextSpan(
-                                text: 'Sundays.',
-                                style: GoogleFonts.workSans(
-                                  color: const Color(0xFF011F54),
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.40,
-                                  letterSpacing: -0.50,
-                                ),
-                              ),
-                              TextSpan(
-                                text: ' Maybe a rest day?',
+                        child: skippedDays.isEmpty
+                            ? Text(
+                                "You've stayed consistent — no skipped days. Nice work!",
                                 style: GoogleFonts.workSans(
                                   color: const Color(0xFF011F54),
                                   fontSize: 16,
@@ -1048,47 +1114,85 @@ class _InsightsScreenState extends State<InsightsScreen> {
                                   height: 1.40,
                                   letterSpacing: -0.50,
                                 ),
+                              )
+                            : Text.rich(
+                                TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: 'You usually skip ',
+                                      style: GoogleFonts.workSans(
+                                        color: const Color(0xFF011F54),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w400,
+                                        height: 1.40,
+                                        letterSpacing: -0.50,
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: '$skippedLabel.',
+                                      style: GoogleFonts.workSans(
+                                        color: const Color(0xFF011F54),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        height: 1.40,
+                                        letterSpacing: -0.50,
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: ' Maybe a rest day?',
+                                      style: GoogleFonts.workSans(
+                                        color: const Color(0xFF011F54),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w400,
+                                        height: 1.40,
+                                        letterSpacing: -0.50,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ],
+                      ),
+                      if (skippedDays.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        GestureDetector(
+                          onTap: () => _markRestDays(skippedDays),
+                          child: Container(
+                            height: 44,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 14,
+                            ),
+                            decoration: ShapeDecoration(
+                              shape: RoundedRectangleBorder(
+                                side: const BorderSide(
+                                  width: 2,
+                                  color: Color(0xFF6A68EF), // Border-border-subtle
+                                ),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'Yes, It’s my rest day',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.workSans(
+                                    color: const Color(
+                                      0xFF4542EB,
+                                    ), // Text-text-primary
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    height: 0.80,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        height: 44,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 14,
-                        ),
-                        decoration: ShapeDecoration(
-                          shape: RoundedRectangleBorder(
-                            side: const BorderSide(
-                              width: 2,
-                              color: Color(0xFF6A68EF), // Border-border-subtle
-                            ),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Yes, It’s my rest day',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.workSans(
-                                color: const Color(
-                                  0xFF4542EB,
-                                ), // Text-text-primary
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                height: 0.80,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      ],
                     ],
                   ),
                 ),

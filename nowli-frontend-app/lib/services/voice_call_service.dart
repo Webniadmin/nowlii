@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/api/api_constant.dart';
+import 'package:nowlii/models/call_summary_history.dart';
 
 /// Outcome of asking the backend to start a call. The backend is the sole authority for
 /// the daily limit, so the UI acts on this result — it never counts calls itself.
@@ -154,6 +155,72 @@ class VoiceCallService {
           .timeout(const Duration(seconds: 10));
     } catch (e) {
       print('❌ endCall error: $e');
+    }
+  }
+
+  /// Persist a finished call's conversational summary for this user. The app already
+  /// generated the summary via nowli-ai to show the summary screen; this saves it so it
+  /// survives nowli-ai restarts and builds the user's call history for progress tracking.
+  /// Idempotent on the backend (one summary per call). Fire-and-forget / best-effort.
+  Future<void> saveSummary({
+    required int callId,
+    required String moodDetected,
+    required String focusTopic,
+    required String energyShift,
+    required String nextStep,
+    String? dominantEmotion,
+    Map<String, double>? topEmotions,
+    String? language,
+    int? totalTurns,
+  }) async {
+    try {
+      final token = await _getToken();
+      await http
+          .post(
+            Uri.parse('$_base${ApiConstants.voiceCallSummary(callId)}'),
+            headers: _headers(token),
+            body: jsonEncode({
+              'mood_detected': moodDetected,
+              'focus_topic': focusTopic,
+              'energy_shift': energyShift,
+              'next_step': nextStep,
+              if (dominantEmotion != null) 'dominant_emotion': dominantEmotion,
+              if (topEmotions != null) 'top_emotions': topEmotions,
+              if (language != null) 'language': language,
+              if (totalTurns != null) 'total_turns': totalTurns,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      print('❌ saveSummary error: $e');
+    }
+  }
+
+  /// The current user's saved call summaries (newest first), for the Call History screen.
+  /// Returns an empty list on any error.
+  Future<List<CallSummaryHistoryItem>> getSummaries() async {
+    try {
+      final token = await _getToken();
+      final response = await http
+          .get(Uri.parse('$_base${ApiConstants.voiceCallSummaries}'),
+              headers: _headers(token))
+          .timeout(const Duration(seconds: 12));
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is List) {
+          return decoded
+              .whereType<Map<String, dynamic>>()
+              .map(CallSummaryHistoryItem.fromJson)
+              .toList();
+        }
+      } else {
+        print('⚠️ getSummaries status: ${response.statusCode}');
+      }
+      return [];
+    } catch (e) {
+      print('❌ getSummaries error: $e');
+      return [];
     }
   }
 }

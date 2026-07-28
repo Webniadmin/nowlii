@@ -37,6 +37,7 @@ class ApiConstants {
   
   // Insights endpoints
   static const String getInsights = '$insightsPrefix/insights/';
+  static const String insightsRestDays = '$insightsPrefix/insights/rest-days/';
   
   // Quests endpoints
   static const String getStreak = '$questsPrefix/streak/';
@@ -56,6 +57,9 @@ class ApiConstants {
   static const String voiceCallQuota = '/api/voice-calls/quota/';
   static const String voiceCallStart = '/api/voice-calls/start/';
   static String voiceCallEnd(int id) => '/api/voice-calls/$id/end/';
+  // Persist a finished call's conversational summary (per user) + list saved summaries.
+  static String voiceCallSummary(int id) => '/api/voice-calls/$id/summary/';
+  static const String voiceCallSummaries = '/api/voice-calls/summaries/';
   
   // AI Call endpoints (use aiBaseUrl)
   static const String createSession = '$aiCallPrefix/session/new';
