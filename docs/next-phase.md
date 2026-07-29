@@ -47,6 +47,44 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
+## ▶ RESUME HERE (2026-07-29, latest) — 7-day free trial + real paywall
+
+The "7 days free → then buy Pro" flow now exists end to end. It previously existed only as
+artwork: the button was `onPressed: () { // Start trial logic }`, the backend had no trial concept
+at all (`grep -i trial` = 0 hits), and `user_has_pro()` was never called — so **every user had the
+whole app free, forever**. Commit `6e420d6`.
+
+**How it works now**
+- Trial is granted **automatically on the user's first authenticated request** — install + login
+  starts the 7 days, nothing to tap. Granted once; never extended or re-granted.
+- `Subscription.started_at` is now **nullable**: the paid year starts the day someone actually
+  subscribes, not when their trial began (so nobody loses a week of month-1 pricing).
+- Enforcement is `subscriptions/permissions.HasProAccess` → **402 `subscription_required`** on
+  quests / subtasks / insights / voice-calls. **402, not 403**, so the app routes to the paywall
+  instead of bouncing to login. Auth / profile / subscriptions / support stay open — a blocked user
+  must still be able to log in, pay and reach support.
+- Escape hatches: `SUBSCRIPTION_ENFORCED=False` (kill switch) and `SUBSCRIPTION_UNLIMITED_USERS`
+  (default `pavle`); staff/superusers always exempt.
+- Frontend: entitlement cached in prefs for the router guard (**defaults to allow** — a slow status
+  call must never lock a paying user out; the backend 402 is the real gate). Splash refreshes it,
+  shows the "7 days free" screen once, and sends expired users to the paywall.
+
+**Pricing UI conflict resolved:** the Pro screen's hardcoded **Yearly $25.99 / $2.66-mo** cards are
+gone. No yearly product exists in the backend, and `_subscribe()` ignored the selection entirely —
+tapping "Yearly" silently started the monthly plan. One plan now, prices from `/subscriptions/plan/`,
+and the "How billing works" explainer (19.99 → 14.99 → 9.99 → 4.99 → free after month 12) is a
+shared widget on **both** the trial screen and the Pro screen.
+
+**Verified:** 25 `Apps.subscriptions` tests (was 8), 44 total; a live end-to-end run on the real URLs
+(trial → app open → expiry → 402 everywhere → purchase → access back → price steps down to free at
+month 13); `flutter analyze` 0 errors.
+
+> ⚠️ **Still no real money.** `activate` is a mock and `verify-receipt` is a 501 stub — anyone can
+> "subscribe" for free. Phase 2 (Apple IAP / Google Play Billing) is the next subscriptions task.
+> **Not deployed to EC2 yet** — needs `subscriptions.0002` migration.
+
+---
+
 ## ▶ RESUME HERE (2026-07-29, later) — Insights no longer 500s when the AI is down
 
 `GET /api/insights/` returned 500/502/503 on any AI failure, so the OpenAI quota error blanked the
