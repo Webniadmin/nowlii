@@ -7,6 +7,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
+from Apps.subscriptions.permissions import HasProAccess
+
 from .services import (
     build_analytics_summary,
     build_fallback_reflections,
@@ -39,7 +41,7 @@ class AIInsightView(APIView):
     Query params:
       ?refresh=true   → bypass cache and regenerate AI reflections
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasProAccess]
 
     @staticmethod
     def _call_ai(label: str, fn, *args):
@@ -203,7 +205,7 @@ class RestDaysView(APIView):
     POST body: {"days": ["Sunday", ...], "action": "add" | "remove" | "set"} (default "add").
     Weekday names are validated + normalized (case-insensitive). Returns the updated list.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasProAccess]
 
     def get(self, request):
         profile, _ = Profile.objects.get_or_create(user=request.user)

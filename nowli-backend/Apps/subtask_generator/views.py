@@ -8,6 +8,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
+from Apps.subscriptions.permissions import HasProAccess
+
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 
@@ -126,7 +128,7 @@ def call_ai(category: str, previous_tasks: list) -> tuple[list, str]:
 
 class GenerateSubTasksView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasProAccess]
 
     @swagger_auto_schema(
         operation_summary="Generate sub-tasks using AI",

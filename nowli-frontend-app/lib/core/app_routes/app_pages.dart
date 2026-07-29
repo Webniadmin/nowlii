@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
+import 'package:nowlii/services/subscription_service.dart';
 import 'package:nowlii/screen/onboarding/energy_check_in_screen.dart';
 import 'package:nowlii/screen/onboarding/pop_speaking_loading.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/swipe_to_talk_loading.dart';
@@ -54,6 +55,16 @@ import '../../screen/onboarding/onboarding_features/avatar_logo_name_selection.d
 import '../../screen/onboarding/onboarding_features/avatar_logo_selection.dart';
 
 class AppPages {
+  /// Screens a paywalled user may still reach. Everything else redirects to the Pro screen
+  /// once the free trial is over — they must be able to pay, get help, or sign out.
+  static const List<String> _allowedWhenBlocked = [
+    AppRoutespath.nowliProSubscription, // the paywall itself
+    AppRoutespath.subscriptionPage, // the 7-days-free / billing explainer
+    AppRoutespath.settingsScreen,
+    AppRoutespath.supportScreen,
+    AppRoutespath.supportChatScreen,
+  ];
+
   static final GoRouter router = GoRouter(
     debugLogDiagnostics: true,
     redirect: (context, state) async {
@@ -87,6 +98,16 @@ class AppPages {
         // If user is on public route but already authenticated, redirect to home
         if (isPublicRoute) {
           return AppRoutespath.homeScreen;
+        }
+
+        // Paywall: once the free trial is over and nothing was bought, the app is closed
+        // until they subscribe. Reads the cached entitlement (refreshed on splash / after
+        // purchase) because a guard cannot wait on the network. The backend enforces this
+        // for real by answering 402 on every gated endpoint.
+        final hasAccess = await SubscriptionService.cachedHasAccess();
+        if (!hasAccess &&
+            !_allowedWhenBlocked.contains(state.matchedLocation)) {
+          return AppRoutespath.nowliProSubscription;
         }
         return null; // Allow access to requested route
       }

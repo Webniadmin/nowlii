@@ -49,6 +49,7 @@ class ApiConstants {
   // decreasing-price-then-free lifecycle. See Apps.subscriptions.
   static const String subscriptionPlan = '/api/subscriptions/plan/';
   static const String subscriptionMe = '/api/subscriptions/me/';
+  static const String subscriptionStartTrial = '/api/subscriptions/start-trial/';
   static const String subscriptionActivate = '/api/subscriptions/activate/';
   static const String subscriptionCancel = '/api/subscriptions/cancel/';
 

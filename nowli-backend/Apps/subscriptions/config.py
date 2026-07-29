@@ -10,6 +10,11 @@ schedule — no migration or code change elsewhere is required.
 
 CURRENCY = "USD"
 
+# Free trial granted automatically the first time a logged-in user reaches the API (i.e. on
+# install + first login). Full access, no card. When it runs out the user must subscribe to
+# keep using the app. Set to 0 to disable trials entirely.
+TRIAL_DAYS = 7
+
 # Each phase covers an inclusive range of 1-based billing months from the subscription
 # start (month 1 = the first billing month). ``price`` = the monthly price during it.
 PHASES = [

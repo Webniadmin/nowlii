@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 import 'package:nowlii/models/subscription_model.dart';
 import 'package:nowlii/services/subscription_service.dart';
+import 'package:nowlii/widget/billing_explainer.dart';
 
 class NowliProSubscription extends StatefulWidget {
   const NowliProSubscription({super.key});
@@ -13,13 +16,15 @@ class NowliProSubscription extends StatefulWidget {
 }
 
 class _NowliProSubscriptionState extends State<NowliProSubscription> {
-  /// 0 = Monthly, 1 = Yearly (default selected)
-  int _selectedPlan = 1;
-
   final SubscriptionService _subService = SubscriptionService();
   SubscriptionStatus? _status;
   SubscriptionPlan? _plan;
   bool _activating = false;
+
+  /// True when the router sent the user here because they'd lost access (trial over),
+  /// as opposed to them opening the screen from the profile menu. Drives whether a
+  /// successful purchase jumps back into the app.
+  bool _openedAsPaywall = false;
 
   @override
   void initState() {
@@ -33,9 +38,12 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
       _subService.getMyStatus(),
     ]);
     if (!mounted) return;
+    final status = results[1] as SubscriptionStatus?;
     setState(() {
       _plan = results[0] as SubscriptionPlan?;
-      _status = results[1] as SubscriptionStatus?;
+      _status = status;
+      // No access on open ⇒ the router redirected them here as a paywall.
+      _openedAsPaywall = status != null && !status.hasAccess;
     });
   }
 
@@ -46,6 +54,38 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
     }
     if (_plan != null && _plan!.phases.isNotEmpty) return _plan!.phases.first.price;
     return 19.99;
+  }
+
+  bool get _isFreeForever => _status?.lifetimeFree ?? false;
+
+  /// Card heading — reflects where the user actually is in the schedule.
+  String get _planTitle {
+    final s = _status;
+    if (_isFreeForever) return 'Free forever';
+    if (s != null && s.status == 'active' && s.monthIndex > 0) {
+      return 'Month ${s.monthIndex}';
+    }
+    return 'Nowlii Pro';
+  }
+
+  /// One line explaining what happens to the price next — the whole point of the plan.
+  String get _planSubtitle {
+    final s = _status;
+    if (_isFreeForever) {
+      return "You finished the year — Nowlii is yours for free from here on.";
+    }
+    final next = s?.nextPrice;
+    final freeAfter = _plan?.freeAfterMonth ?? 12;
+    if (s != null && s.status == 'active' && next != null && next < s.currentPrice) {
+      return 'Billed monthly. Next month drops to \$${next.toStringAsFixed(2)}/mo — '
+          'and after month $freeAfter it is free forever.';
+    }
+    if (s != null && s.status == 'active') {
+      return 'Billed monthly. The price keeps stepping down and is free after '
+          'month $freeAfter.';
+    }
+    return 'Billed monthly. The price steps down every 3 months and becomes free '
+        'forever after month $freeAfter.';
   }
 
   // Phase-1 MOCK activation (real Apple IAP / Google Play Billing comes later).
@@ -65,6 +105,13 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
         backgroundColor: status != null ? Colors.green : Colors.red,
       ),
     );
+
+    // Someone who landed here because their trial ran out is stuck on this screen until
+    // they pay — once access is back, let them straight into the app. A user who opened
+    // the screen themselves (from the profile menu) stays put.
+    if (status != null && status.hasAccess && _openedAsPaywall) {
+      context.go(AppRoutespath.homeScreen);
+    }
   }
 
   @override
@@ -273,86 +320,35 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
                       ),
                       const SizedBox(height: 16),
 
-                      // ── Monthly plan card ──
-                      GestureDetector(
-                        onTap: () => setState(() => _selectedPlan = 0),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 20,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _selectedPlan == 0
-                                ? const Color(0xffB8FFAB)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: _selectedPlan == 0
-                                ? Border.all(
-                                    color: const Color(0xff4556F6),
-                                    width: 3,
-                                  )
-                                : null,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Monthly',
-                                style: GoogleFonts.workSans(
-                                  color: const Color(0xFF011F54),
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.w800,
-                                  height: 1.2,
-                                  letterSpacing: -1,
-                                ),
-                              ),
-                              Text(
-                                '\$${_monthlyPrice.toStringAsFixed(2)}',
-                                style: GoogleFonts.workSans(
-                                  color: const Color(0xFF011F54),
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w900,
-                                  height: 1,
-                                ),
-                              ),
-                            ],
+                      // ── The plan ──
+                      // ONE plan, billed monthly, price stepping down each quarter. The old
+                      // Monthly-vs-Yearly cards (Yearly $25.99 / $2.66-mo) were a leftover
+                      // from an earlier design — no yearly product exists in the backend,
+                      // and the selection was ignored by the subscribe button anyway.
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 20,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xffB8FFAB),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: const Color(0xff4556F6),
+                            width: 3,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // ── Yearly plan card (selected by default) ──
-                      GestureDetector(
-                        onTap: () => setState(() => _selectedPlan = 1),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 20,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _selectedPlan == 1
-                                ? const Color(0xffB8FFAB)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: _selectedPlan == 1
-                                ? Border.all(
-                                    color: const Color(0xff4556F6),
-                                    width: 3,
-                                  )
-                                : null,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Yearly',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _planTitle,
                                     style: GoogleFonts.workSans(
                                       color: const Color(0xFF011F54),
                                       fontSize: 28,
@@ -361,30 +357,34 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
                                       letterSpacing: -1,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '\$25.99',
-                                    style: GoogleFonts.workSans(
-                                      color: const Color(0xFF011F54),
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                      height: 1,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Text(
-                                '\$2.66/mo',
-                                style: GoogleFonts.workSans(
-                                  color: const Color(0xFF4542EB),
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  height: 1,
-                                  letterSpacing: -0.5,
                                 ),
+                                Text(
+                                  _isFreeForever
+                                      ? 'Free 🌱'
+                                      : '\$${_monthlyPrice.toStringAsFixed(2)}/mo',
+                                  style: GoogleFonts.workSans(
+                                    color: _isFreeForever
+                                        ? const Color(0xFF3BB64B)
+                                        : const Color(0xFF011F54),
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _planSubtitle,
+                              style: GoogleFonts.workSans(
+                                color: const Color(0xFF4C586E),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                height: 1.4,
+                                letterSpacing: -0.2,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 24),
@@ -429,6 +429,12 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
                                 ),
                         ),
                       ),
+                      const SizedBox(height: 30),
+
+                      // ── How billing works ──
+                      // The decreasing-price explanation, shared with the trial screen so
+                      // the pricing is described in exactly one place.
+                      BillingExplainer(plan: _plan),
                       const SizedBox(height: 14),
 
                       // ── Bottom safe text ──

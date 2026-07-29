@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:nowlii/api/api_constant.dart';
 import 'package:nowlii/models/insights_models.dart';
+import 'package:nowlii/services/subscription_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class InsightsService {
@@ -52,6 +53,11 @@ class InsightsService {
       } else {
         print('❌ Failed to fetch insights: ${response.statusCode}');
         print('==========================================\n');
+        // 402 = free trial over / not subscribed → flip the cached entitlement so the
+        // next navigation lands on the paywall.
+        if (response.statusCode == 402) {
+          await SubscriptionService.markAccessRevoked();
+        }
         return null;
       }
     } catch (e) {

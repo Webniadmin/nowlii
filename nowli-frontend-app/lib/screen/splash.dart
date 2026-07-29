@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:nowlii/core/app_routes/app_routes.dart';
+import 'package:nowlii/services/subscription_service.dart';
 
 class Splash extends StatefulWidget {
   const Splash({super.key});
@@ -41,7 +43,27 @@ class _SplashState extends State<Splash> with SingleTickerProviderStateMixin {
     // If user has valid access token, go to home
     if (accessToken != null && accessToken.isNotEmpty) {
       await prefs.setBool('is_new_user', false);
+
+      // Refresh entitlement before routing. On a fresh install this call is also what
+      // STARTS the 7-day free trial (the backend grants it on first contact), so a new
+      // user lands in the app with full access and nothing extra to tap.
+      final status = await SubscriptionService().getMyStatus();
       if (!mounted) return;
+
+      if (status != null && !status.hasAccess) {
+        context.go(AppRoutespath.nowliProSubscription); // trial over, nothing bought
+        return;
+      }
+
+      // Show the "7 days free" explainer once, the first time a trial is running.
+      final seenIntro = prefs.getBool('seen_trial_intro') ?? false;
+      if (status != null && status.inTrial && !seenIntro) {
+        await prefs.setBool('seen_trial_intro', true);
+        if (!mounted) return;
+        context.go(AppRoutespath.subscriptionPage);
+        return;
+      }
+
       context.go('/homeScreen');
       return;
     }

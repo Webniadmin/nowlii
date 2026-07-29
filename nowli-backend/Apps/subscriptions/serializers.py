@@ -26,3 +26,10 @@ class SubscriptionStatusSerializer(serializers.Serializer):
     is_free       = serializers.BooleanField(required=False)
     lifetime_free = serializers.BooleanField(required=False)
     has_access    = serializers.BooleanField(required=False)
+    # Free-trial block. `in_trial` + `trial_days_left` drive the in-app countdown; when the
+    # trial is over and nothing was purchased, `has_access` goes False and the app paywalls.
+    in_trial         = serializers.BooleanField(required=False)
+    trial_days_left  = serializers.IntegerField(required=False)
+    trial_ends_at    = serializers.DateField(required=False, allow_null=True)
+    trial_days_total = serializers.IntegerField(required=False)
+    trial_used       = serializers.BooleanField(required=False)

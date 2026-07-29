@@ -5,6 +5,8 @@ from django.shortcuts import render
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
+
+from Apps.subscriptions.permissions import HasProAccess
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from .models import Quests, SubTasks
@@ -60,7 +62,7 @@ from drf_yasg.utils import swagger_auto_schema
 class QuestsViewset(viewsets.ModelViewSet):
     queryset = Quests.objects.all()
     serializer_class = QuestsSerializers
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasProAccess]
 
 
     def get_queryset(self):
@@ -200,7 +202,7 @@ class QuestsViewset(viewsets.ModelViewSet):
 class SubTasksViewset(viewsets.ModelViewSet):
     queryset = SubTasks.objects.all()
     serializer_class = SubTasksCrudSerializers
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasProAccess]
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):

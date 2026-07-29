@@ -387,3 +387,19 @@ GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY", default=None)
 # Seconds to wait on an AI provider before giving up. Kept short because these calls sit
 # on a screen load (Insights) — on timeout the view serves its offline fallback.
 AI_REQUEST_TIMEOUT = float(os.getenv("AI_REQUEST_TIMEOUT", "20"))
+
+
+# ------------------------------------------------------------------------------
+# Subscriptions / free trial
+# ------------------------------------------------------------------------------
+# Master switch for the paywall. When False the app is fully open regardless of trial or
+# subscription state — the escape hatch if the gate ever misbehaves in production.
+SUBSCRIPTION_ENFORCED = os.getenv("SUBSCRIPTION_ENFORCED", "True").lower() in ("true", "1", "yes")
+
+# Accounts that bypass the paywall entirely (dev/test/demo). Username or email, comma
+# separated. Staff and superusers are always exempt. Mirrors VOICE_CALL_UNLIMITED_USERS.
+SUBSCRIPTION_UNLIMITED_USERS = [
+    u.strip().lower()
+    for u in os.getenv("SUBSCRIPTION_UNLIMITED_USERS", "pavle").split(",")
+    if u.strip()
+]

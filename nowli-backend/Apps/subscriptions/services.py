@@ -2,8 +2,12 @@
 Pure lifecycle logic: given a subscription's start date, derive the current billing month,
 the active price phase, and the lifetime-free transition. Store-agnostic — the same engine
 serves mock (Phase 1) and real IAP/Play billing (Phase 2).
+
+Access has two independent sources: the **free trial** (granted once, on first contact with
+the API) and a **paid/lifetime-free subscription**. ``user_has_pro`` is the single entitlement
+check other apps should use — it covers both.
 """
-from datetime import date
+from datetime import date, timedelta
 
 from django.utils import timezone
 
@@ -61,6 +65,8 @@ def sync_lifetime(subscription, ref: date = None):
     Idempotent: only writes on the first crossing. Returns the (possibly updated) instance.
     """
     ref = ref or timezone.localdate()
+    if subscription.started_at is None:
+        return subscription          # trial-only: the paid year hasn't started counting
     idx = current_month_index(subscription.started_at, ref)
     if idx > config.FREE_AFTER_MONTH and not subscription.lifetime_free:
         subscription.lifetime_free = True
@@ -69,22 +75,110 @@ def sync_lifetime(subscription, ref: date = None):
     return subscription
 
 
+# ─────────────────────────────────────────────
+#  Free trial
+# ─────────────────────────────────────────────
+
+def trial_status(subscription, ref: date = None) -> dict:
+    """Derive the trial state: ``{in_trial, trial_days_left, trial_ends_at, trial_used}``.
+
+    The trial ends at the START of day ``trial_started_at + TRIAL_DAYS`` — i.e. a 7-day trial
+    begun on the 1st covers the 1st through the 7th and is over on the 8th.
+    """
+    ref = ref or timezone.localdate()
+    start = subscription.trial_started_at if subscription else None
+    if start is None:
+        return {"in_trial": False, "trial_days_left": 0,
+                "trial_ends_at": None, "trial_used": False}
+
+    ends_at = start + timedelta(days=config.TRIAL_DAYS)
+    days_left = (ends_at - ref).days
+    return {
+        "in_trial": days_left > 0,
+        "trial_days_left": max(0, days_left),
+        "trial_ends_at": ends_at,
+        "trial_used": True,
+    }
+
+
+def start_trial(user, ref: date = None):
+    """Grant the free trial — idempotent, and only ever once per user.
+
+    Called lazily the first time a logged-in user touches the API, so a fresh install +
+    login starts the clock with no extra step. A user who already has a subscription row
+    (trial used, paid, cancelled) keeps it untouched: the trial is never re-granted.
+
+    Returns the user's ``Subscription`` (created here when this is their first contact).
+    """
+    from .models import Subscription  # local import: avoids an app-registry cycle
+
+    ref = ref or timezone.localdate()
+    sub = getattr(user, "subscription", None)
+    if sub is not None:
+        return sub
+    if config.TRIAL_DAYS <= 0:
+        return None
+
+    sub, _created = Subscription.objects.get_or_create(
+        user=user,
+        defaults={
+            "started_at": None,                       # paid schedule hasn't begun
+            "trial_started_at": ref,
+            "status": Subscription.Status.TRIAL,
+            "platform": Subscription.Platform.MOCK,
+        },
+    )
+    return sub
+
+
+def sync_trial_expiry(subscription, ref: date = None):
+    """Flip a finished trial to EXPIRED once, so the DB reflects reality.
+
+    Idempotent, and only touches rows still sitting in TRIAL — a user who subscribed during
+    their trial is ACTIVE and must not be knocked back.
+    """
+    if subscription is None or subscription.status != subscription.Status.TRIAL:
+        return subscription
+    if not trial_status(subscription, ref)["in_trial"]:
+        subscription.status = subscription.Status.EXPIRED
+        subscription.save(update_fields=["status", "updated_at"])
+    return subscription
+
+
+# ─────────────────────────────────────────────
+#  Combined status + entitlement
+# ─────────────────────────────────────────────
+
 def compute_status(subscription, ref: date = None) -> dict:
     """Derive the live status for a subscription (pure; does not save)."""
     ref = ref or timezone.localdate()
-    idx = current_month_index(subscription.started_at, ref)
+    trial = trial_status(subscription, ref)
+
+    # A trial-only subscription has no paid start date yet, so there is no billing month to
+    # report. Month 1 / the first phase price is what they'd pay if they subscribed today.
+    paid_started = subscription.started_at is not None
+    idx = current_month_index(subscription.started_at, ref) if paid_started else 1
     this_phase = phase_for_month(idx)
     next_phase = phase_for_month(idx + 1)
 
-    is_free = this_phase["is_free"]
-    # Access: lifetime-free / currently-free, or an active paid subscription.
+    is_free = paid_started and this_phase["is_free"]
+    # Access comes from an active trial, lifetime-free/currently-free, or an active paid sub.
     has_access = (
-        subscription.lifetime_free
+        trial["in_trial"]
+        or subscription.lifetime_free
         or is_free
         or subscription.status == subscription.Status.ACTIVE
     )
+    # `in_trial` means "access is coming FROM the trial" — someone who subscribes on day 3
+    # is a paying customer, so the app must stop showing them a trial countdown even though
+    # the original 7-day window hasn't elapsed.
+    on_trial = (
+        trial["in_trial"]
+        and not subscription.lifetime_free
+        and subscription.status != subscription.Status.ACTIVE
+    )
     return {
-        "month_index": idx,
+        "month_index": idx if paid_started else 0,
         "phase": this_phase["phase"],
         "current_price": this_phase["price"],
         "is_free": is_free,
@@ -92,13 +186,24 @@ def compute_status(subscription, ref: date = None) -> dict:
         "lifetime_free": subscription.lifetime_free or is_free,
         "status": subscription.status,
         "has_access": has_access,
+        "in_trial": on_trial,
+        "trial_days_left": trial["trial_days_left"] if on_trial else 0,
+        "trial_ends_at": trial["trial_ends_at"],
+        "trial_used": trial["trial_used"],
     }
 
 
 def user_has_pro(user, ref: date = None) -> bool:
-    """Entitlement check for other apps to gate Pro features."""
+    """The single entitlement check — covers trial, paid and lifetime-free access.
+
+    Grants (and starts) the trial on first contact, so a brand-new user is entitled without
+    any explicit step. Also persists the trial→expired and paid→lifetime-free transitions.
+    """
     sub = getattr(user, "subscription", None)
     if sub is None:
-        return False
+        sub = start_trial(user, ref)
+        if sub is None:                # trials disabled and no subscription → no access
+            return False
+    sub = sync_trial_expiry(sub, ref)
     sub = sync_lifetime(sub, ref)
     return compute_status(sub, ref)["has_access"]

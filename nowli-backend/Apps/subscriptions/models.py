@@ -13,10 +13,11 @@ class Subscription(models.Model):
     """
 
     class Status(models.TextChoices):
+        TRIAL = "trial", "Trial"                           # free trial, no card, full access
         ACTIVE = "active", "Active"                        # within a paid phase
         LIFETIME_FREE = "lifetime_free", "Lifetime free"   # completed the year → free forever
         CANCELLED = "cancelled", "Cancelled"
-        EXPIRED = "expired", "Expired"
+        EXPIRED = "expired", "Expired"                     # trial ran out / paid sub lapsed
 
     class Platform(models.TextChoices):
         MOCK = "mock", "Mock"                              # Phase-1 testing (no real charge)
@@ -28,7 +29,16 @@ class Subscription(models.Model):
         on_delete=models.CASCADE,
         related_name="subscription",
     )
-    started_at = models.DateField(help_text="First billing day; anchors the phase schedule.")
+    # NULL while the user is still on the free trial and has never paid — the paid phase
+    # schedule only starts counting on the day they actually subscribe.
+    started_at = models.DateField(
+        blank=True, null=True,
+        help_text="First billing day; anchors the phase schedule. Null during a trial.",
+    )
+    trial_started_at = models.DateField(
+        blank=True, null=True,
+        help_text="Day the free trial began. Null if the user never had one.",
+    )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     platform = models.CharField(max_length=10, choices=Platform.choices, default=Platform.MOCK)
     lifetime_free = models.BooleanField(default=False)
@@ -44,4 +54,5 @@ class Subscription(models.Model):
         verbose_name_plural = "Subscriptions"
 
     def __str__(self):
-        return f"{self.user} | {self.status} | since {self.started_at}"
+        when = self.started_at or self.trial_started_at or "—"
+        return f"{self.user} | {self.status} | since {when}"

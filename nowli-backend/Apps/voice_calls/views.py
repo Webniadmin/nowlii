@@ -6,6 +6,8 @@ from django.utils import timezone
 
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+
+from Apps.subscriptions.permissions import HasProAccess
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -161,7 +163,7 @@ def _is_unlimited_user(user):
 class VoiceCallQuotaView(APIView):
     """`GET /api/voice-calls/quota/` — how many AI voice calls the user has left today."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasProAccess]
 
     @swagger_auto_schema(
         operation_summary="My AI voice-call quota for today",
@@ -189,7 +191,7 @@ class VoiceCallStartView(APIView):
     call id and the remaining count.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasProAccess]
 
     @swagger_auto_schema(
         operation_summary="Start an AI voice call (enforces the daily limit)",
@@ -249,7 +251,7 @@ class VoiceCallEndView(APIView):
     affect the daily count (which is based on the start).
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasProAccess]
 
     @swagger_auto_schema(
         operation_summary="End an AI voice call",
@@ -307,7 +309,7 @@ class VoiceCallSummaryView(APIView):
     by (and posted from) the summary screen, after the call has already been finalized.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasProAccess]
 
     @swagger_auto_schema(
         operation_summary="Save an AI voice call's summary",
@@ -350,7 +352,7 @@ class VoiceCallSummaryListView(APIView):
     Newest first, for the user's call history and to review progress over time.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasProAccess]
 
     @swagger_auto_schema(
         operation_summary="My saved AI voice-call summaries",

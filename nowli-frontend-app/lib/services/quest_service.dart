@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../api/api_constant.dart';
+import 'subscription_service.dart';
 
 class Subtask {
   final int id;
@@ -103,6 +104,11 @@ class QuestService {
         final List<dynamic> data = json.decode(response.body);
         print('✅ Parsed ${data.length} quests');
         return data.map((quest) => Quest.fromJson(quest)).toList();
+      }
+      // 402 = free trial over / not subscribed. Flip the cached entitlement so the next
+      // navigation lands on the paywall (covers a trial expiring mid-session).
+      if (response.statusCode == 402) {
+        await SubscriptionService.markAccessRevoked();
       }
       return [];
     } catch (e) {

@@ -48,7 +48,7 @@ class SubscriptionPlan {
 
 class SubscriptionStatus {
   final bool subscribed;
-  final String status; // none | active | lifetime_free | cancelled | expired
+  final String status; // none | trial | active | lifetime_free | cancelled | expired
   final String currency;
   final String? platform;
   final String? startedAt;
@@ -59,6 +59,16 @@ class SubscriptionStatus {
   final bool isFree;
   final bool lifetimeFree;
   final bool hasAccess;
+
+  // ── Free trial ─────────────────────────────────────────────────────────────
+  /// True only while access is coming FROM the trial — a user who subscribes on day 3
+  /// is a paying customer, so this goes false even though the 7-day window is still open.
+  final bool inTrial;
+  final int trialDaysLeft;
+  final String? trialEndsAt;
+  final int trialDaysTotal;
+  /// True once the user has ever had a trial — it is never granted twice.
+  final bool trialUsed;
 
   SubscriptionStatus({
     required this.subscribed,
@@ -73,7 +83,15 @@ class SubscriptionStatus {
     required this.isFree,
     required this.lifetimeFree,
     required this.hasAccess,
+    required this.inTrial,
+    required this.trialDaysLeft,
+    required this.trialEndsAt,
+    required this.trialDaysTotal,
+    required this.trialUsed,
   });
+
+  /// The trial ran out and nothing was bought — this is the paywall state.
+  bool get trialExpired => !hasAccess && trialUsed;
 
   factory SubscriptionStatus.fromJson(Map<String, dynamic> json) {
     return SubscriptionStatus(
@@ -89,6 +107,11 @@ class SubscriptionStatus {
       isFree: json['is_free'] ?? false,
       lifetimeFree: json['lifetime_free'] ?? false,
       hasAccess: json['has_access'] ?? false,
+      inTrial: json['in_trial'] ?? false,
+      trialDaysLeft: json['trial_days_left'] ?? 0,
+      trialEndsAt: json['trial_ends_at'],
+      trialDaysTotal: json['trial_days_total'] ?? 7,
+      trialUsed: json['trial_used'] ?? false,
     );
   }
 }

@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 import 'package:nowlii/models/subscription_model.dart';
 import 'package:nowlii/services/subscription_service.dart';
+import 'package:nowlii/widget/billing_explainer.dart';
 
-/// One phase in the decreasing-price-then-free schedule (for the "How billing works" boxes).
-class _BillingPhase {
-  final String label;
-  final double price;
-  final bool isFree;
-  const _BillingPhase({required this.label, required this.price, this.isFree = false});
-}
-
+/// The free-trial intro / billing explainer screen.
+///
+/// Shown once automatically when a new user's 7-day trial starts (from the splash), and
+/// reachable any time from Settings. The "How billing works" section is shared with the
+/// Pro screen via [BillingExplainer].
 class SubscriptionPage extends StatefulWidget {
   const SubscriptionPage({super.key});
 
@@ -25,6 +25,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   final ScrollController _scrollController = ScrollController();
   final SubscriptionService _subService = SubscriptionService();
   SubscriptionPlan? _plan;
+  SubscriptionStatus? _status;
+  bool _starting = false;
 
   @override
   void initState() {
@@ -32,40 +34,60 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     _scrollController.addListener(() {
       setState(() {});
     });
-    _loadPlan();
+    _load();
   }
 
-  Future<void> _loadPlan() async {
-    final plan = await _subService.getPlan();
+  Future<void> _load() async {
+    final results = await Future.wait([
+      _subService.getPlan(),
+      _subService.getMyStatus(),
+    ]);
     if (!mounted) return;
-    setState(() => _plan = plan);
+    setState(() {
+      _plan = results[0] as SubscriptionPlan?;
+      _status = results[1] as SubscriptionStatus?;
+    });
   }
 
-  // The billing phases for the "How billing works" boxes — from the backend price schedule
-  // (single source of truth), with a fallback that matches the backend config.
-  List<_BillingPhase> get _billingPhases {
-    final plan = _plan;
-    if (plan != null && plan.phases.isNotEmpty) {
-      final list = plan.phases
-          .map((p) => _BillingPhase(
-                label: 'Months ${p.fromMonth}–${p.toMonth}',
-                price: p.price,
-              ))
-          .toList();
-      list.add(_BillingPhase(
-        label: 'Month ${plan.freeAfterMonth + 1}+',
-        price: 0,
-        isFree: true,
-      ));
-      return list;
+  /// "Let's begin 7 days free" — starts (or confirms) the trial, then enters the app.
+  /// The backend grants the trial on first contact and never re-grants it, so tapping
+  /// this twice is harmless.
+  Future<void> _startTrial() async {
+    setState(() => _starting = true);
+    final status = await _subService.startTrial();
+    if (!mounted) return;
+    setState(() {
+      _starting = false;
+      if (status != null) _status = status;
+    });
+
+    if (status == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not start your free trial. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
     }
-    return const [
-      _BillingPhase(label: 'Months 1–3', price: 19.99),
-      _BillingPhase(label: 'Months 4–6', price: 14.99),
-      _BillingPhase(label: 'Months 7–9', price: 9.99),
-      _BillingPhase(label: 'Months 10–12', price: 4.99),
-      _BillingPhase(label: 'Month 13+', price: 0, isFree: true),
-    ];
+    if (status.hasAccess) {
+      context.go(AppRoutespath.homeScreen);
+    } else {
+      // Trial already used up — send them to the paywall instead of a dead end.
+      context.go(AppRoutespath.nowliProSubscription);
+    }
+  }
+
+  /// Button label reflects reality: a running trial says how many days are left, and a
+  /// used-up trial doesn't pretend to offer a free week.
+  String get _ctaLabel {
+    final s = _status;
+    if (_starting) return 'Just a moment…';
+    if (s == null) return "Let's begin 7 days free";
+    if (s.inTrial) return 'Continue — ${s.trialDaysLeft} days left';
+    if (s.hasAccess) return 'Continue';
+    if (s.trialUsed) return 'See Nowlii Pro';
+    return "Let's begin ${s.trialDaysTotal} days free";
   }
 
   @override
@@ -460,8 +482,9 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                       ),
                       const SizedBox(height: 30),
 
-                      // How billing works section (philosophy + decreasing-price phases)
-                      _buildBillingSection(),
+                      // How billing works (philosophy + decreasing-price phases).
+                      // Shared with the Pro screen — one source of pricing copy.
+                      BillingExplainer(plan: _plan),
                       const SizedBox(height: 30),
 
                       // Start Button
@@ -469,9 +492,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                         width: double.infinity,
                         height: 80,
                         child: ElevatedButton(
-                          onPressed: () {
-                            // Start trial logic
-                          },
+                          onPressed: _starting ? null : _startTrial,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF3F3CD6),
                             shape: RoundedRectangleBorder(
@@ -479,7 +500,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                             ),
                           ),
                           child: Text(
-                            "Let's begin 7 days free",
+                            _ctaLabel,
                             textAlign: TextAlign.center,
                             style: GoogleFonts.workSans(
                               color: const Color(0xFFFFFDF7),
@@ -590,101 +611,6 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── "How billing works" section ─────────────────────────────────────────────
-  // Same card design as the timeline. Explains NOWLII's philosophy (we're not here to
-  // take money — the more you grow, the less you pay, until it's free) then lists the
-  // decreasing price phases as boxes.
-  Widget _buildBillingSection() {
-    final phases = _billingPhases;
-    const dotColors = [
-      Color(0xFFFF8A00), // 1–3
-      Color(0xFFFFB74D), // 4–6
-      Color(0xFF5C6BC0), // 7–9
-      Color(0xFF4542EB), // 10–12
-      Color(0xFF3BB64B), // free
-    ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'How billing works?',
-          style: GoogleFonts.workSans(
-            color: const Color(0xFF011F54),
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            height: 1.2,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          "Nowlii isn't here to take your money — it's here to help you grow. 🌱\n\n"
-          "The stronger and more consistent you become, the less you pay. Stick with it "
-          "for a year and Nowlii becomes completely free — because once you've healed and "
-          "built your habits, why keep paying for something you no longer need? Your "
-          "progress is the whole point.",
-          style: GoogleFonts.workSans(
-            color: const Color(0xFF4C586E),
-            fontSize: 16,
-            fontWeight: FontWeight.w400,
-            height: 1.5,
-            letterSpacing: -0.3,
-          ),
-        ),
-        const SizedBox(height: 16),
-        ...List.generate(
-          phases.length,
-          (i) => _buildPhaseBox(phases[i], dotColors[i % dotColors.length]),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPhaseBox(_BillingPhase phase, Color color) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: AppColorsApps.softCream,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              phase.label,
-              style: GoogleFonts.workSans(
-                color: const Color(0xFF011F54),
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                height: 1.2,
-                letterSpacing: -0.5,
-              ),
-            ),
-          ),
-          Text(
-            phase.isFree ? 'Free 🌱' : '\$${phase.price.toStringAsFixed(2)}/mo',
-            style: GoogleFonts.workSans(
-              color: phase.isFree
-                  ? const Color(0xFF3BB64B)
-                  : const Color(0xFF011F54),
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              height: 1,
             ),
           ),
         ],
