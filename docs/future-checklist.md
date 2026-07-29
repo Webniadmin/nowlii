@@ -70,10 +70,20 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
 - [ ] **Apple Sign-In (B2).** Fully built; disabled (returns 503) until `APPLE_CLIENT_IDS` and
       related keys are filled. Requires a paid Apple Developer account + `.p8` key + Service ID.
       See `docs/apple-login.md`.
-- [ ] **Subscriptions / payments.** Currently UI-only: `CustomUserModel` has `paid_user` /
-      `current_plan` / period fields and the frontend has pro screens, but there is **no
-      payment integration** (no Stripe/IAP, no purchase/webhook endpoint). Nothing can change
-      a user's plan.
+- [ ] **Subscriptions Phase 2 — REAL payments.** _Now the biggest product gap (2026-07-29)._
+      The 7-day trial, the 402 paywall and the decreasing-price lifecycle are all built, deployed
+      and enforced — but `POST /subscriptions/activate/` is a **mock** and `verify-receipt/` is a
+      **501 stub**, so anyone can "subscribe" for free. Needs: the `in_app_purchase` plugin,
+      per-phase products in App Store Connect / Play Console (re-verify the offer templates —
+      policies change), and backend receipt verification feeding the existing engine. Mobile-only;
+      Stripe is not allowed for in-app digital subscriptions. See the `subscription-model` memory.
+- [ ] **Remove the dead `CustomUserModel` subscription fields** (`paid_user`, `current_plan`,
+      period + `is_subscribed()`/`get_subscription_period()`) — superseded by `Apps/subscriptions`.
+- [ ] **Scheduled AI calls — BLOCKED ON CLIENT, do not start.** Confirmed 2026-07-29 that nothing
+      exists: no notification/scheduling package in `pubspec.yaml`, no backend reminder model, and
+      `set_alarm` is persisted but drives nothing (it is even hardcoded `true` on quest create).
+      "Enable call" only reveals an on-demand button; "Repeat quest" materializes 7 days up-front.
+      Full design notes in `voice-check-and-scheduling.md` §A.
 - [ ] **Wire relocated mockups.** The `experimental/` screens and the moved `je_je_…` mockups
       (streak popup, missed-talks popup, all-quests-done popup) are unrouted — wire them into
       real routes/data when their features are built. See `cleanup-log.md`.

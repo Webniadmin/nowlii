@@ -111,8 +111,37 @@ Rollback tags created first: **`:backup-20260729`** (both images); prod `.env` c
 > **404 vs 401 is the tell.** Every protected endpoint returns **401** unauthenticated; a **404** means the
 > route doesn't exist in the deployed code. Comparing the two is a credential-free way to check a deploy.
 
+### Second deploy, same day — the 7-day trial + paywall
+
+Backend only (`nowli-ai` was unchanged since the morning deploy — check with
+`git diff --stat <last-deployed-sha>..HEAD -- nowli-ai` before rebuilding it for nothing).
+Rollback tag: **`:backup-20260729b`**. Migration `subscriptions.0002` applied to prod RDS.
+
+**Verified on prod without writing to it** — the probe ran inside a `transaction.atomic()` block
+that raises at the end, so the throwaway user and its subscription rows never persisted:
+
+```
+users=8  subscriptions=0  staff(exempt)=1
+fresh login  → in_trial=True days_left=7 has_access=True
+quests       → 200          (usable during trial)
+after expiry → 402 code=subscription_required
+/subscriptions/me/ → 200    (can still pay)
+after buying → quests 200
+transaction rolled back — prod DB untouched
+```
+
+> **Nobody was locked out by this deploy.** All 8 existing users had no subscription row, so each
+> gets a fresh 7-day trial on their next request rather than an instant block.
+
+**If the paywall misbehaves in production**, two escape hatches, no redeploy needed:
+`SUBSCRIPTION_ENFORCED=False` in `~/backend/.env` (+ restart) turns the gate off entirely, or add
+the account to `SUBSCRIPTION_UNLIMITED_USERS` (defaults to `pavle`; staff/superusers always exempt).
+
 ## Known issues / not-yet-working (as of 2026-07-29)
 
+- **Payments are not real.** The paywall is live and enforced, but `POST /subscriptions/activate/`
+  is a **mock** and `verify-receipt/` returns 501 — anyone can "subscribe" for free. Phase 2
+  (Apple IAP / Google Play Billing) is required before this is a real product.
 - **Apple login → 503** — `APPLE_*` not configured (deferred per `next-phase.md`).
 - **API path quirk:** nowli-ai `quest-suggestions` is at `/api/quest-suggestions/` (no `/v1/` prefix like
   the rest). Cosmetic; the app doesn't call it.

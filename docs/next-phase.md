@@ -10,40 +10,52 @@ References verified against the codebase on 2026-07-01.
 
 ## ✅ TOMORROW (2026-07-30) — do in this order
 
-**Everything from 07-28/07-29 is committed on `feat/realtime-voice-call` but NOT on EC2. Deploy is step 1.**
+**Everything through the paywall is committed AND deployed to EC2. Tomorrow is device testing.**
+The day-by-day list lives in **`daily-checklist.md`** — this is the summary.
 
-1. **Deploy `feat/realtime-voice-call` to EC2** (runbook: `deploy-aws.md`).
-   - Backend: `git archive` → `docker compose build && up -d`. **4 new migrations must run**
-     (`voice_calls.0004`, `users.0013`/`0014`/`0015`) — `entrypoint.sh` runs `migrate` on boot; confirm
-     it did (`docker compose logs`), else run `migrate` manually.
-   - nowli-ai: redeploy `test17.py` (persona + male/female voice + `REALTIME_VOICE_MALE`/`_FEMALE`).
-     Set `REALTIME_VOICE_MALE=cedar` / `REALTIME_VOICE_FEMALE=marin` in `~/ai/.env` (or accept defaults).
-   - Smoke test after: `/api/` 200, `realtime/token` 200, `/api/insights/` 200, `/api/voice-calls/summaries/` 200.
+1. **On-phone verification with the 2026-07-29 debug APK** (built against live AWS).
+   ⚠️ **Use a NEW account** — `pavle` is on the paywall allowlist and staff are exempt, so neither
+   will ever see the trial or the block.
+   - **The money flow (never tested on a device):** fresh signup → full access + the "7 days free"
+     screen once → subscription screen shows days left and the real price boxes → Pro screen shows
+     one plan + the billing explainer → subscribe works. Then **force the paywall**: in Django admin
+     set that user's `trial_started_at` back 8 days, restart the app → it must land on the Pro screen
+     and refuse to go anywhere else; subscribing must let them back in.
+   - **Carried over from the morning deploy:** male vs female voice matches the avatar; persona isn't
+     "moody"; screen stays awake on a long call; summary → **Call History**; Insights productive
+     **hour** is real; "Yes, it's my rest day" drops the day from "skipped" and un-reds the calendar.
 
-2. **On-phone verification** (against live AWS) of everything shipped:
-   - Voice call: male vs female voice switches with the chosen avatar / voice selector; persona feels
-     less "moody"; screen stays awake for a long call; summary saves → appears in **Call History**.
-   - Insights: productive **hour** shows a real value; tap **"Yes, it's my rest day"** → that day drops
-     out of "skipped" and its calendar cell stops being red; streak card gradient + progress bar look right.
+2. **Merge `feat/realtime-voice-call` → `main`.** It is 10 commits ahead; deploying from `main`
+   today would be a regression.
 
 3. **Decide the two open voice questions** (see `realtime-voice-gender-persona` memory):
    - Existing users default to **Male** until they re-pick an avatar or use the selector — OK, or backfill?
    - Confirm the female-voice avatar assignments (`bloop/fizzy/zee/cloudy/glowy`) match the intended art.
 
-4. **Then pick up the real backlog** (unchanged, biggest first):
-   - **Subscriptions** — wire the empty "Let's begin 7 days free" button (`subscription_popup.dart`),
-     reconcile the two Pro pricing models, decide + enforce Pro feature gating, then Phase 2 real IAP.
+4. **Then the real backlog** (biggest first):
+   - **Subscriptions Phase 2 — real IAP.** This is now the top gap: the paywall is enforced but
+     `activate` is a mock and `verify-receipt` is a 501 stub, so **anyone can "subscribe" for free**.
+     Needs the `in_app_purchase` plugin, per-phase products in App Store Connect / Play Console, and
+     backend receipt verification feeding the existing lifecycle engine.
+   - **Prod hardening** — fresh Django `SECRET_KEY` (still the dev `django-insecure-…`), HTTPS/domain
+     + signing before any Play/release build.
    - **Apple Sign-In** — needs a permanent HTTPS URL (temp trycloudflare tunnel) before any device build.
-   - **Prod hardening** — fresh Django `SECRET_KEY` (still the dev `django-insecure-…`), HTTPS/domain +
-     signing before any Play/release build.
-   - ~~**Insights 500 → graceful fallback**~~ ✅ **done 2026-07-29** (commit `cc29803`) — see the
-     RESUME HERE block below.
+   - **Scheduled AI calls** — **blocked on the client**, do not start. Confirmed 2026-07-29 that
+     nothing exists: no notification/scheduling package, no backend reminder model, and `set_alarm`
+     is stored but drives nothing (hardcoded `true` on create). "Enable call" only shows an on-demand
+     button. Design notes in `voice-check-and-scheduling.md` §A.
+   - ~~**Insights 500 → graceful fallback**~~ ✅ **done** (`cc29803`).
+   - ~~**Wire the "Let's begin 7 days free" button / reconcile Pro pricing / enforce gating**~~
+     ✅ **done** (`6e420d6`).
 
 ### Nice-to-haves noticed while working (not blockers)
 - Streak-card old asset `120Days.png` is now unused (kept, not deleted).
 - The `Quests` model has **no completion timestamp** — "most productive hour" uses `select_a_time`
   (scheduled time) as a proxy. If real completion-time analytics are wanted later, add a `completed_at`.
 - Rest-day exclusion is by **weekday** (recurring), not a one-off date — fine for the current UX.
+- The legacy `CustomUserModel.paid_user` / `current_plan` fields are now definitively dead — the live
+  model is `Apps/subscriptions`. Worth removing in a cleanup pass.
+- Local `.env` OpenAI key is invalid (401) since the 07-23 rotation; prod is fine.
 
 ---
 

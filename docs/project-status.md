@@ -1,5 +1,40 @@
 # NOWLII — Project Status & Analysis
 
+_Last reviewed: 2026-07-29 (evening)_
+
+## Completed this session (2026-07-29, evening)
+
+_Full detail in `next-phase.md`; deploy record in `deploy-aws.md`; tomorrow's list in
+`daily-checklist.md`. **All of this is deployed to EC2.**_
+
+- **Deployed the whole `feat/realtime-voice-call` branch** — the box had been running the 07-21
+  backend and 07-23 nowli-ai, so every 07-28/29 feature was local-only. 4 migrations applied to
+  prod RDS. Verified with a credential-free trick: a protected route answers **401** when it
+  exists and **404** when it doesn't, so 404→401 proves the deploy landed.
+- **Insights no longer 500s when the AI provider fails.** Each AI block degrades independently to
+  data-derived fallback copy and the request still returns 200, with an `ai_degraded` flag so a
+  fallback is never mistaken for real AI output. Fallbacks are never cached, so the next load
+  retries. Also added a 20 s provider timeout — the SDKs default to **600 s**, so a hanging
+  provider would have left the app spinning instead of ever reaching the fallback.
+- **7-day free trial + a real paywall (the big one).** Previously the whole "7 days free" flow was
+  artwork: an empty `onPressed`, no trial concept in the backend at all, and `user_has_pro()` never
+  called anywhere — so **every user had the entire app free, forever**. Now the trial is granted
+  automatically on first login (once, never re-granted), and when it runs out every feature endpoint
+  returns **402 `subscription_required`** (402 rather than 403 so the app routes to the paywall
+  instead of the login screen). Auth, profile, subscriptions and support stay open so a blocked user
+  can still pay or reach support. Kill switch + test allowlist included.
+- **Pro screen pricing conflict resolved.** The hardcoded "Yearly $25.99 / $2.66-mo" cards were
+  deleted — no yearly product exists in the backend and the subscribe button ignored the selection
+  entirely (tapping "Yearly" silently started the monthly plan). One plan now, prices from the
+  backend, with the decreasing-price explainer on both paywall screens.
+- **Confirmed scheduled AI calls do not exist** (client question): no notification/scheduling
+  package, no backend reminder model, and `set_alarm` is persisted but drives nothing. "Enable call"
+  only reveals an on-demand button. Blocked pending client input.
+
+> ⚠️ **Payments are still not real.** The paywall is enforced, but `activate` is a mock and
+> `verify-receipt` is a 501 stub — anyone can "subscribe" for free. Apple IAP / Play Billing is now
+> the single biggest gap in the product.
+
 _Last reviewed: 2026-07-29_
 
 ## What the app does
@@ -334,11 +369,13 @@ _Full detail in `daily-reports/2026-07-10.md`; feature detail in `three-features
 
 ## What looks unfinished / concerning
 
-1. **Subscriptions are UI-only.** The `CustomUserModel` has `paid_user`,
-   `current_plan`, and period fields plus `is_subscribed()`/`get_subscription_period()`
-   helpers, and the frontend has subscription/pro screens — but there is **no payment
-   integration, no purchase/webhook endpoint, no Stripe/IAP**. Nothing can actually
-   change a user's plan.
+1. **Subscriptions: the lifecycle is real, the money is not.** _Updated 2026-07-29._ There is now a
+   full trial → paywall → purchase flow enforced backend-side (`Apps/subscriptions`, 402 gate on
+   every feature endpoint) with the decreasing-price-then-free engine behind it. What's still
+   missing is **any real payment**: `POST /subscriptions/activate/` is a mock and
+   `verify-receipt/` returns 501, so anyone can "subscribe" for free. Phase 2 = `in_app_purchase`
+   + per-phase store products + receipt verification. The legacy `CustomUserModel.paid_user` /
+   `current_plan` fields are dead and should be removed.
 2. ~~**Live chat with admin does not exist in the backend.**~~ **RESOLVED 2026-07-03** —
    `Apps/support` adds a `SupportMessage` model + `/api/support/messages/` (list/create,
    per-user), an admin "Reply" box, and email notifications both ways. The frontend Support
