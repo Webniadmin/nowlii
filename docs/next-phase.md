@@ -36,13 +36,45 @@ References verified against the codebase on 2026-07-01.
    - **Apple Sign-In** — needs a permanent HTTPS URL (temp trycloudflare tunnel) before any device build.
    - **Prod hardening** — fresh Django `SECRET_KEY` (still the dev `django-insecure-…`), HTTPS/domain +
      signing before any Play/release build.
-   - **Insights 500 → graceful fallback** when the AI key fails (`insights/views.py`).
+   - ~~**Insights 500 → graceful fallback**~~ ✅ **done 2026-07-29** (commit `cc29803`) — see the
+     RESUME HERE block below.
 
 ### Nice-to-haves noticed while working (not blockers)
 - Streak-card old asset `120Days.png` is now unused (kept, not deleted).
 - The `Quests` model has **no completion timestamp** — "most productive hour" uses `select_a_time`
   (scheduled time) as a proxy. If real completion-time analytics are wanted later, add a `completed_at`.
 - Rest-day exclusion is by **weekday** (recurring), not a one-off date — fine for the current UX.
+
+---
+
+## ▶ RESUME HERE (2026-07-29, later) — Insights no longer 500s when the AI is down
+
+`GET /api/insights/` returned 500/502/503 on any AI failure, so the OpenAI quota error blanked the
+**whole** Insights + Progress screen — even though only `ai_reflections` / `quest_suggestions` need
+the AI (streak, rings, calendar, emotions, mood chart are all real DB analytics). The Flutter
+`InsightsService.getInsights()` returns `null` on any non-200, so one failed AI call = empty screen.
+
+Now each AI block degrades independently and the response is still **200**:
+- `services.build_fallback_reflections()` — 3 sentences from the user's real weekly numbers
+  (completion + %, strongest zone, skipped days). Handles empty / perfect weeks.
+- `services.build_fallback_quest_suggestions()` — 5 static suggestions matched to the time of day,
+  biased toward Soft steps after a rough week. **Night is deliberately all-gentle** (no Power move
+  at 23:00), unlike the AI prompt's zone-variety rule.
+- New top-level **`ai_degraded`** boolean so a fallback is never mistaken for real AI output. The
+  Flutter model ignores unknown keys, so **no frontend change was needed**.
+- Fallbacks are **never cached** (stored as `[]`) → the next load retries the AI. A partial failure
+  keeps the half that worked. _Real bug found by the new tests: a successful emotion-meaning pass set
+  `cache_dirty` and cached the fallback reflections._
+- Each generator is now called only when actually missing (the old code regenerated both whenever
+  either was absent — a wasted GPT call on every partial cache hit).
+- **20 s provider timeout + 1 retry** (`AI_REQUEST_TIMEOUT`, env-tunable). The OpenAI/Anthropic SDKs
+  default to **600 s**, so a hanging provider would have left the app spinning instead of falling back.
+- Test hygiene: view tests were making **live Anthropic calls** (`generate_emotion_meaning` unmocked)
+  — now stubbed; suite runs in ~4 s offline.
+
+Verified: 19 `Apps.insights` tests (was 15) pass, 27 across insights+subscriptions+quests,
+`manage.py check` clean, fallback copy eyeballed against the local DB. Commit `cc29803`.
+**Not deployed** — ships with the branch deploy (step 1 above).
 
 ---
 
