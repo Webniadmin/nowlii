@@ -58,12 +58,16 @@ i-0c053bc7fea33f0df --os-user ubuntu --region eu-north-1` → append the new pub
 
 ## Rollback
 
-The pre-2026-07-21 images are tagged `:backup-20260721`:
+Backup image tags on the box: **`:backup-20260729`** (state before the 07-29 deploy) and
+`:backup-20260721`.
 ```bash
 ssh -i ~/.ssh/id_ed25519 ubuntu@16.170.191.239 \
-  "docker tag fahad1000mir/nowlii-backend:backup-20260721 fahad1000mir/nowlii-backend:dev \
+  "docker tag fahad1000mir/nowlii-backend:backup-20260729 fahad1000mir/nowlii-backend:dev \
    && cd ~/backend && docker compose -f docker-compose.prod.yml up -d"   # same shape for ~/ai
 ```
+⚠️ **Images roll back; migrations do not.** The 07-29 deploy applied 4 migrations to prod RDS. Rolling
+the image back leaves the new columns/tables in place — harmless (the old code ignores them), but a
+true rollback would need `migrate <app> <previous>` run deliberately.
 
 ## Production `.env` gotcha — it lags the code ("works local, fails on AWS")
 
@@ -82,18 +86,42 @@ Note the box `.env` still literally contains `DEBUG=True`, but `docker-compose.p
 (`EMAIL_HOST=smtp.gmail.com`/587/TLS, `DEFAULT_FROM_EMAIL→EMAIL_HOST_USER`) since the box has
 `EMAIL_HOST_USER`+`EMAIL_HOST_PASSWORD`.
 
-## Known issues / not-yet-working (as of 2026-07-21)
+## Deploy log — 2026-07-29 (branch `feat/realtime-voice-call`)
 
-- **AI features are down on the shared OpenAI key — `insufficient_quota` (429).** The **same** OpenAI key is
-  in local + AWS backend + AWS ai `.env` (sha `7457e203…`), and its account is out of credits. This breaks:
-  **AI voice** (chat-stream → silence), **Insights** (`/api/insights/` → 500), **AI subtask generation**.
-  Fix = add OpenAI billing credits, **or** rotate to a funded key, **or** set a funded `ANTHROPIC_API_KEY`
-  on the backend (Django AI uses Anthropic→OpenAI→Google; **nowli-ai voice uses OpenAI only, no fallback**).
+Shipped everything from the 07-28 / 07-29 sessions (the box had been running 07-21 backend + 07-23 ai).
+Rollback tags created first: **`:backup-20260729`** (both images); prod `.env` copied to
+`.env.bak-20260729` in `~/backend` and `~/ai`.
+
+- **Backend** — 4 migrations applied against prod RDS: `users.0013_nowliipredefinedoption_voice`,
+  `0014_seed_companion_voices`, `0015_profile_rest_days`, `voice_calls.0004_callsummary`.
+  ⚠️ The boot log only showed `0015` (log window); **`showmigrations` is the authoritative check** —
+  all four are `[X]`.
+- **nowli-ai** — persona + per-gender voice + the Insights AI timeout.
+
+**Verification used (repeatable — this is how you prove a deploy actually landed):**
+
+| Check | Before deploy | After |
+|---|---|---|
+| `GET /api/voice-calls/summaries/` | **404** (route absent) | **401** (exists, auth required) |
+| `GET /api/insights/rest-days/` | **404** | **401** |
+| `session/new` `voice:"Male"` → `realtime/token` | `marin` (ignored) | **`cedar`** |
+| `session/new` `voice:"Female"` → token | `marin` | `marin` |
+| `realtime/token` model | `gpt-realtime-mini` | `gpt-realtime-mini` (cost cap intact) |
+
+> **404 vs 401 is the tell.** Every protected endpoint returns **401** unauthenticated; a **404** means the
+> route doesn't exist in the deployed code. Comparing the two is a credential-free way to check a deploy.
+
+## Known issues / not-yet-working (as of 2026-07-29)
+
 - **Apple login → 503** — `APPLE_*` not configured (deferred per `next-phase.md`).
-- **Insights returns a raw 500 instead of graceful fallback** when the AI call fails (`insights/views.py`
-  `get` → `ai_client.generate_weekly_reflections` isn't wrapped). Robustness TODO.
 - **API path quirk:** nowli-ai `quest-suggestions` is at `/api/quest-suggestions/` (no `/v1/` prefix like
   the rest). Cosmetic; the app doesn't call it.
+- ~~**Insights returns a raw 500 instead of graceful fallback**~~ ✅ **fixed 2026-07-29** (`cc29803`) —
+  `/api/insights/` now degrades to data-derived fallback copy and returns 200, with an `ai_degraded`
+  flag. Also added a 20 s provider timeout (`AI_REQUEST_TIMEOUT`); the SDKs defaulted to 600 s.
+- ~~**AI features down — `insufficient_quota`**~~ resolved 2026-07-23 by the key rotation (the spend was a
+  **leaked key**, not the app — see `daily-reports/2026-07-23.md`). `/health` reports `openai:true` and
+  `realtime/token` returns 200. **Still open on the user side: set a hard OpenAI budget cap.**
 
 ## Full endpoint audit (verified live 2026-07-21)
 
