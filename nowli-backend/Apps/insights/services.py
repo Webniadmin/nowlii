@@ -578,3 +578,138 @@ def build_analytics_summary(user, ref: date = None) -> dict:
         "monthly": get_monthly_analytics(user, ref),
         "ref_date": ref.isoformat(),
     }
+
+
+# ─────────────────────────────────────────────
+#  Offline fallbacks — used when the AI provider is unavailable
+# ─────────────────────────────────────────────
+#
+# The Insights screen is mostly real DB analytics (streak, rings, calendar, emotions,
+# mood chart); only `ai_reflections` and `quest_suggestions` need the AI. When the
+# provider fails (no key, out of quota, timeout, bad JSON) the view degrades to these
+# instead of returning 500, so the rest of the screen still renders. The copy is
+# derived from the user's real numbers — it never invents data.
+
+def build_fallback_reflections(weekly: dict) -> list[str]:
+    """Three reflection sentences computed from the real weekly numbers (no AI).
+
+    Mirrors the shape `generate_weekly_reflections` returns: a list of 3 strings.
+    """
+    completed = int(weekly.get("quests_completed") or 0)
+    total     = int(weekly.get("total_quests") or 0)
+    skipped   = list(weekly.get("skipped_days") or [])
+    zones     = list(weekly.get("zone_progress") or [])
+
+    lines = []
+
+    # 1. Completion — the headline number, stated plainly.
+    if total == 0:
+        lines.append("No quests are on this week's board yet — adding one is the whole first step.")
+    else:
+        pct = round(completed / total * 100)
+        lines.append(f"You completed {completed} of {total} quests this week ({pct}%).")
+
+    # 2. Zones — where the effort actually landed.
+    worked = [z for z in zones if (z.get("assigned") or 0) > 0]
+    if worked:
+        best = max(worked, key=lambda z: (z.get("completed") or 0) / (z.get("assigned") or 1))
+        busiest = max(worked, key=lambda z: z.get("assigned") or 0)
+        if (best.get("completed") or 0) > 0:
+            lines.append(f"Your strongest zone was {best['zone']} at {best['ratio']}.")
+        else:
+            lines.append(f"Most of your quests sat in {busiest['zone']} — none finished there yet.")
+    else:
+        lines.append("No zone has any quests yet — pick one zone and start there.")
+
+    # 3. Consistency — skipped days, minus the ones marked as rest days.
+    if total == 0:
+        lines.append("Insights get sharper once you've logged a few days of quests.")
+    elif not skipped:
+        lines.append("You didn't skip a single planned day this week.")
+    elif len(skipped) == 1:
+        lines.append(f"{skipped[0]} was the one day that slipped — worth a look at what got in the way.")
+    else:
+        lines.append(f"{len(skipped)} days slipped this week ({', '.join(skipped)}).")
+
+    return lines
+
+
+# Static quest suggestions per part of the day. Same shape the AI returns:
+# task / description / zone / suggested_time.
+#
+# Morning/afternoon/evening carry the zone variety the AI prompt asks for (at least one
+# Soft step, Power move and Stretch zone). **Night deliberately does not** — proposing a
+# "Deep focus" Power move at 23:00 is bad advice, so the late set stays gentle.
+_FALLBACK_QUESTS = {
+    "morning": [
+        {"task": "Morning walk",   "description": "Ten minutes outside to wake your body up.",      "zone": "Soft steps"},
+        {"task": "Plan the day",   "description": "Write down the three things that actually matter.", "zone": "Soft steps"},
+        {"task": "Deep focus",     "description": "One uninterrupted block on your hardest task.",   "zone": "Power move"},
+        {"task": "Clear the inbox", "description": "Handle what's waiting before it piles up.",      "zone": "Elevated"},
+        {"task": "Start the hard one", "description": "Begin the task you've been circling for days.", "zone": "Stretch zone"},
+    ],
+    "afternoon": [
+        {"task": "Stretch break",  "description": "Stand up and move for five minutes.",            "zone": "Soft steps"},
+        {"task": "Focus sprint",   "description": "Twenty-five minutes, one task, no tabs.",         "zone": "Power move"},
+        {"task": "Tidy one spot",  "description": "Reset a single surface — desk, sink, or bag.",    "zone": "Elevated"},
+        {"task": "Finish something", "description": "Close out a task that's been almost-done.",     "zone": "Elevated"},
+        {"task": "Send the message", "description": "Make the call or reply you've been putting off.", "zone": "Stretch zone"},
+    ],
+    "evening": [
+        {"task": "Short reflection", "description": "Note one thing that went well today.",          "zone": "Soft steps"},
+        {"task": "Prep tomorrow",  "description": "Set out what you'll need in the morning.",        "zone": "Soft steps"},
+        {"task": "Screen-free hour", "description": "Put the phone down and let your head settle.",  "zone": "Elevated"},
+        {"task": "Wrap the day",   "description": "Finish the last open loop, then stop.",           "zone": "Power move"},
+        {"task": "Reach out",      "description": "Message someone you've been meaning to talk to.", "zone": "Stretch zone"},
+    ],
+    "night": [
+        {"task": "Wind down",      "description": "Dim the lights and slow your breathing.",         "zone": "Soft steps"},
+        {"task": "Lights out",     "description": "Head to bed at a time that's kind to tomorrow.",  "zone": "Soft steps"},
+        {"task": "Note one worry", "description": "Write down what's on your mind so it can wait.",  "zone": "Soft steps"},
+        {"task": "Tidy for morning", "description": "Two minutes now saves a rushed start.",         "zone": "Elevated"},
+        {"task": "Read a few pages", "description": "Something on paper, away from screens.",        "zone": "Soft steps"},
+    ],
+}
+
+_FALLBACK_TIMES = {
+    "morning":   ["08:00", "08:30", "09:00", "10:00", "11:00"],
+    "afternoon": ["13:00", "14:00", "15:00", "16:00", "17:00"],
+    "evening":   ["18:30", "19:00", "20:00", "20:30", "21:00"],
+    "night":     ["21:30", "22:00", "22:15", "22:30", "23:00"],
+}
+
+
+def _part_of_day(current_time: str) -> str:
+    """Map an 'HH:MM' string to morning / afternoon / evening / night."""
+    try:
+        hour = int(str(current_time).split(":")[0])
+    except (ValueError, IndexError, AttributeError):
+        hour = 12
+    if 5 <= hour < 12:
+        return "morning"
+    if 12 <= hour < 18:
+        return "afternoon"
+    if 18 <= hour < 22:
+        return "evening"
+    return "night"
+
+
+def build_fallback_quest_suggestions(weekly: dict, current_time: str, day_of_week: str) -> list[dict]:
+    """Five static quest suggestions matched to the time of day (no AI).
+
+    Mirrors `generate_quest_suggestions`: a list of 5 dicts with task / description /
+    zone / suggested_time. When the user skipped days this week the set is biased
+    toward "Soft steps" — the same rule the AI prompt uses.
+    """
+    part = _part_of_day(current_time)
+    items = list(_FALLBACK_QUESTS[part])
+    times = _FALLBACK_TIMES[part]
+
+    # Struggling week → lead with the gentlest options instead of the stretch ones.
+    if len(weekly.get("skipped_days") or []) >= 2:
+        items.sort(key=lambda q: 0 if q["zone"] == "Soft steps" else 1)
+
+    return [
+        {**item, "suggested_time": times[i % len(times)]}
+        for i, item in enumerate(items)
+    ]

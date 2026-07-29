@@ -101,3 +101,6 @@ class WeeklyInsightSerializer(serializers.Serializer):
 class AIInsightResponseSerializer(serializers.Serializer):
     weekly  = WeeklyInsightSerializer()
     monthly = MonthlyInsightSerializer()
+    # True when the AI provider was unreachable and `ai_reflections` / `quest_suggestions`
+    # are the offline fallback. Optional so older callers/tests still validate.
+    ai_degraded = serializers.BooleanField(required=False, default=False)

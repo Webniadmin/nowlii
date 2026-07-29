@@ -135,8 +135,19 @@ def get_active_provider() -> str:
 #  Provider callers
 # ─────────────────────────────────────────────
 
+# Insights is a screen load, not a batch job — a hanging provider must fail fast so the
+# view can fall back instead of leaving the app spinning. Both SDKs otherwise default to
+# 600 s with retries. Env-tunable via AI_REQUEST_TIMEOUT (seconds).
+_AI_TIMEOUT = float(getattr(settings, "AI_REQUEST_TIMEOUT", 20))
+_AI_MAX_RETRIES = 1
+
+
 def _call_claude(prompt: str) -> list:
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(
+        api_key=settings.ANTHROPIC_API_KEY,
+        timeout=_AI_TIMEOUT,
+        max_retries=_AI_MAX_RETRIES,
+    )
     response = client.messages.create(
         model="claude-opus-4-5",
         max_tokens=500,
@@ -146,7 +157,11 @@ def _call_claude(prompt: str) -> list:
 
 
 def _call_chatgpt(prompt: str) -> list:
-    client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+    client = openai.OpenAI(
+        api_key=settings.OPENAI_API_KEY,
+        timeout=_AI_TIMEOUT,
+        max_retries=_AI_MAX_RETRIES,
+    )
     response = client.chat.completions.create(
         model="gpt-4o",
         max_tokens=500,

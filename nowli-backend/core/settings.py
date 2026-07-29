@@ -383,3 +383,7 @@ SWAGGER_SETTINGS = {
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", default=None)
 OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", default=None)
 GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY", default=None)
+
+# Seconds to wait on an AI provider before giving up. Kept short because these calls sit
+# on a screen load (Insights) — on timeout the view serves its offline fallback.
+AI_REQUEST_TIMEOUT = float(os.getenv("AI_REQUEST_TIMEOUT", "20"))

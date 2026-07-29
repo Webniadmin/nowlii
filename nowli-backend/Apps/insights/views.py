@@ -2,14 +2,16 @@ import json
 import logging
 from datetime import date
 
-import anthropic
-import openai
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
-from .services import build_analytics_summary
+from .services import (
+    build_analytics_summary,
+    build_fallback_reflections,
+    build_fallback_quest_suggestions,
+)
 from .ai_client import (
     generate_weekly_reflections,
     generate_quest_suggestions,
@@ -38,6 +40,24 @@ class AIInsightView(APIView):
       ?refresh=true   → bypass cache and regenerate AI reflections
     """
     permission_classes = [IsAuthenticated]
+
+    @staticmethod
+    def _call_ai(label: str, fn, *args):
+        """Run one AI generator, turning any failure into ``(None, False)``.
+
+        Insights is a screen load, not a batch job — a provider failure has to degrade
+        that one block instead of failing the whole request.
+        """
+        try:
+            return fn(*args), True
+        except EnvironmentError:
+            logger.warning("No AI provider configured — falling back for %s", label)
+        except json.JSONDecodeError:
+            logger.warning("AI returned non-JSON — falling back for %s", label)
+        except Exception:
+            # Quota, network, timeout, provider outage — all degrade the same way.
+            logger.exception("AI generation failed — falling back for %s", label)
+        return None, False
 
     def get(self, request):
         user    = request.user
@@ -78,33 +98,40 @@ class AIInsightView(APIView):
                 pass
 
         cache_dirty = False
+        ai_degraded = False
+        # Tracked separately so a partial failure (reflections fine, suggestions down)
+        # keeps the half that worked — both for the response and for the cache write.
+        reflections_ok = bool(ai_reflections)
+        suggestions_ok = bool(quest_suggestions)
 
-        # Reflections + quest suggestions (regenerate both if either is missing).
-        if not ai_reflections or not quest_suggestions:
-            try:
-                # Get current time/day for suggestions
-                from django.utils import timezone
-                now = timezone.now()
-                current_time = now.strftime("%H:%M")
-                day_of_week  = now.strftime("%A")
+        # Reflections + quest suggestions — the only two AI-backed blocks in the response;
+        # everything else is real DB analytics. So a provider failure must NOT fail the
+        # whole screen: each block falls back to data-derived copy independently and we
+        # still return 200. Fallbacks are never cached, so the next load retries the AI.
+        if not reflections_ok or not suggestions_ok:
+            # Get current time/day for suggestions
+            from django.utils import timezone
+            now = timezone.now()
+            current_time = now.strftime("%H:%M")
+            day_of_week  = now.strftime("%A")
 
-                # Parallel-ready calls (sequential for now)
-                ai_reflections    = generate_weekly_reflections(weekly_data)
-                quest_suggestions = generate_quest_suggestions(weekly_data, current_time, day_of_week)
-                cache_dirty = True
-            except EnvironmentError as e:
-                return Response({"error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-            except json.JSONDecodeError:
-                return Response(
-                    {"error": "AI returned an unexpected response. Please try again."},
-                    status=status.HTTP_502_BAD_GATEWAY
+            if not reflections_ok:
+                result, reflections_ok = self._call_ai(
+                    "weekly reflections", generate_weekly_reflections, weekly_data
                 )
-            except Exception as e:
-                logger.exception("AI generation failed")
-                return Response(
-                    {"error": f"Unexpected error: {str(e)}"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                ai_reflections = result if reflections_ok else build_fallback_reflections(weekly_data)
+
+            if not suggestions_ok:
+                result, suggestions_ok = self._call_ai(
+                    "quest suggestions", generate_quest_suggestions,
+                    weekly_data, current_time, day_of_week,
                 )
+                quest_suggestions = result if suggestions_ok else build_fallback_quest_suggestions(
+                    weekly_data, current_time, day_of_week
+                )
+
+            cache_dirty = reflections_ok or suggestions_ok
+            ai_degraded = not (reflections_ok and suggestions_ok)
 
         # "What this means" for the emotion sections — generated only when the user has
         # voice-call data. Best-effort: on ANY failure we keep the static placeholder copy
@@ -131,14 +158,18 @@ class AIInsightView(APIView):
                 weekly_data["low_mood_recommendation"] = emotion_meaning["low_mood_recommendation"]
 
         # Save to cache (single write covering all three).
+        #
+        # The offline fallback is never cached: it's stored as empty so the next load sees a
+        # miss and retries the real AI. Anything that DID succeed this pass (e.g. the emotion
+        # meaning) is still cached, so a partial failure doesn't cost us the whole write.
         if cache_dirty:
             InsightCache.objects.update_or_create(
                 user=user, period="weekly", period_key=week_key,
                 defaults={
                     "payload": {
-                        "ai_reflections": ai_reflections,
-                        "quest_suggestions": quest_suggestions,
-                        "emotion_meaning": emotion_meaning,
+                        "ai_reflections":    ai_reflections if reflections_ok else [],
+                        "quest_suggestions": quest_suggestions if suggestions_ok else [],
+                        "emotion_meaning":   emotion_meaning,
                     }
                 }
             )
@@ -150,6 +181,9 @@ class AIInsightView(APIView):
         payload = {
             "weekly":  weekly_data,
             "monthly": monthly_data,
+            # True when the AI provider failed and the reflections/suggestions above are
+            # the offline fallback. Everything else in the response is still real data.
+            "ai_degraded": ai_degraded,
         }
 
         serializer = AIInsightResponseSerializer(data=payload)
