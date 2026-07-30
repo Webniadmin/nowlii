@@ -5,6 +5,7 @@ change never fails loudly, it just quietly opens or closes a door.
 """
 from datetime import time
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -242,6 +243,38 @@ class TokenRefreshTests(TestCase):
     def test_garbage_is_rejected_rather_than_accepted(self):
         response = self.client.post(self.url, {'refresh': 'not-a-token'}, format='json')
         self.assertEqual(response.status_code, 401)
+
+    def test_the_refresh_token_outlives_the_access_token_by_a_wide_margin(self):
+        """The configuration that makes the whole flow work — or quietly defeats it.
+
+        Both lifetimes were once 31 days. Since both tokens are issued together at login,
+        they also expired together: the client refreshes only when the access token is
+        nearly up, by which point the refresh token is nearly up too. Open the app an hour
+        late on day 31 and both are dead, so the user is signed out regardless — the refresh
+        token was decorative.
+
+        Asserted here rather than trusted to a comment, because nothing else would fail if
+        someone narrowed the gap: everything keeps working perfectly until day 31.
+        """
+        access = settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME']
+        refresh = settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME']
+        self.assertGreaterEqual(
+            refresh, access * 10,
+            msg=f'refresh ({refresh}) must comfortably outlive access ({access})',
+        )
+
+    def test_a_stale_access_token_can_still_be_refreshed(self):
+        """The real-world case: the app was closed long enough for the access token to die.
+
+        The refresh token is what proves who they are, so an expired — even garbage — access
+        token must not stand in the way.
+        """
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer an.expired.token')
+        response = self.client.post(
+            self.url, {'refresh': str(self.refresh)}, format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('access', response.data)
 
     def test_refreshing_needs_no_prior_authentication(self):
         """The refresh token IS the credential — the caller has no valid access token left."""

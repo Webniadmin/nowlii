@@ -335,13 +335,32 @@ REST_FRAMEWORK = {
 # With rotation on, a user who opens the app at least once per refresh lifetime stays signed
 # in indefinitely, silently. Only a genuinely dormant account has to log in again.
 #
-# ⚠️ The defaults below stay at the historical 31 days ON PURPOSE: any app build older than
-# 2026-07-30 has no refresh logic at all, so shortening the access token would lock those
-# builds out early. Once the new build is confirmed on devices, set in prod:
-#     JWT_ACCESS_MINUTES=60
-#     JWT_REFRESH_DAYS=60
-JWT_ACCESS_MINUTES = int(os.getenv("JWT_ACCESS_MINUTES", str(31 * 24 * 60)))
-JWT_REFRESH_DAYS = int(os.getenv("JWT_REFRESH_DAYS", "31"))
+# The two lifetimes MUST differ by a wide margin, and that is the whole trick.
+#
+# They used to both be 31 days, which quietly defeats the refresh flow: both tokens are
+# issued together at login, so they also expire together. The client only refreshes when the
+# access token is nearly up — by which point the refresh token is nearly up too. Open the app
+# an hour late on day 31 and both are dead, so the user is signed out anyway. Equal lifetimes
+# make the refresh token decorative.
+#
+# With a short access token the client refreshes constantly, and every refresh rotates the
+# refresh token and resets ITS clock. Anyone who opens the app once every JWT_REFRESH_DAYS
+# stays signed in forever; only a genuinely dormant account has to log in again.
+#
+# 60 minutes / 90 days is the ordinary shape of this (OAuth2/OIDC refresh flows, and what
+# banking and social apps run). `_check_jwt_lifetimes` below refuses to start if someone
+# narrows the gap again.
+JWT_ACCESS_MINUTES = int(os.getenv("JWT_ACCESS_MINUTES", "60"))
+JWT_REFRESH_DAYS = int(os.getenv("JWT_REFRESH_DAYS", "90"))
+
+# A refresh token that is not comfortably longer-lived than the access token cannot do its
+# job. Ten times is a floor, not a target.
+if (JWT_REFRESH_DAYS * 24 * 60) < (JWT_ACCESS_MINUTES * 10):
+    raise ImproperlyConfigured(
+        f"JWT_REFRESH_DAYS ({JWT_REFRESH_DAYS}d) must be at least 10x "
+        f"JWT_ACCESS_MINUTES ({JWT_ACCESS_MINUTES}m), or the refresh token expires at "
+        "roughly the same time as the access token and users get signed out anyway."
+    )
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=JWT_ACCESS_MINUTES),
