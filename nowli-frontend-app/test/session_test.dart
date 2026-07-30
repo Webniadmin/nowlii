@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nowlii/api/session.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// The JWT expiry reading that decides whether to refresh.
 ///
@@ -23,6 +24,67 @@ String _jwtWithExp(DateTime expiry) {
 
 void main() {
   final now = DateTime.now().toUtc();
+
+  group('deciding whether there is a session at all', () {
+    // The route guard runs on every navigation and cannot wait on the network, so this
+    // decision is made from the tokens alone. Getting it wrong is severe in both
+    // directions: too strict and everyone is thrown out hourly; too lax and a signed-out
+    // user roams an app where every screen fails — which is what used to happen, because
+    // any non-empty string counted as a session.
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    Future<void> store({String? access, String? refresh}) async {
+      SharedPreferences.setMockInitialValues({
+        if (access != null) 'access_token': access,
+        if (refresh != null) 'refresh_token': refresh,
+      });
+    }
+
+    test('no tokens at all', () async {
+      expect(await Session.localState(), SessionState.none);
+    });
+
+    test('a live access token means signed in', () async {
+      await store(
+        access: _jwtWithExp(now.add(const Duration(hours: 1))),
+        refresh: _jwtWithExp(now.add(const Duration(days: 90))),
+      );
+      expect(await Session.localState(), SessionState.active);
+    });
+
+    test('an expired access token with a live refresh token is renewable', () async {
+      // The ordinary state every hour once access tokens are short-lived. Treating this as
+      // signed out would bounce every user to the login screen hourly.
+      await store(
+        access: _jwtWithExp(now.subtract(const Duration(minutes: 5))),
+        refresh: _jwtWithExp(now.add(const Duration(days: 89))),
+      );
+      expect(await Session.localState(), SessionState.renewable);
+    });
+
+    test('both expired means the session is over', () async {
+      await store(
+        access: _jwtWithExp(now.subtract(const Duration(days: 100))),
+        refresh: _jwtWithExp(now.subtract(const Duration(days: 10))),
+      );
+      expect(await Session.localState(), SessionState.expired);
+    });
+
+    test('an unreadable token counts as dead, not as a session', () async {
+      await store(access: 'garbage', refresh: 'also-garbage');
+      expect(await Session.localState(), SessionState.expired);
+    });
+
+    test('a refresh token alone can still revive the session', () async {
+      await store(refresh: _jwtWithExp(now.add(const Duration(days: 30))));
+      expect(await Session.localState(), SessionState.renewable);
+    });
+
+    test('an access token alone, still live, is enough for now', () async {
+      await store(access: _jwtWithExp(now.add(const Duration(hours: 1))));
+      expect(await Session.localState(), SessionState.active);
+    });
+  });
 
   group('reading a token expiry', () {
     test('reads exp from a well-formed token', () {

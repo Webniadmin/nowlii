@@ -18,6 +18,25 @@ import 'storage.dart';
 /// refreshes first when needed, so the 401 mostly never happens. [refreshNow] is still there
 /// for the case where the server rejects a token we believed was fine (clock skew, a
 /// password change, a blacklisted session).
+///
+/// [localState] lets the route guard decide *before* letting anyone in, rather than waving
+/// them through and discovering the problem when requests start failing.
+enum SessionState {
+  /// Never signed in, or signed out.
+  none,
+
+  /// Access token is still good — go straight in.
+  active,
+
+  /// Access token has expired but the refresh token has not. This is the ordinary case
+  /// every hour once access tokens are short-lived: let them in, and the next request
+  /// renews silently. Forcing a sign-in here would log everyone out hourly.
+  renewable,
+
+  /// Both tokens are dead. Nothing can be recovered — the user must sign in again.
+  expired,
+}
+
 class Session {
   Session._();
 
@@ -38,6 +57,41 @@ class Session {
   /// Called when the session is definitively over and the user must sign in again.
   /// Set once at app start so this file stays unaware of routing.
   static void Function()? onSignedOut;
+
+  /// What the stored tokens say about the session, decided **locally and instantly**.
+  ///
+  /// The route guard runs on every navigation and cannot wait on the network, so it used to
+  /// treat any non-empty string as proof of a session — a token that expired three months
+  /// ago passed. That is how a signed-out user ends up wandering the app while every screen
+  /// quietly fails.
+  ///
+  /// This only reads the `exp` claims. Whether the server still honours a token (it may have
+  /// been blacklisted, or the signing key rotated) can only be learned by asking, which is
+  /// what [reportUnauthorized] is for.
+  static Future<SessionState> localState() async {
+    final access = await _storage.getAccessToken();
+    final refresh = await _storage.getRefreshToken();
+
+    final hasAccess = access != null && access.isNotEmpty;
+    final hasRefresh = refresh != null && refresh.isNotEmpty;
+    if (!hasAccess && !hasRefresh) return SessionState.none;
+
+    final now = DateTime.now().toUtc();
+    bool alive(String? jwt) {
+      if (jwt == null || jwt.isEmpty) return false;
+      final expiry = expiryOf(jwt);
+      // Unreadable tokens count as dead: better to ask for a sign-in than to hand the
+      // server something it will refuse.
+      return expiry != null && expiry.isAfter(now);
+    }
+
+    if (alive(access)) return SessionState.active;
+    if (alive(refresh)) return SessionState.renewable;
+    return SessionState.expired;
+  }
+
+  /// Wipe a session that cannot be recovered, so the app stops pretending to be signed in.
+  static Future<void> endExpiredSession() => _endSession();
 
   /// A usable access token, refreshing first if the stored one is expired or nearly so.
   /// Returns null when there is no session at all, or when refreshing failed.

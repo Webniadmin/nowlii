@@ -1,4 +1,5 @@
 import 'package:go_router/go_router.dart';
+import 'package:nowlii/api/session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/services/subscription_service.dart';
@@ -74,8 +75,28 @@ class AppPages {
       }
 
       final prefs = await SharedPreferences.getInstance();
-      final accessToken = prefs.getString('access_token');
       final isFirstTime = prefs.getBool('isFirstTime') ?? true;
+
+      // Is there actually a session, or just a leftover string?
+      //
+      // This used to accept any non-empty `access_token`, so a token that expired months ago
+      // — or one the server stopped honouring after a key rotation — waved the user straight
+      // into the app, where every screen then failed silently. Now the guard reads the
+      // tokens' own expiry (locally, instantly; a guard cannot wait on the network) and only
+      // lets through a session that can still work.
+      //
+      // `renewable` counts as signed in ON PURPOSE: with 60-minute access tokens that is the
+      // ordinary state every hour, and the next request renews it silently. Treating it as
+      // signed out would throw everyone back to the login screen hourly.
+      final sessionState = await Session.localState();
+      final signedIn = sessionState == SessionState.active ||
+          sessionState == SessionState.renewable;
+
+      if (sessionState == SessionState.expired) {
+        // Nothing left to renew. Clear the dead tokens so the app stops presenting itself
+        // as signed in, and let the redirect below send them to sign-in.
+        await Session.endExpiredSession();
+      }
 
       // Public routes that don't need authentication
       final publicRoutes = [
@@ -93,8 +114,8 @@ class AppPages {
 
       final isPublicRoute = publicRoutes.contains(state.matchedLocation);
 
-      // If user has valid token, allow access to protected routes
-      if (accessToken != null && accessToken.isNotEmpty) {
+      // Real, usable session — allow access to protected routes
+      if (signedIn) {
         // If user is on public route but already authenticated, redirect to home
         if (isPublicRoute) {
           return AppRoutespath.homeScreen;
@@ -112,7 +133,8 @@ class AppPages {
         return null; // Allow access to requested route
       }
 
-      // No token - user not authenticated
+      // No usable session — send them somewhere they can sign in, rather than
+      // letting them roam a logged-out app that fails every request.
       if (!isPublicRoute) {
         // Redirect to appropriate screen based on first time status
         if (isFirstTime) {
