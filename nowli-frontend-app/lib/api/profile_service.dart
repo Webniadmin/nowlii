@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:nowlii/api/api_constant.dart';
 import 'package:nowlii/api/profile_model.dart';
+import 'package:nowlii/api/session.dart';
 import 'package:nowlii/api/storage.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
@@ -20,7 +21,7 @@ class ProfileService {
       print('\n========== CREATE PROFILE API CALL ==========');
       
       // Get access token
-      final token = await SecureStorage.getAccessToken();
+      final token = await Session.accessToken();
       print('📱 Access token: ${token == null ? "NOT FOUND" : "present"}');
       
       if (token == null) {
@@ -149,7 +150,7 @@ class ProfileService {
       print('\n========== GET PROFILE API CALL ==========');
       
       // Get access token
-      final token = await SecureStorage.getAccessToken();
+      final token = await Session.accessToken();
       print('📱 Access token: ${token == null ? "NOT FOUND" : "present"}');
       
       if (token == null) {
@@ -228,7 +229,7 @@ class ProfileService {
       print('\n========== UPDATE PROFILE API CALL ==========');
       
       // Get access token
-      final token = await SecureStorage.getAccessToken();
+      final token = await Session.accessToken();
       print('📱 Access token: ${token == null ? "NOT FOUND" : "present"}');
       
       if (token == null) {

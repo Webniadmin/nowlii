@@ -1,5 +1,5 @@
 import 'package:nowlii/api/api_constant.dart';
-import 'package:nowlii/api/storage.dart';
+import 'package:nowlii/api/session.dart';
 
 /// Headers for every call to the nowli-ai service (`aiBaseUrl`, :8001).
 ///
@@ -16,7 +16,7 @@ Future<Map<String, String>> aiAuthHeaders({bool json = true}) async {
     'ngrok-skip-browser-warning': 'true',
   };
 
-  final token = await SecureStorage.getAccessToken();
+  final token = await Session.accessToken();
   if (token != null && token.isNotEmpty) {
     headers['Authorization'] = 'Bearer $token';
   }

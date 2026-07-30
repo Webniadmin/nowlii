@@ -29,6 +29,9 @@ class ApiConstants {
   static const String forgotPassword = '$apiPrefix/forgot-password/';
   static const String verifyForgotPasswordOtp = '$apiPrefix/verify-forgot-password-otp/';
   static const String setNewPassword = '$apiPrefix/set-new-password/';
+  // Exchange a refresh token for a fresh access token (and, because rotation is on, a fresh
+  // refresh token). See lib/api/session.dart.
+  static const String tokenRefresh = '$apiPrefix/token/refresh/';
   // Permanent account deletion. Required by Google Play's data-deletion policy and Apple
   // guideline 5.1.1(v) for any app that lets users create an account.
   static const String deleteAccount = '$apiPrefix/delete-account/';

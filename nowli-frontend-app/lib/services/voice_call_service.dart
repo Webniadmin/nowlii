@@ -1,6 +1,6 @@
 import 'dart:convert';
+import 'package:nowlii/api/session.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/api/api_constant.dart';
 import 'package:nowlii/models/call_summary_history.dart';
 import 'package:nowlii/models/scheduled_call.dart';
@@ -54,8 +54,7 @@ class VoiceCallService {
   static String get _base => ApiConstants.baseUrl;
 
   Future<String> _getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('access_token') ?? '';
+    return await Session.accessToken() ?? '';
   }
 
   Map<String, String> _headers(String token) => {

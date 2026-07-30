@@ -10,7 +10,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
-from rest_framework_simplejwt.tokens import AccessToken
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from Apps.quests.models import Quests, SubTasks
 from Apps.voice_calls.models import VoiceCall
@@ -187,6 +187,69 @@ class DeleteAccountTests(TestCase):
 
         self.assertFalse(User.objects.filter(email=email).exists())
         User.objects.create_user(username='reborn', email=email, password='pw-for-tests-123')
+
+
+class TokenRefreshTests(TestCase):
+    """Staying signed in without ever re-entering a password.
+
+    There was no refresh route at all: the app stored a refresh token it could never spend,
+    so when the access token expired every request failed with no way to recover. These
+    tests cover the contract the client depends on.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = _make_user('regular2')
+        self.url = reverse('auth-token-refresh')
+        self.refresh = RefreshToken.for_user(self.user)
+
+    def test_a_refresh_token_buys_a_new_access_token(self):
+        response = self.client.post(
+            self.url, {'refresh': str(self.refresh)}, format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('access', response.data)
+
+    def test_the_new_access_token_actually_works(self):
+        access = self.client.post(
+            self.url, {'refresh': str(self.refresh)}, format='json',
+        ).data['access']
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access}')
+        # 404 = authenticated but no profile yet; 401 would mean the token was rejected.
+        self.assertNotEqual(self.client.get(reverse('profile-detail')).status_code, 401)
+
+    def test_a_rotated_refresh_token_comes_back(self):
+        """ROTATE_REFRESH_TOKENS is on, so the client must store the new one."""
+        response = self.client.post(
+            self.url, {'refresh': str(self.refresh)}, format='json',
+        )
+        self.assertIn('refresh', response.data)
+        self.assertNotEqual(response.data['refresh'], str(self.refresh))
+
+    def test_the_old_refresh_token_stops_working(self):
+        """BLACKLIST_AFTER_ROTATION — this is why the client must serialise refreshes.
+
+        Two concurrent refreshes and the second presents this already-spent token, which
+        signs the user out.
+        """
+        old = str(self.refresh)
+        self.client.post(self.url, {'refresh': old}, format='json')
+
+        second = self.client.post(self.url, {'refresh': old}, format='json')
+        self.assertEqual(second.status_code, 401)
+
+    def test_garbage_is_rejected_rather_than_accepted(self):
+        response = self.client.post(self.url, {'refresh': 'not-a-token'}, format='json')
+        self.assertEqual(response.status_code, 401)
+
+    def test_refreshing_needs_no_prior_authentication(self):
+        """The refresh token IS the credential — the caller has no valid access token left."""
+        self.client.credentials()  # explicitly anonymous
+        response = self.client.post(
+            self.url, {'refresh': str(self.refresh)}, format='json',
+        )
+        self.assertEqual(response.status_code, 200)
 
 
 class DefaultPermissionTests(TestCase):

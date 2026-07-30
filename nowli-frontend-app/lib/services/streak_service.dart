@@ -1,13 +1,12 @@
 import 'dart:convert';
+import 'package:nowlii/api/session.dart';
 import 'package:http/http.dart' as http;
 import 'package:nowlii/api/api_constant.dart';
 import 'package:nowlii/models/streak_model.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class StreakService {
   Future<String?> _getAuthToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('access_token');
+    return Session.accessToken();
   }
 
   Future<StreakResponse?> getStreak() async {

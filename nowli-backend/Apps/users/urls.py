@@ -1,5 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     ProfileViewSet,
@@ -40,6 +41,12 @@ urlpatterns = [
     # Apple web-redirect Return URL (Android web-flow only; see apple_web_redirect).
     path('auth/apple/callback/', apple_web_redirect, name='auth-apple-callback'),
     path('auth/logout/', LogoutAPIView.as_view(), name='auth-logout'),
+    # Exchange a refresh token for a fresh access token. Without this route the app had
+    # no way to stay signed in: it stored a refresh token it could never spend, so once
+    # the access token expired every request failed with nothing to recover from.
+    # ROTATE_REFRESH_TOKENS is on, so the response carries a NEW refresh token too and
+    # the client must store both.
+    path('auth/token/refresh/', TokenRefreshView.as_view(), name='auth-token-refresh'),
     # Required by Google Play's data-deletion policy and Apple guideline 5.1.1(v).
     path('auth/delete-account/', DeleteAccountAPIView.as_view(), name='auth-delete-account'),
     path('auth/forgot-password/', ForgotPasswordAPI.as_view(), name='auth-forgot-password'),

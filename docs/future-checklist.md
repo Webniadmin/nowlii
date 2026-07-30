@@ -51,20 +51,31 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
       IDs (`274971792537-m5oca…` active/verified vs. a stale `1042808398004-…`). Remove the
       stale reference so there's one source of truth; verify all five wiring points agree
       (`nowli-backend/.env`, three `dart_defines*.json`, `web/index.html`).
-- [ ] **AI model cleanup.** All providers hardcode older model IDs — backend `claude-opus-4-5`,
-      and `nowli-ai` `gpt-4o` / `gpt-4o-mini`; Gemini `gemini-2.0-flash`. Update to current
-      models and keep all three provider callers in sync (`_call_claude` / `_call_chatgpt` /
-      `_call_gemini`). Current top Claude Opus is `claude-opus-4-8`.
+- [ ] **AI model IDs — recurring maintenance check, not an upgrade.** _Decision 2026-07-30:
+      stay on the current models; they are good enough and cheaper. This item exists so the
+      choice is revisited deliberately rather than discovered by an outage._
+      Hardcoded today: backend `claude-opus-4-5` (`Apps/insights/ai_client.py`,
+      `Apps/subtask_generator`), `nowli-ai` `gpt-4o` / `gpt-4o-mini`, Gemini
+      `gemini-2.0-flash`, Realtime `gpt-realtime-mini`.
+      **The risk is retirement, not obsolescence:** when a provider withdraws a model ID the
+      call starts erroring and the feature stops with no warning. Insights degrades
+      gracefully (fallback copy), but AI subtask generation and the voice call do not.
+      **Check every ~3 months**, or immediately if a provider announces a deprecation:
+      confirm each ID is still served, then either leave it or bump. Keep the three backend
+      provider callers in sync (`_call_claude` / `_call_chatgpt` / `_call_gemini`).
+      For reference, the current Claude generation is `claude-opus-5` / `claude-sonnet-5`.
 - [ ] **Tests.** There is no test suite anywhere (backend `Apps` have no `tests.py`; `nowli-ai`
       has none). Add at least smoke/API tests for auth, quests CRUD, subtasks routing, and the
       Google login token-exchange view.
-- [ ] **Client-side JWT refresh — the app looks broken after 31 days.** Nothing anywhere in
-      `lib/` handles a 401, and the stored refresh token is never used. The router guard only
-      checks that an `access_token` *exists*, not that it is valid, so once the 31-day access
-      token expires the user is let straight into the home screen where **every request
-      silently fails** — empty quests, empty Insights, refused calls — with nothing telling
-      them to sign in again. Fix: on 401, try the refresh token; if that fails too, clear
-      storage and route to sign-in.
+- [x] ~~**Client-side JWT refresh**~~ ✅ **done 2026-07-30.** There was no refresh route on
+      the backend at all, so the app stored a refresh token it could never spend. Added
+      `POST /api/auth/token/refresh/` and `lib/api/session.dart`, which reads the token's own
+      `exp` locally and refreshes *before* sending rather than reacting to a 401. Refreshes
+      are single-flight — rotation blacklists the old token, so two in parallel would sign
+      the user out. **One follow-up:** the access-token lifetime is still the historical 31
+      days so older app builds keep working. Once the new build is confirmed on devices, set
+      `JWT_ACCESS_MINUTES=60` and `JWT_REFRESH_DAYS=60` in the prod `.env` — a stateless
+      31-day access token cannot be revoked if it leaks.
 
 ## P3 — Features
 

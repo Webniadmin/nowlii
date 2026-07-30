@@ -1,6 +1,6 @@
 import 'dart:convert';
+import 'package:nowlii/api/session.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/api/api_constant.dart';
 
 class SubtaskService {
@@ -9,8 +9,7 @@ class SubtaskService {
 
   /// Reads the logged-in user's JWT from storage (saved at login).
   Future<String> _getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('access_token') ?? '';
+    return await Session.accessToken() ?? '';
   }
 
   /// Generate subtasks based on quest category/title

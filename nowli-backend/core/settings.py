@@ -326,9 +326,29 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',
 }
 
+# Two different jobs, and they want very different lifetimes:
+#   * the ACCESS token is sent with every request. It is stateless, so it CANNOT be revoked
+#     — if one leaks, it is valid until it expires. Short is safer.
+#   * the REFRESH token is only ever sent to /auth/token/refresh/. It lives in the database,
+#     so it can be blacklisted, and rotation means each use issues a fresh one. Long is fine.
+#
+# With rotation on, a user who opens the app at least once per refresh lifetime stays signed
+# in indefinitely, silently. Only a genuinely dormant account has to log in again.
+#
+# ⚠️ The defaults below stay at the historical 31 days ON PURPOSE: any app build older than
+# 2026-07-30 has no refresh logic at all, so shortening the access token would lock those
+# builds out early. Once the new build is confirmed on devices, set in prod:
+#     JWT_ACCESS_MINUTES=60
+#     JWT_REFRESH_DAYS=60
+JWT_ACCESS_MINUTES = int(os.getenv("JWT_ACCESS_MINUTES", str(31 * 24 * 60)))
+JWT_REFRESH_DAYS = int(os.getenv("JWT_REFRESH_DAYS", "31"))
+
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(days=31),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=31),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=JWT_ACCESS_MINUTES),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=JWT_REFRESH_DAYS),
+    # Each refresh issues a new refresh token and blacklists the old one. This is why the
+    # client must serialise refreshes: two in parallel and the second presents a token the
+    # first already blacklisted, which logs the user out.
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),

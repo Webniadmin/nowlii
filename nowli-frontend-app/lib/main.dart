@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:nowlii/api/session.dart';
 import 'package:nowlii/core/app_routes/app_pages.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/services/call_reminder_service.dart';
@@ -28,6 +29,14 @@ void main() async {
     );
   };
   await reminders.init();
+
+  // When the refresh token is finally spent, the session is genuinely over — take the user
+  // to sign-in instead of leaving them on a screen where everything quietly fails. Wired
+  // here so lib/api/session.dart stays unaware of routing.
+  Session.onSignedOut = () {
+    reminders.cancelAll(); // reminders for an account we can no longer act as
+    AppPages.router.go(AppRoutespath.signInScreen);
+  };
 
   runApp(const MyApp());
 }
