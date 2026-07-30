@@ -16,6 +16,17 @@
     <!-- Speech recognition permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Scheduled AI-call reminders (see lib/services/call_reminder_service.dart).
+         POST_NOTIFICATIONS is a runtime permission from Android 13.
+         SCHEDULE_EXACT_ALARM is user-grantable special access and is NOT auto-granted from
+         Android 14 — we request it and fall back to inexact scheduling when refused.
+         We deliberately do NOT declare USE_EXACT_ALARM: Play policy limits it to alarm-clock
+         and calendar apps, which a wellness reminder is not, and declaring it risks the
+         listing. RECEIVE_BOOT_COMPLETED lets pending reminders survive a restart. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     
     <queries>
         <intent>
@@ -66,6 +77,22 @@
                 <data android:path="callback" />
             </intent-filter>
         </activity>
+
+        <!-- Re-lay pending call reminders after a reboot; without this receiver every
+             scheduled reminder is silently lost when the phone restarts. -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false" />
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

@@ -21,6 +21,12 @@ _Each item: area, constraint, effect on us, how we handle it._
 - **How we handle it:** Accepted for now (single server-day semantics). If the product ever
   requires a user-local reset, we would send the device timezone/offset and compute the day
   boundary per user — a deliberate change, tracked as a product decision, not debt.
+- **Update 2026-07-30 (scheduled calls made this user-visible).** `ScheduledCall` stores a
+  `local_date` alongside the tz-aware `scheduled_for`, and the app groups by that, so a
+  planned call always shows on the day the user picked. The *quota* day is still UTC, so for
+  a user far enough from UTC a call scheduled in the small hours (roughly 00:00–02:00 local
+  at UTC+2) can count against a different quota day than the one it appears on. Rare, and
+  the fix is the same as above: a per-user day boundary.
 
 ### SC-002 — Row-level locking (`select_for_update`) is a no-op on SQLite
 - **Area:** Django ORM on the database engine;

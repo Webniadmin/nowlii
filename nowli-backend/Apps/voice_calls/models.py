@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class VoiceCall(models.Model):
@@ -40,6 +41,90 @@ class VoiceCall(models.Model):
 
     def __str__(self):
         return f"user {self.user_id} @ {self.started_at:%Y-%m-%d %H:%M} ({self.status})"
+
+
+class ScheduledCall(models.Model):
+    """A call the user has planned for a future moment, via a quest's "Enable call" toggle.
+
+    **A plan, never a booking.** The daily limit (``VOICE_CALL_DAILY_LIMIT``) is enforced at
+    ``VoiceCallStartView`` and is deliberately *not* reserved ahead of time — scheduling three
+    calls in one day does not make three calls possible, and spending the day's last call by
+    swiping on the home screen leaves a later scheduled call unable to run. The UI resolves
+    that into a "locked" state rather than pretending the slot is held.
+
+    Rows are created, moved and cancelled by a ``post_save`` signal on ``Quests`` (see
+    ``signals.py``) so the quest stays the single thing the user edits.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        COMPLETED = 'completed', 'Completed'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    # Resolved on read, never stored — see `resolved_status`.
+    MISSED = 'missed'
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='scheduled_calls',
+    )
+    # The quest this call belongs to. Nullable so a schedule can outlive its quest, and so
+    # scheduled calls that are not tied to a quest remain possible later.
+    quest = models.ForeignKey(
+        'quests.Quests',
+        on_delete=models.CASCADE,
+        related_name='scheduled_calls',
+        null=True,
+        blank=True,
+    )
+    # Timezone-aware instant the call is due. The app sends ISO-8601 *with* an offset, so the
+    # server never has to guess the user's timezone.
+    scheduled_for = models.DateTimeField()
+    # The user's own calendar day for `scheduled_for`. Stored because the server runs on UTC
+    # (see docs/system-constraints.md SC-001): grouping by the UTC date would show a call as
+    # belonging to the wrong day for users far enough from UTC. Always group by this.
+    local_date = models.DateField()
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    # Set when the call is actually taken, linking the plan to what happened.
+    call = models.OneToOneField(
+        VoiceCall,
+        on_delete=models.SET_NULL,
+        related_name='scheduled_call',
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['scheduled_for']
+        verbose_name = 'Scheduled call'
+        verbose_name_plural = 'Scheduled calls'
+        indexes = [
+            models.Index(fields=['user', 'local_date']),
+            models.Index(fields=['user', 'status', 'scheduled_for']),
+        ]
+
+    def __str__(self):
+        return f"user {self.user_id} @ {self.scheduled_for:%Y-%m-%d %H:%M} ({self.status})"
+
+    @property
+    def resolved_status(self):
+        """Status as the user should see it, with ``missed`` derived rather than stored.
+
+        There is no scheduler anywhere in this project — the streak and the daily quota are
+        both derived on read for the same reason. A ``pending`` row whose time has passed is
+        simply missed; nothing has to run at midnight for that to become true.
+        """
+        if self.status == self.Status.PENDING and self.scheduled_for < timezone.now():
+            return self.MISSED
+        return self.status
+
+    @property
+    def is_actionable(self):
+        """Whether starting this call still makes sense (quota aside)."""
+        return self.status == self.Status.PENDING
 
 
 class CallEmotionSnapshot(models.Model):

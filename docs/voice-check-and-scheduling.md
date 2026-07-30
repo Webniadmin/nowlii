@@ -4,10 +4,19 @@ _Created 2026-07-10. Captures the designer's "Voice Check" spec, what actually e
 codebase, and the decisions taken so far, so nothing is lost while these are deferred._
 
 ## TL;DR (current state)
-- **Scheduled calls do NOT exist** anywhere in the app (no backend model, no reminder times,
-  no scheduling job; frontend has **no** local-notification/scheduling packages). The
-  `reminder_notification/ai_call_reminder/*` screens are static mockups; `my_quests/scheduled/`
-  is scheduled **quests** (by date), not calls.
+- ✅ **Scheduled calls now EXIST** (built 2026-07-30, client request). Turning on a quest's
+  **Enable call** schedules a call at the quest's time; a local notification lands 5 minutes
+  before; tapping it opens the call. Backend `voice_calls.ScheduledCall` + `GET/PATCH
+  /api/voice-calls/scheduled/`; frontend `call_reminder_service.dart` +
+  `scheduled_call_state.dart`. §A below is **done** — kept for the design rationale.
+  The `reminder_notification/ai_call_reminder/*` screens remain static mockups (unused).
+- **A scheduled call is a plan, not a booking.** It never reserves one of the two daily
+  calls: schedule three and the third simply cannot run; spend the day's last call by
+  swiping on home and a later scheduled one goes `locked`. The app warns before the swipe
+  spends the last call, and offers "Move to tomorrow" afterwards.
+- **`USE_EXACT_ALARM` is deliberately NOT declared** — Play policy restricts it to
+  alarm-clock and calendar apps. We request the user-grantable `SCHEDULE_EXACT_ALARM` and
+  fall back to inexact scheduling when refused.
 - **Update 2026-07-14:** the Add-Quest **"Repeat quest"** toggle was implemented **without** a
   scheduler — it materializes copies of the quest for the next 7 days up-front on create (client-side).
   The **"Enable call"** toggle shows an on-demand "Call Nowlii" button on the quest, **not** a

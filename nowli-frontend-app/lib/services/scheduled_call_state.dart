@@ -1,0 +1,103 @@
+/// Works out what a scheduled call actually means to the user right now.
+///
+/// The daily limit (2 calls) is enforced by the backend at call start and is **never
+/// reserved in advance** — scheduling is a plan, not a booking. So a row that looks
+/// perfectly fine on the server can be impossible to act on, and the difference matters:
+///
+///  * schedule three calls in a day and the third can never run;
+///  * use one call, keep one scheduled for 17:00, then swipe on the home screen — that
+///    swipe spends the last call and the 17:00 one is stranded.
+///
+/// Rather than scatter those rules through the widgets, everything lands here: one row plus
+/// the remaining quota plus the current time resolves to exactly one state.
+///
+/// Pure Dart, no Flutter — see `test/scheduled_call_state_test.dart`.
+library;
+
+enum ScheduledCallState {
+  /// Still ahead, and the user has a call to spend on it.
+  upcoming,
+
+  /// Due now (or within the grace window) and startable.
+  dueNow,
+
+  /// Time has not passed, but the daily calls are gone — it cannot run today.
+  locked,
+
+  /// The time came and went without the call being taken.
+  missed,
+
+  /// The call happened.
+  completed,
+
+  /// The user turned the quest's call toggle off.
+  cancelled,
+}
+
+/// How long after its time a call still counts as "due now" rather than missed.
+///
+/// The reminder lands 5 minutes early and a user may take a while to get to a quiet spot,
+/// so snapping to missed the instant the clock ticks past would be hostile.
+const Duration kDueGrace = Duration(minutes: 15);
+
+/// Resolve the state of one scheduled call.
+///
+/// [remainingCalls] is today's remaining quota from the backend; pass a negative value for
+/// unlimited (QA accounts report `-1`, matching `/voice-calls/quota/`).
+/// [serverStatus] is the status the backend resolved: `pending`, `completed`, `cancelled`
+/// or `missed`.
+ScheduledCallState resolveScheduledCallState({
+  required String serverStatus,
+  required DateTime scheduledFor,
+  required DateTime now,
+  required int remainingCalls,
+  Duration grace = kDueGrace,
+}) {
+  switch (serverStatus) {
+    case 'completed':
+      return ScheduledCallState.completed;
+    case 'cancelled':
+      return ScheduledCallState.cancelled;
+  }
+
+  final unlimited = remainingCalls < 0;
+  final hasQuota = unlimited || remainingCalls > 0;
+  final dueSince = now.difference(scheduledFor);
+
+  // Past the grace window: gone, whatever the quota says. Calling it "locked" here would
+  // imply it could still run if only they had a call left, which is no longer true.
+  if (dueSince > grace) return ScheduledCallState.missed;
+
+  // Out of calls. Reported even while the call is still in the future, so the quest card can
+  // warn ahead of time instead of at the moment of failure.
+  if (!hasQuota) return ScheduledCallState.locked;
+
+  return dueSince >= Duration.zero
+      ? ScheduledCallState.dueNow
+      : ScheduledCallState.upcoming;
+}
+
+/// Whether tapping this call should try to start it.
+bool isStartable(ScheduledCallState state) =>
+    state == ScheduledCallState.dueNow || state == ScheduledCallState.upcoming;
+
+/// Whether the user should be offered "move to tomorrow".
+bool canReschedule(ScheduledCallState state) =>
+    state == ScheduledCallState.locked || state == ScheduledCallState.missed;
+
+/// Whether starting a call *right now* would strand something already scheduled.
+///
+/// Drives the confirmation on the home-screen swipe: spending the day's last call is fine,
+/// but the user should know it costs them the call they planned for later.
+///
+/// [scheduledLaterToday] are the times of still-pending calls left today.
+bool wouldStrandAScheduledCall({
+  required int remainingCalls,
+  required List<DateTime> scheduledLaterToday,
+  required DateTime now,
+}) {
+  if (remainingCalls < 0) return false; // unlimited
+  // Only the *last* call is a dilemma; with two left, both plans survive.
+  if (remainingCalls != 1) return false;
+  return scheduledLaterToday.any((t) => t.isAfter(now));
+}

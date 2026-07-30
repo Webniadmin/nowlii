@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -14,8 +15,18 @@ from rest_framework.views import APIView
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 
-from .models import CallEmotionSnapshot, CallLowMoodSnapshot, CallSummary, VoiceCall
-from .serializers import CallSummarySerializer, VoiceCallSerializer
+from .models import (
+    CallEmotionSnapshot,
+    CallLowMoodSnapshot,
+    CallSummary,
+    ScheduledCall,
+    VoiceCall,
+)
+from .serializers import (
+    CallSummarySerializer,
+    ScheduledCallSerializer,
+    VoiceCallSerializer,
+)
 
 # The five Insights "Top Emotions" categories (must match nowli-ai's breakdown keys).
 _EMOTION_KEYS = ('happy', 'motivated', 'angry', 'tired', 'sad')
@@ -233,6 +244,12 @@ class VoiceCallStartView(APIView):
                 session_id=(request.data.get('session_id') or None),
             )
 
+            # If this call was started from a scheduled reminder, close that plan out. Done
+            # inside the same transaction so a call can never exist with its schedule still
+            # showing as pending. Silently ignored if the id is unknown or someone else's —
+            # a bad id must not cost the user a call they already started.
+            self._complete_scheduled_call(request, call)
+
         data = VoiceCallSerializer(call).data
         if unlimited:
             data['limit'] = -1
@@ -242,6 +259,29 @@ class VoiceCallStartView(APIView):
             data['limit'] = limit
             data['remaining'] = max(0, limit - (used + 1))
         return Response(data, status=status.HTTP_201_CREATED)
+
+    @staticmethod
+    def _complete_scheduled_call(request, call):
+        """Mark the plan this call came from as done, if the app named one."""
+        raw = request.data.get('scheduled_call_id')
+        if raw in (None, ''):
+            return
+        try:
+            scheduled_id = int(raw)
+        except (TypeError, ValueError):
+            return
+
+        scheduled = ScheduledCall.objects.filter(
+            pk=scheduled_id,
+            user=request.user,
+            status=ScheduledCall.Status.PENDING,
+        ).first()
+        if scheduled is None:
+            return
+
+        scheduled.status = ScheduledCall.Status.COMPLETED
+        scheduled.call = call
+        scheduled.save(update_fields=['status', 'call', 'updated_at'])
 
 
 class VoiceCallEndView(APIView):
@@ -366,3 +406,126 @@ class VoiceCallSummaryListView(APIView):
             .select_related('call')
         )
         return Response(CallSummarySerializer(summaries, many=True).data)
+
+
+class ScheduledCallListView(APIView):
+    """`GET /api/voice-calls/scheduled/` — the user's planned calls.
+
+    Defaults to today and everything ahead, which is all the app needs to render the quest
+    cards and lay down local reminders. Pass ``?from=YYYY-MM-DD`` to look further back.
+
+    These are plans, not bookings: nothing here reserves a slot against the daily limit. Two
+    calls a day remain two calls a day no matter how many are scheduled, and the app resolves
+    the shortfall into a "locked" state on the quest.
+    """
+
+    permission_classes = [IsAuthenticated, HasProAccess]
+
+    @swagger_auto_schema(
+        operation_summary="My scheduled AI voice calls",
+        tags=['Voice calls'],
+        manual_parameters=[
+            openapi.Parameter(
+                'from', openapi.IN_QUERY,
+                description='Earliest local date to include (YYYY-MM-DD). Defaults to today.',
+                type=openapi.TYPE_STRING,
+            ),
+        ],
+        responses={200: ScheduledCallSerializer(many=True)},
+    )
+    def get(self, request):
+        start = parse_date(request.query_params.get('from') or '') or timezone.localdate()
+        scheduled = (
+            ScheduledCall.objects
+            .filter(user=request.user, local_date__gte=start)
+            .exclude(status=ScheduledCall.Status.CANCELLED)
+            .select_related('quest', 'call')
+        )
+        return Response(ScheduledCallSerializer(scheduled, many=True).data)
+
+
+class ScheduledCallDetailView(APIView):
+    """`PATCH /api/voice-calls/scheduled/<id>/` — move or cancel a planned call.
+
+    The two things a user can do with a call they cannot take right now: push it to another
+    time (typically tomorrow, when the daily limit has reset) or drop it.
+
+    Body: ``{"scheduled_for": "<ISO-8601 with offset>"}`` to move, or ``{"cancel": true}``.
+    Moving also moves the quest's own time, so the two never disagree — the quest is what the
+    user sees and edits.
+    """
+
+    permission_classes = [IsAuthenticated, HasProAccess]
+
+    @swagger_auto_schema(
+        operation_summary="Move or cancel a scheduled AI voice call",
+        tags=['Voice calls'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'scheduled_for': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='New time, ISO-8601 WITH a UTC offset, e.g. '
+                                '2026-07-31T16:00:00+02:00.',
+                ),
+                'cancel': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+            },
+        ),
+        responses={200: ScheduledCallSerializer, 400: 'Bad request', 404: 'Not found'},
+    )
+    def patch(self, request, pk):
+        scheduled = get_object_or_404(ScheduledCall, pk=pk, user=request.user)
+
+        if scheduled.status == ScheduledCall.Status.COMPLETED:
+            return Response(
+                {'detail': 'This call already happened.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if request.data.get('cancel'):
+            scheduled.status = ScheduledCall.Status.CANCELLED
+            scheduled.save(update_fields=['status', 'updated_at'])
+            return Response(ScheduledCallSerializer(scheduled).data)
+
+        raw = request.data.get('scheduled_for')
+        if not raw:
+            return Response(
+                {'detail': 'Provide "scheduled_for" to move the call, or "cancel": true.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        new_time = parse_datetime(str(raw))
+        if new_time is None:
+            return Response(
+                {'detail': 'scheduled_for must be an ISO-8601 datetime.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if timezone.is_naive(new_time):
+            # Without an offset we would be guessing the user's timezone — and guessing wrong
+            # puts the reminder an hour out. Make the app say what it means.
+            return Response(
+                {'detail': 'scheduled_for must include a UTC offset, e.g. '
+                           '2026-07-31T16:00:00+02:00.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if new_time <= timezone.now():
+            return Response(
+                {'detail': 'Pick a time in the future.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        scheduled.scheduled_for = new_time
+        scheduled.local_date = timezone.localtime(new_time).date()
+        scheduled.status = ScheduledCall.Status.PENDING
+        scheduled.save(update_fields=['scheduled_for', 'local_date', 'status', 'updated_at'])
+
+        # Keep the quest in step. Saving it re-fires the sync signal, which is harmless: it
+        # sees the row already matches and changes nothing.
+        quest = scheduled.quest
+        if quest is not None:
+            local = timezone.localtime(new_time)
+            quest.select_a_date = local.date()
+            quest.select_a_time = local.time().replace(microsecond=0)
+            quest.save(update_fields=['select_a_date', 'select_a_time'])
+
+        return Response(ScheduledCallSerializer(scheduled).data)

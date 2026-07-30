@@ -4,7 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
+import 'package:nowlii/models/scheduled_call.dart';
+import 'package:nowlii/services/call_reminder_service.dart';
 import 'package:nowlii/services/quest_service.dart';
+import 'package:nowlii/services/scheduled_call_state.dart';
+import 'package:nowlii/services/voice_call_service.dart';
 import 'package:intl/intl.dart';
 
 class Today extends StatefulWidget {
@@ -18,6 +22,17 @@ class _TodayState extends State<Today> {
   List<Quest> quests = [];
   bool _isLoading = true;
 
+  final VoiceCallService _voiceCalls = VoiceCallService();
+
+  /// Today's planned calls, keyed by quest id, so a quest card can show whether its call is
+  /// still ahead, already done, or stranded by the daily limit.
+  Map<int, ScheduledCall> _scheduledByQuest = {};
+
+  /// Calls left today. `-1` means unlimited (QA accounts). Defaults to 1 so a failed fetch
+  /// shows the call as available rather than falsely locking it — the backend is the
+  /// authority and will refuse it properly if it really is gone.
+  int _remainingCalls = 1;
+
   @override
   void initState() {
     super.initState();
@@ -28,19 +43,55 @@ class _TodayState extends State<Today> {
     final questService = QuestService();
     final today = DateTime.now();
     final todayStr = DateFormat('yyyy-MM-dd').format(today);
-    
-    final allQuests = await questService.fetchAllQuests();
-    
+
+    // Quests, plans and quota together: the state of a call is a function of all three.
+    final results = await Future.wait([
+      questService.fetchAllQuests(),
+      _voiceCalls.getScheduledCalls(),
+      _voiceCalls.getQuota(),
+    ]);
+
+    final allQuests = results[0] as List<Quest>;
+    final scheduled = results[1] as List<ScheduledCall>;
+    final quota = results[2] as VoiceCallQuota?;
+
     // Filter only today's quests
     final todayQuests = allQuests.where((quest) {
       return quest.selectADate == todayStr;
     }).toList();
-    
+
+    final byQuest = <int, ScheduledCall>{};
+    for (final call in scheduled) {
+      if (call.questId != null) byQuest[call.questId!] = call;
+    }
+
     if (mounted) {
       setState(() {
         quests = todayQuests;
+        _scheduledByQuest = byQuest;
+        _remainingCalls = quota?.remaining ?? 1;
         _isLoading = false;
       });
+    }
+  }
+
+  /// Push a call the user can no longer take to the same time tomorrow.
+  Future<void> _moveToTomorrow(ScheduledCall call) async {
+    final tomorrow = call.scheduledFor.add(const Duration(days: 1));
+    final moved = await _voiceCalls.rescheduleCall(call.id, tomorrow);
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(moved
+            ? 'Moved to tomorrow at ${DateFormat('HH:mm').format(tomorrow)}.'
+            : "Couldn't move the call. Please try again."),
+        backgroundColor: moved ? Colors.green : Colors.red,
+      ),
+    );
+    if (moved) {
+      await CallReminderService.instance.sync();
+      await _loadTodayQuests();
     }
   }
 
@@ -182,6 +233,21 @@ class _TodayState extends State<Today> {
           ),
           child: QuestCard(
             quest: quest,
+            scheduledCall: _scheduledByQuest[quest.id],
+            remainingCalls: _remainingCalls,
+            onStartCall: (scheduledCallId) {
+              context.push(
+                AppRoutespath.aiVoice,
+                extra: {
+                  'questTitle': quest.task,
+                  if (scheduledCallId != null) 'scheduledCallId': scheduledCallId,
+                },
+              ).then((_) {
+                // Back from a call: the quota moved, so this quest's state may have too.
+                if (mounted) _loadTodayQuests();
+              });
+            },
+            onMoveToTomorrow: _moveToTomorrow,
             onToggle: () async {
               final questService = QuestService();
               await questService.updateQuestStatus(quest.id, !quest.taskDone);
@@ -222,11 +288,30 @@ class QuestCard extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback onEdit;
 
+  /// This quest's planned call, if it has one. Null for quests created before scheduling
+  /// existed, or with no time set.
+  final ScheduledCall? scheduledCall;
+
+  /// Calls left today; `-1` means unlimited. Together with [scheduledCall] this decides
+  /// whether the call reads as upcoming, startable, or stranded by the daily limit.
+  final int remainingCalls;
+
+  /// Start the call. Receives the scheduled-call id when there is one, so the backend can
+  /// close that plan out.
+  final void Function(int? scheduledCallId) onStartCall;
+
+  /// Push a call the user can no longer take to tomorrow.
+  final void Function(ScheduledCall call) onMoveToTomorrow;
+
   const QuestCard({
     super.key,
     required this.quest,
     required this.onToggle,
     required this.onEdit,
+    required this.onStartCall,
+    required this.onMoveToTomorrow,
+    this.scheduledCall,
+    this.remainingCalls = 1,
   });
 
   Color _getLevelColor(String zone) {
@@ -387,44 +472,178 @@ class QuestCard extends StatelessWidget {
               ),
             ],
           ),
-          // "Enable call" quest flag: when on, offer a real 5-min AI call for this quest.
-          // The quest title is passed as conversation context to the companion.
+          // "Enable call" quest flag: schedules a call at the quest's time AND keeps a
+          // button so the user can talk to Nowlii earlier if they want to.
           if (quest.enableCall) ...[
             const SizedBox(height: 16),
-            GestureDetector(
-              onTap: () {
-                context.push(
-                  AppRoutespath.aiVoice,
-                  extra: {'questTitle': quest.task},
-                );
-              },
-              child: Container(
-                width: double.infinity,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4542EB),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                alignment: Alignment.center,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.phone, size: 20, color: Colors.white),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Call Nowlii (5 min)',
-                      style: GoogleFonts.workSans(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
+            _buildCallSection(quest),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// What the quest's call looks like right now.
+  ///
+  /// A scheduled call is a plan, not a booking — the daily limit of two is only enforced
+  /// when a call actually starts. So the same row can be "coming up at 17:00" or "you have
+  /// no calls left" depending on what the user has done since, and the card has to say
+  /// which. The rules live in `scheduled_call_state.dart`; this only renders them.
+  Widget _buildCallSection(Quest quest) {
+    final scheduled = scheduledCall;
+
+    // No plan (an older quest, or one with no time set) — just the manual button.
+    if (scheduled == null) return _buildCallButton(quest);
+
+    final state = resolveScheduledCallState(
+      serverStatus: scheduled.status,
+      scheduledFor: scheduled.scheduledFor,
+      now: DateTime.now(),
+      remainingCalls: remainingCalls,
+    );
+    final at = DateFormat('HH:mm').format(scheduled.scheduledFor);
+
+    switch (state) {
+      case ScheduledCallState.completed:
+        return _buildCallNote(
+          icon: Icons.check_circle_outline,
+          color: const Color(0xFF2E7D32),
+          text: 'Call done',
+        );
+
+      case ScheduledCallState.cancelled:
+        return _buildCallButton(quest);
+
+      case ScheduledCallState.locked:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildCallNote(
+              icon: Icons.lock_clock,
+              color: const Color(0xFF8A6D3B),
+              text: "Call at $at — you've used both calls today",
+            ),
+            const SizedBox(height: 8),
+            _buildMoveToTomorrow(scheduled),
+          ],
+        );
+
+      case ScheduledCallState.missed:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildCallNote(
+              icon: Icons.notifications_off_outlined,
+              color: const Color(0xFF8A6D3B),
+              text: 'Missed your $at call',
+            ),
+            const SizedBox(height: 8),
+            _buildMoveToTomorrow(scheduled),
+          ],
+        );
+
+      case ScheduledCallState.dueNow:
+        return _buildCallButton(quest,
+            label: 'Start your call', scheduledCallId: scheduled.id);
+
+      case ScheduledCallState.upcoming:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildCallNote(
+              icon: Icons.schedule,
+              color: const Color(0xFF4542EB),
+              text: 'Call scheduled for $at',
+            ),
+            const SizedBox(height: 8),
+            // Still offered: the plan is a reminder, not a restriction.
+            _buildCallButton(quest,
+                label: 'Call now instead', scheduledCallId: scheduled.id),
+          ],
+        );
+    }
+  }
+
+  Widget _buildCallButton(Quest quest, {String? label, int? scheduledCallId}) {
+    return GestureDetector(
+      onTap: () => onStartCall(scheduledCallId),
+      child: Container(
+        width: double.infinity,
+        height: 48,
+        decoration: BoxDecoration(
+          color: const Color(0xFF4542EB),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.phone, size: 20, color: Colors.white),
+            const SizedBox(width: 8),
+            Text(
+              label ?? 'Call Nowlii (5 min)',
+              style: GoogleFonts.workSans(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCallNote({
+    required IconData icon,
+    required Color color,
+    required String text,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: GoogleFonts.workSans(
+                color: color,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildMoveToTomorrow(ScheduledCall scheduled) {
+    return GestureDetector(
+      onTap: () => onMoveToTomorrow(scheduled),
+      child: Container(
+        width: double.infinity,
+        height: 44,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xFF4542EB), width: 1.5),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          'Move to tomorrow',
+          style: GoogleFonts.workSans(
+            color: const Color(0xFF4542EB),
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }

@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:nowlii/core/app_routes/app_pages.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
+import 'package:nowlii/services/call_reminder_service.dart';
 import 'package:nowlii/services/subscription_service.dart';
 
 class Splash extends StatefulWidget {
@@ -65,6 +69,15 @@ class _SplashState extends State<Splash> with SingleTickerProviderStateMixin {
       }
 
       context.go('/homeScreen');
+
+      // Lay down this week's call reminders now that we know who is logged in. Also
+      // re-checks the quota, so a reminder for a call the user can no longer make says so
+      // rather than inviting them into a refusal. Fire-and-forget: never block the launch.
+      unawaited(CallReminderService.instance.sync());
+
+      // A reminder that started the app from cold never reaches the tap handler — the app
+      // was not running to receive it. Pick it up here instead.
+      unawaited(_openReminderThatLaunchedTheApp());
       return;
     }
     
@@ -78,6 +91,22 @@ class _SplashState extends State<Splash> with SingleTickerProviderStateMixin {
       if (!mounted) return;
       context.go('/signInScreen');
     }
+  }
+
+  /// If a call reminder launched the app, go straight to that call.
+  ///
+  /// Pushed on top of the home screen (rather than replacing it) so backing out of the call
+  /// lands somewhere sensible instead of on a dead route.
+  Future<void> _openReminderThatLaunchedTheApp() async {
+    final response = await CallReminderService.instance.launchReminder();
+    final parsed = CallReminderService.parsePayload(response?.payload);
+    if (parsed == null || !mounted) return;
+
+    final (scheduledCallId, questTitle) = parsed;
+    AppPages.router.push(
+      AppRoutespath.aiVoice,
+      extra: {'questTitle': questTitle, 'scheduledCallId': scheduledCallId},
+    );
   }
 
   @override

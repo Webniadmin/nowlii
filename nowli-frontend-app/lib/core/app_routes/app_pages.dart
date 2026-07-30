@@ -282,7 +282,10 @@ class AppPages {
         path: AppRoutespath.aiVoice,
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>?;
-          return AiVoice(questTitle: extra?['questTitle'] as String?);
+          return AiVoice(
+            questTitle: extra?['questTitle'] as String?,
+            scheduledCallId: extra?['scheduledCallId'] as int?,
+          );
         },
       ),
       GoRoute(

@@ -1,30 +1,33 @@
-// This is a basic Flutter widget test.
+// Smoke test for the app shell.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// This file used to be the untouched Flutter counter template, asserting a "+" button and a
+// counter that NOWLII has never had — so it failed from the initial commit and made
+// `flutter test` permanently red. Replaced with something that actually holds.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:nowlii/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
+  setUp(() {
+    // The splash screen reads the stored token; without this the plugin channel throws.
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('the app boots into its router', (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
+    await tester.pump(); // first frame
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.byType(MaterialApp), findsOneWidget);
+    expect(tester.takeException(), isNull);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // The splash holds a 5-second timer and a repeating animation. Let the timer fire and
+    // then tear the tree down, or the test ends with both still live and fails on that
+    // rather than on anything real. pumpAndSettle is not an option — the animation repeats
+    // forever, so it would never return.
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 }

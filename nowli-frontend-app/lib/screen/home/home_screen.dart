@@ -18,6 +18,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/services/profile_service.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:intl/intl.dart';
+import 'package:nowlii/services/scheduled_call_state.dart';
+import 'package:nowlii/services/voice_call_service.dart';
 import 'dart:math';
 
 class HomeScreen extends StatefulWidget {
@@ -999,11 +1001,83 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // Fixed name by design — the swipe-to-talk label always says "Fuzzy" (no longer the
       // user's dynamic companion name).
       companionName: 'Fuzzy',
-      onSwipe: () {
-        // Go straight to the 5-min AI voice call (emotion-share detour removed).
-        context.push(AppRoutespath.aiVoice);
-      },
+      // Go straight to the 5-min AI voice call (emotion-share detour removed).
+      onSwipe: _startSpontaneousCall,
     );
+  }
+
+  /// Swipe-to-talk, with one guard: don't let the user spend their last call by accident.
+  ///
+  /// Scheduled calls never reserve quota — they are plans, not bookings. So swiping when
+  /// only one call is left silently kills a call the user planned for later today. That is
+  /// the one case worth interrupting for; every other path goes straight through.
+  Future<void> _startSpontaneousCall() async {
+    final voiceCalls = VoiceCallService();
+    final quota = await voiceCalls.getQuota();
+    if (!mounted) return;
+
+    // Only fetch the schedule when it could actually matter.
+    if (quota != null && quota.remaining == 1) {
+      final scheduled = await voiceCalls.getScheduledCalls();
+      if (!mounted) return;
+
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final laterToday = scheduled
+          .where((c) => c.isPending && c.isOn(today))
+          .map((c) => c.scheduledFor)
+          .toList();
+
+      if (wouldStrandAScheduledCall(
+        remainingCalls: quota.remaining,
+        scheduledLaterToday: laterToday,
+        now: now,
+      )) {
+        laterToday.sort();
+        final next = DateFormat('HH:mm').format(laterToday.first);
+        final callNow = await _confirmSpendingLastCall(next);
+        if (!mounted || !callNow) return;
+      }
+    }
+
+    if (!mounted) return;
+    context.push(AppRoutespath.aiVoice);
+  }
+
+  /// Returns true if the user wants to talk now anyway.
+  Future<bool> _confirmSpendingLastCall(String nextCallTime) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'This is your last call today',
+          style: GoogleFonts.workSans(fontWeight: FontWeight.w900),
+        ),
+        content: Text(
+          'You have a call scheduled for $nextCallTime. Talking now uses your last '
+          'call of the day, so that one will be locked until tomorrow.',
+          style: GoogleFonts.workSans(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Keep it for $nextCallTime', style: GoogleFonts.workSans()),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              'Talk now',
+              style: GoogleFonts.workSans(
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF4542EB),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   Future<void> _toggleQuest(int index, int questId) async {

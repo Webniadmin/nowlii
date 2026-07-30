@@ -12,6 +12,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:nowlii/services/audio_stream_service.dart';
+import 'package:nowlii/services/call_reminder_service.dart';
 import 'package:nowlii/services/call_time_announcer.dart';
 import 'package:nowlii/services/realtime_call_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -22,7 +23,12 @@ class AiVoice extends StatefulWidget {
   /// this is passed as conversation context so the companion knows the task.
   final String? questTitle;
 
-  const AiVoice({super.key, this.questTitle});
+  /// Set when the call was started from a scheduled reminder, so the backend can close that
+  /// plan out. It does not affect the daily limit — a planned call queues for it like any
+  /// other and gets the same 429 when the day's calls are gone.
+  final int? scheduledCallId;
+
+  const AiVoice({super.key, this.questTitle, this.scheduledCallId});
 
   @override
   State<AiVoice> createState() => _AiVoiceState();
@@ -233,7 +239,8 @@ class _AiVoiceState extends State<AiVoice>
   /// Only if the backend authorizes it do we begin the call; otherwise we show a
   /// blocking message and leave the screen.
   Future<void> _authorizeAndBegin() async {
-    final result = await _voiceCallService.startCall();
+    final result =
+        await _voiceCallService.startCall(scheduledCallId: widget.scheduledCallId);
     if (!mounted) return;
 
     if (result.outcome == VoiceCallStartOutcome.allowed) {
@@ -478,6 +485,13 @@ class _AiVoiceState extends State<AiVoice>
       dominantEmotion: dominantEmotion,
       lowMoodPhrases: lowMoodPhrases,
     );
+
+    // This call just consumed one of the day's two. Re-lay the reminders so any call still
+    // scheduled for today is re-checked against the quota — if it can no longer run, its
+    // reminder becomes the "move it to tomorrow" one instead of inviting the user into a
+    // call the backend would refuse. This is the moment that keeps that wording honest:
+    // spending a call always happens with the app open.
+    unawaited(CallReminderService.instance.sync());
   }
   
   void _startListeningCheck() {

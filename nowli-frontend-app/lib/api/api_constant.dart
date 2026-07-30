@@ -61,6 +61,10 @@ class ApiConstants {
   // Persist a finished call's conversational summary (per user) + list saved summaries.
   static String voiceCallSummary(int id) => '/api/voice-calls/$id/summary/';
   static const String voiceCallSummaries = '/api/voice-calls/summaries/';
+  // Calls the user planned via a quest's "Enable call" toggle. These are plans, not
+  // bookings — they never reserve one of the two daily calls.
+  static const String scheduledCalls = '/api/voice-calls/scheduled/';
+  static String scheduledCall(int id) => '/api/voice-calls/scheduled/$id/';
   
   // AI Call endpoints (use aiBaseUrl)
   static const String createSession = '$aiCallPrefix/session/new';

@@ -78,6 +78,43 @@ secrets are already in place, but two ordering consequences now apply: the first
 `up -d` logs every user out, and deploying `nowli-ai` without shipping a fresh APK at the same
 time breaks voice calls on the old build (no `Authorization` header → 401).
 
+## ✅ Done 2026-07-30 (afternoon) — three client requests
+
+1. **Nowlii warns before the call runs out** — the "Add 2.5 minutes" card used to appear
+   silently at 60 s left. Nowlii now says it out loud 10 s *before* that card appears, and
+   is kept genuinely time-aware (a silent system item once a minute) so it can answer "how
+   long do we have?" truthfully. Wording adapts once the extension is spent; extending
+   re-arms the warning for the real end. `CallTimeAnnouncer`, 10 tests.
+2. **Screen no longer sleeps mid-call** — the wakelock existed but was set once in
+   `initState` and never checked. `FLAG_KEEP_SCREEN_ON` belongs to the window, so it was
+   lost every time the app left the foreground. Now re-asserted on resume and verified
+   after enabling, with one retry.
+3. **Scheduled AI calls** (the big one) — turning on a quest's **Enable call** now schedules
+   the call at the quest's time, with a local notification 5 minutes before that opens the
+   call when tapped. Backend `ScheduledCall` + a `post_save` signal on `Quests` (so "Repeat
+   quest" gets 7 reminders for free) + `GET/PATCH /api/voice-calls/scheduled/`.
+
+   **The daily limit is fully wired in, without reserving anything.** Schedule three calls
+   and the third gets the usual 429. Spend the day's last call by swiping on home and a
+   later scheduled call goes `locked` — so the app **warns before that swipe** ("you have a
+   call at 17:00; this is your last one today") and offers **Move to tomorrow** afterwards,
+   on the quest card and in the notification itself. Reminders are re-laid after every call,
+   which is what keeps that wording honest: a call can only be spent with the app open.
+
+   Two things worth knowing: `flutter_local_notifications` needs **core library desugaring**
+   (added to `build.gradle.kts`; the build fails outright without it), and we deliberately do
+   **not** declare `USE_EXACT_ALARM` — Play restricts it to alarm/calendar apps, so we
+   request `SCHEDULE_EXACT_ALARM` and degrade to inexact scheduling if refused.
+
+   Also replaced `test/widget_test.dart`: it was the untouched Flutter counter template from
+   the initial commit, asserting a UI this app never had, so `flutter test` had been red
+   since day one.
+
+**Verified:** 81 backend tests (27 new in `voice_calls`, which had none) + 31 Flutter tests,
+all pass; `flutter analyze` 0 errors; debug APK builds. **Not tested on a device** — the
+notification path (lock screen, cold start, reboot, exact-alarm denied) can only be proven
+there.
+
 ## 🔲 Today — on-phone verification (the whole point of the new APK)
 
 Install `build/app/outputs/flutter-apk/app-debug.apk`. **Use a NEW account** — `pavle` is on the
@@ -100,6 +137,15 @@ paywall allowlist and staff are exempt, so neither will ever see the trial or th
 - [ ] Screen stays awake through a long call; summary saves → appears in **Call History**.
 - [ ] **Insights**: productive **hour** shows a real value; "Yes, it's my rest day" drops that day
       out of "skipped" and un-reds its calendar cell.
+
+### Scheduled calls — device checks (new, 2026-07-30)
+- [ ] Create a quest ~6 min out with **Enable call** → reminder arrives 5 min before.
+- [ ] Tap it from a **locked phone**, and again from a **cold start** → lands on the call.
+- [ ] Burn both calls, then let a scheduled one come due → the notification says "no calls
+      left" and offers tomorrow; the Today card shows **locked** + **Move to tomorrow**.
+- [ ] With 1 call left and one scheduled later, swipe on home → the warning appears first.
+- [ ] Deny exact-alarm access → the reminder still arrives (a little late), no crash.
+- [ ] Reboot the phone with a reminder pending → it survives.
 
 ### Then
 - [ ] Merge `feat/realtime-voice-call` → `main` (it is 10 commits ahead; a deploy from `main`

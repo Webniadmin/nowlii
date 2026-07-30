@@ -10,6 +10,7 @@ import 'package:nowlii/screen/quests/create_quests/repeat_quest_card/repeat_ques
 import 'package:nowlii/screen/quests/create_quests/select_zone_card/select_zone_card.dart';
 import 'package:nowlii/screen/quests/create_quests/time_picker_card/time_picker_card.dart';
 import 'package:nowlii/screen/quests/create_quests/when_card/when_card.dart';
+import 'package:nowlii/services/call_reminder_service.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:intl/intl.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -211,12 +212,21 @@ class _CreateQuestPageState extends State<CreateQuestPage> {
       }
     }
 
+    // "Enable call" also schedules the call: the backend created a ScheduledCall for every
+    // quest above, and this lays the local reminders down for them (5 minutes before).
+    if (quest != null && enableCall) {
+      await CallReminderService.instance.requestPermissions();
+      await CallReminderService.instance.sync();
+    }
+
     setState(() => _isCreating = false);
 
     if (quest != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Quest created successfully!'),
+        SnackBar(
+          content: Text(enableCall
+              ? "Quest created — we'll remind you 5 minutes before your call."
+              : 'Quest created successfully!'),
           backgroundColor: Colors.green,
         ),
       );

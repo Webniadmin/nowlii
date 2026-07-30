@@ -1,6 +1,31 @@
 from django.contrib import admin
 
-from .models import CallEmotionSnapshot, CallLowMoodSnapshot, CallSummary, VoiceCall
+from .models import (
+    CallEmotionSnapshot,
+    CallLowMoodSnapshot,
+    CallSummary,
+    ScheduledCall,
+    VoiceCall,
+)
+
+
+@admin.register(ScheduledCall)
+class ScheduledCallAdmin(admin.ModelAdmin):
+    list_display = ('scheduled_for', 'user', 'quest', 'status', 'resolved_status', 'call')
+    list_filter = ('status', 'local_date')
+    search_fields = ('user__email', 'quest__task')
+    readonly_fields = ('created_at', 'updated_at', 'call')
+    list_select_related = ('user', 'quest', 'call')
+    date_hierarchy = 'scheduled_for'
+
+    @admin.display(description='Shown to user as')
+    def resolved_status(self, obj):
+        # `missed` is derived on read, so the stored value alone can mislead in the admin.
+        return obj.resolved_status
+
+    def has_add_permission(self, request):
+        # Created by the quest sync signal, never by hand.
+        return False
 
 
 @admin.register(VoiceCall)

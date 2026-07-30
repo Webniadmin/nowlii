@@ -3,16 +3,32 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/app_routes/app_pages.dart';
+import 'package:nowlii/core/app_routes/app_routes.dart';
+import 'package:nowlii/services/call_reminder_service.dart';
 
-void main() {
+void main() async {
   // Enable debug prints
   debugPrint('🚀 App starting...');
-  
+
   // Ensure all prints are visible
   if (kDebugMode) {
     debugPrint('✅ Debug mode enabled');
   }
-  
+
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Tapping a call reminder opens the call screen. Wired here, once, so the reminder
+  // service never has to know about routing. `AppPages.router` is a static GoRouter, so
+  // no navigator key is needed.
+  final reminders = CallReminderService.instance;
+  reminders.onReminderTapped = (scheduledCallId, questTitle) {
+    AppPages.router.push(
+      AppRoutespath.aiVoice,
+      extra: {'questTitle': questTitle, 'scheduledCallId': scheduledCallId},
+    );
+  };
+  await reminders.init();
+
   runApp(const MyApp());
 }
 

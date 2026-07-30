@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/api/api_constant.dart';
 import 'package:nowlii/models/call_summary_history.dart';
+import 'package:nowlii/models/scheduled_call.dart';
 
 /// Outcome of asking the backend to start a call. The backend is the sole authority for
 /// the daily limit, so the UI acts on this result — it never counts calls itself.
@@ -88,14 +89,20 @@ class VoiceCallService {
   /// when the user is out of calls. On any network/backend error we fail closed
   /// (outcome = error) — the frontend must never let a call through without the
   /// backend's approval.
-  Future<VoiceCallStartResult> startCall({String? sessionId}) async {
+  /// Pass [scheduledCallId] when the call was started from a planned reminder, so the
+  /// backend closes that plan out. An unknown id is ignored server-side rather than
+  /// failing the call.
+  Future<VoiceCallStartResult> startCall({String? sessionId, int? scheduledCallId}) async {
     try {
       final token = await _getToken();
       final response = await http
           .post(
             Uri.parse('$_base${ApiConstants.voiceCallStart}'),
             headers: _headers(token),
-            body: jsonEncode({if (sessionId != null) 'session_id': sessionId}),
+            body: jsonEncode({
+              if (sessionId != null) 'session_id': sessionId,
+              if (scheduledCallId != null) 'scheduled_call_id': scheduledCallId,
+            }),
           )
           .timeout(const Duration(seconds: 10));
 
@@ -222,5 +229,77 @@ class VoiceCallService {
       print('❌ getSummaries error: $e');
       return [];
     }
+  }
+
+  // ── Scheduled calls ────────────────────────────────────────────────────────
+
+  /// The user's planned calls from today onwards. Empty list on any error — a failed
+  /// fetch must never look like "you have no calls scheduled" *and* break the screen.
+  Future<List<ScheduledCall>> getScheduledCalls() async {
+    try {
+      final token = await _getToken();
+      final response = await http
+          .get(Uri.parse('$_base${ApiConstants.scheduledCalls}'),
+              headers: _headers(token))
+          .timeout(const Duration(seconds: 12));
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is List) {
+          return decoded
+              .whereType<Map<String, dynamic>>()
+              .map(ScheduledCall.fromJson)
+              .toList();
+        }
+      } else {
+        print('⚠️ getScheduledCalls status: ${response.statusCode}');
+      }
+      return [];
+    } catch (e) {
+      print('❌ getScheduledCalls error: $e');
+      return [];
+    }
+  }
+
+  /// Move a planned call to [newTime]. Sends an offset-bearing ISO-8601 string — the
+  /// backend rejects a bare local time rather than guess the user's timezone.
+  /// Also moves the quest, server-side, so the two never disagree.
+  Future<bool> rescheduleCall(int id, DateTime newTime) async {
+    return _patchScheduledCall(id, {
+      'scheduled_for': newTime.toLocal().toIso8601String() + _offsetSuffix(newTime),
+    });
+  }
+
+  Future<bool> cancelScheduledCall(int id) =>
+      _patchScheduledCall(id, {'cancel': true});
+
+  Future<bool> _patchScheduledCall(int id, Map<String, dynamic> body) async {
+    try {
+      final token = await _getToken();
+      final response = await http
+          .patch(
+            Uri.parse('$_base${ApiConstants.scheduledCall(id)}'),
+            headers: _headers(token),
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) return true;
+      print('⚠️ patch scheduled call $id: ${response.statusCode} — ${response.body}');
+      return false;
+    } catch (e) {
+      print('❌ patch scheduled call error: $e');
+      return false;
+    }
+  }
+
+  /// `DateTime.toIso8601String()` drops the offset for local times, which the backend
+  /// refuses. Append it explicitly, e.g. `+02:00`.
+  static String _offsetSuffix(DateTime time) {
+    final offset = time.toLocal().timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final abs = offset.abs();
+    final hh = abs.inHours.toString().padLeft(2, '0');
+    final mm = (abs.inMinutes % 60).toString().padLeft(2, '0');
+    return '$sign$hh:$mm';
   }
 }
