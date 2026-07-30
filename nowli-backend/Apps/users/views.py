@@ -7,7 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from urllib.parse import urlencode
 
 from rest_framework import status, viewsets
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -142,9 +142,20 @@ from .serializers import (
     }
 ))
 class NowliiPredefinedOptionViewSet(viewsets.ModelViewSet):
+    """The catalogue of companion avatars.
+
+    Reads stay public — the avatar picker is shown during onboarding, before the user
+    has a token. Writes are admin-only: this used to be `AllowAny` on a full
+    ModelViewSet, which let any anonymous caller create, edit or DELETE every
+    companion in the catalogue.
+    """
     queryset = NowliiPredefinedOption.objects.all()
     serializer_class = NowliiPredefinedOptionSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [AllowAny()]
+        return [IsAdminUser()]
 
 
 # ------------------------------------------------------------------------------

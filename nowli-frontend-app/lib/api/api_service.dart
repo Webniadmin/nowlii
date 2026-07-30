@@ -40,11 +40,12 @@ class ApiService {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         print('✅ Request successful');
 
+        // Presence only — printing the token itself puts a 31-day credential in logcat.
         if (responseData is Map && responseData['access'] != null) {
-          print('🔑 Access Token: ${responseData['access']}');
+          print('🔑 Access token received');
         }
         if (responseData is Map && responseData['refresh'] != null) {
-          print('🔄 Refresh Token: ${responseData['refresh']}');
+          print('🔄 Refresh token received');
         }
 
         print('======================================\n');

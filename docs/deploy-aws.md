@@ -3,6 +3,51 @@
 _Rewritten 2026-07-21 after the **first full deploy from this repo**. Supersedes the earlier
 "SSH → git pull → up --build" draft, which described a mechanism that does not exist on the box._
 
+> ## 🛑 READ BEFORE THE NEXT DEPLOY — secrets are staged, ordering now matters (2026-07-30)
+>
+> ### Already done on the box — no action needed
+>
+> Both secrets were generated **on the box** (so the values never passed through a chat log)
+> and written on 2026-07-30. Backups: `~/backend/.env.bak-20260730-prehardening` and
+> `~/ai/.env.bak-20260730-prehardening`.
+>
+> - `~/backend/.env` → `SECRET_KEY` — **replaced**. The old value was 66 chars but carried the
+>   `django-insecure-` prefix, so it would have crash-looped the container under the new boot
+>   guard. (The earlier note saying prod ran the *shipped* dev key was wrong — it was a
+>   different value, but insecure-prefixed all the same.)
+> - `~/ai/.env` → `NOWLII_JWT_SECRET` — **appended**, byte-identical to the above.
+> - Verified: 64 chars, alphanumeric, values match, guard passes, every other var intact.
+>   **Containers were NOT restarted**, so production still runs on the old key and is
+>   unaffected until the next `up -d`.
+>
+> Alphanumeric on purpose: `$`, `#` and quotes get mangled both by `.env` parsing and by Docker
+> Compose variable interpolation. 64 chars is ~380 bits, far past Django's 50-char threshold.
+>
+> ### ⚠️ Two consequences to plan around
+>
+> **1. The first backend recreate logs everyone out.** `env_file` values are baked in at
+> container *create* time, so a plain `restart` keeps the old key — only `docker compose up -d`
+> picks up the new one. At that moment every issued JWT becomes invalid. Harmless today (test
+> accounts only); do it before there are real users.
+>
+> **2. Deploying `nowli-ai` now breaks voice calls on any older APK.** `NOWLII_JWT_SECRET` is
+> set, so the moment the new `nowli-ai` code ships the auth gate goes live — and any app build
+> from before 2026-07-30 does not send the `Authorization` header. **Ship a fresh APK together
+> with the `nowli-ai` deploy.** To stage them apart, comment the variable out
+> (`# NOWLII_JWT_SECRET=…`) and `up -d`; the gate then stays off, with a warning on start.
+> Confirm either way with `curl http://16.170.191.239:8001/health` → `auth_required`.
+>
+> ### Generating replacements later
+>
+> ```bash
+> ssh -i ~/.ssh/id_ed25519 ubuntu@16.170.191.239
+> python3 -c "import secrets,string; print(''.join(secrets.choice(string.ascii_letters+string.digits) for _ in range(64)))"
+> ```
+> Do **not** reach for `docker run … python -c "…get_random_secret_key…"`: the image's
+> `ENTRYPOINT` is `entrypoint.sh`, so that would run `migrate` against **production RDS** before
+> printing anything. To use Django's own generator, bypass the entrypoint:
+> `docker run --rm --entrypoint python fahad1000mir/nowlii-backend:dev -c "from django.core.management.utils import get_random_secret_key as k; print(k())"`
+
 ## TL;DR — how to deploy now
 
 From the repo root on the dev machine (SSH access is set up — see below):
@@ -169,6 +214,29 @@ flutter build apk --debug --dart-define-from-file=dart_defines.prod.json   # →
 - **Debug** APK allows cleartext HTTP (the AWS endpoints are plain HTTP). Because AWS is a public IP, the
   phone works over any internet connection (WiFi or mobile data) — no LAN needed.
 - Google login works on the debug APK (debug-keystore SHA-1 is registered in Google Cloud `274971792537`).
-- A **release**/Play build will require **HTTPS** (domain + TLS, e.g. ALB/Nginx + Let's Encrypt) in front
-  of both ports, plus a signing config.
+
+### ⛔ A release build cannot talk to production today (confirmed 2026-07-30)
+
+This is the single hard blocker to shipping, and it is **not** a build-config problem — it is the
+plain-HTTP backend.
+
+- `android:usesCleartextTraffic="true"` exists **only** in `android/app/src/debug/AndroidManifest.xml`.
+  Android has blocked cleartext by default since API 28, so a **release** APK pointed at
+  `http://16.170.191.239:8000` gets a network failure on *every single request* — no login, no
+  quests, no calls. The build succeeds; the app is simply dead on launch.
+- Google Play separately rejects/flags apps that send credentials over cleartext, so widening the
+  release manifest is not a workaround — it would trade one blocker for another.
+- **The fix is HTTPS**: a domain + TLS (Nginx + Let's Encrypt, or an ALB) in front of both ports,
+  then update `dart_defines.prod.json` to the `https://` URLs and flip the HTTPS block in
+  `~/backend/.env` (`BEHIND_TLS_PROXY`, `SECURE_SSL_REDIRECT`, `*_COOKIE_SECURE`, `SECURE_HSTS_SECONDS`
+  — see `nowli-backend/.env.example`).
+- Until then, **device testing must use the debug APK**, which is unaffected.
+
+### Release signing (wired 2026-07-30, keystore not yet created)
+
+`android/app/build.gradle.kts` reads `android/key.properties` (git-ignored; template at
+`android/key.properties.example`). If that file is missing it falls back to the **debug** keystore,
+so local `--release` runs keep working — verified: the current `app-release.apk` reports
+`CN=Android Debug`. Play will reject such an artifact. Create the upload keystore before the first
+store upload, and back it up — losing it means never updating the listing under the same identity.
 ```

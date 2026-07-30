@@ -1,6 +1,13 @@
 # Environment / build-time config (use dart_defines.example.json as a template)
 dart_defines.json
 
+# Release signing — NEVER commit these. key.properties holds the keystore passwords
+# in plaintext; the .jks IS the upload key (committing it means anyone who clones the
+# repo can publish an update to the app). See android/key.properties.example.
+android/key.properties
+*.jks
+*.keystore
+
 # Miscellaneous
 *.class
 *.log

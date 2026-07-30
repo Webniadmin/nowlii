@@ -3,6 +3,13 @@ from pathlib import Path
 import dotenv
 import os
 
+from django.core.exceptions import ImproperlyConfigured
+
+
+def _env_flag(name, default="False"):
+    """Read a boolean env var. Accepts true/1/yes, case-insensitive."""
+    return os.getenv(name, default).strip().lower() in ("true", "1", "yes")
+
 
 # ------------------------------------------------------------------------------
 # ENV
@@ -11,12 +18,35 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 dotenv.load_dotenv(BASE_DIR / ".env")
 
-DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+DEBUG = _env_flag("DEBUG")
 
-SECRET_KEY = os.getenv(
-    "SECRET_KEY",
-    "django-insecure-change-this-in-production"
-)
+INSECURE_DEFAULT_SECRET_KEY = "django-insecure-change-this-in-production"
+
+SECRET_KEY = os.getenv("SECRET_KEY", INSECURE_DEFAULT_SECRET_KEY)
+
+# Refuse to boot in production on a weak key. Session cookies, password-reset tokens
+# and every signed value are derived from it, so a guessable key means anyone can forge
+# them. The thresholds mirror Django's own security.W009 check, which the shipped dev
+# key fails on length as well as on its `django-insecure-` prefix. Generate one with:
+#   python -c "from django.core.management.utils import get_random_secret_key as k; print(k())"
+if not DEBUG:
+    _weak_reason = None
+    if SECRET_KEY == INSECURE_DEFAULT_SECRET_KEY:
+        _weak_reason = "it is still the shipped default"
+    elif SECRET_KEY.startswith("django-insecure-"):
+        _weak_reason = "it uses Django's throwaway 'django-insecure-' prefix"
+    elif len(SECRET_KEY) < 50:
+        _weak_reason = f"it is only {len(SECRET_KEY)} characters (need 50+)"
+    elif len(set(SECRET_KEY)) < 5:
+        _weak_reason = "it has fewer than 5 distinct characters"
+
+    if _weak_reason:
+        raise ImproperlyConfigured(
+            f"SECRET_KEY is not production-safe: {_weak_reason}. Set a strong "
+            "SECRET_KEY in .env before running with DEBUG=False. Generate one with: "
+            "python -c \"from django.core.management.utils import "
+            "get_random_secret_key as k; print(k())\""
+        )
 
 # Comma-separated list of allowed hosts, e.g.
 # ALLOWED_HOSTS=api.example.com,16.170.191.239
@@ -24,7 +54,43 @@ ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "").split(",") if
 if DEBUG and not ALLOWED_HOSTS:
     ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# ------------------------------------------------------------------------------
+# SECURITY / HTTPS
+# ------------------------------------------------------------------------------
+# NOTE ON DEFAULTS: production currently serves plain HTTP on an EC2 IP. Every
+# HTTPS-dependent switch below therefore defaults to OFF — turning them on without TLS
+# in front would lock everyone (including the Django admin) out. When the API moves
+# behind a real domain + certificate, flip these in the prod .env:
+#
+#   BEHIND_TLS_PROXY=True
+#   SECURE_SSL_REDIRECT=True
+#   SESSION_COOKIE_SECURE=True
+#   CSRF_COOKIE_SECURE=True
+#   SECURE_HSTS_SECONDS=31536000
+#
+# Only trust X-Forwarded-Proto when something we control (nginx/ALB) actually sets it.
+# Trusting it unconditionally lets a client claim its plain-HTTP request was secure.
+if _env_flag("BEHIND_TLS_PROXY"):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+SECURE_SSL_REDIRECT = _env_flag("SECURE_SSL_REDIRECT")
+
+# HSTS is effectively irreversible for the duration it advertises — leave at 0 until
+# HTTPS is confirmed working, then ramp up (e.g. 3600 → 31536000).
+SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_flag("SECURE_HSTS_INCLUDE_SUBDOMAINS")
+SECURE_HSTS_PRELOAD = _env_flag("SECURE_HSTS_PRELOAD")
+
+# Secure-only cookies require HTTPS; on plain HTTP they are simply never sent, which
+# silently breaks admin login. Hence env-gated rather than `not DEBUG`.
+SESSION_COOKIE_SECURE = _env_flag("SESSION_COOKIE_SECURE")
+CSRF_COOKIE_SECURE = _env_flag("CSRF_COOKIE_SECURE")
+
+# These cost nothing over plain HTTP, so they are on unconditionally.
+SESSION_COOKIE_HTTPONLY = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
 
 # ------------------------------------------------------------------------------
 # Environment Variables
@@ -248,8 +314,13 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.TokenAuthentication',
     ),
+    # Deny by default. Every view in Apps/ already sets permission_classes explicitly
+    # (audited 2026-07-30), so this changes no current behaviour — it exists so that a
+    # future view which forgets to declare them fails closed instead of open.
+    # Public endpoints (register / login / OTP / social login / Swagger) declare
+    # AllowAny themselves.
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ],
     'DATETIME_FORMAT': "%d-%m-%Y %H:%M:%S",
     'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',

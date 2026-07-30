@@ -1,0 +1,19 @@
+# Release signing credentials for the Play upload key.
+#
+# Copy to android/key.properties (git-ignored) and fill in. Without this file the
+# release build silently falls back to the DEBUG keystore and Play will reject it.
+#
+# Generate the keystore once (keep it and this file backed up somewhere safe — losing
+# the upload key means you can never update the app under the same listing unless you
+# ask Google to reset it):
+#
+#   keytool -genkey -v -keystore %USERPROFILE%\nowlii-upload-keystore.jks \
+#           -storetype JKS -keyalg RSA -keysize 2048 -validity 10000 -alias nowlii
+#
+# storeFile takes an absolute path. On Windows use forward slashes or doubled
+# backslashes — a single backslash is an escape character in .properties files.
+
+storeFile=C:/Users/<you>/nowlii-upload-keystore.jks
+storePassword=<the keystore password>
+keyAlias=nowlii
+keyPassword=<the key password, usually the same>

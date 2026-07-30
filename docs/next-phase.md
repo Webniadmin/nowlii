@@ -8,6 +8,41 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
+## ▶ RESUME HERE (2026-07-30) — production hardening + the real road to release
+
+**The headline: "production ready" has one blocker in front of everything else, and it is a
+domain.** A release APK cannot talk to the backend at all — Android has blocked cleartext HTTP
+since API 28, `usesCleartextTraffic` lives only in the *debug* manifest, and prod is
+`http://16.170.191.239:8000`. So a signed release build launches and then fails every request.
+Play separately rejects cleartext credential traffic, so widening the manifest just swaps one
+blocker for another. Ordered path: **domain + TLS → signed build that works → real IAP** (IAP can
+only be tested through a signed build on an internal testing track). Detail in `deploy-aws.md`
+→ "A release build cannot talk to production today".
+
+**Shipped today** (full list in `daily-checklist.md`):
+- `SECRET_KEY` is now enforced in production — the app refuses to boot on a weak key (Django's own
+  `W009` thresholds). Both the local and the box `.env` currently fail it.
+- HTTPS settings added as env switches, **all defaulting off** on purpose — turning on secure-only
+  cookies without TLS in front would lock everyone out of the admin. Flip them with the domain.
+  `SECURE_PROXY_SSL_HEADER` no longer trusts `X-Forwarded-Proto` unconditionally.
+- **Real vulnerability fixed:** `NowliiPredefinedOptionViewSet` was `AllowAny` on a full
+  `ModelViewSet` — any anonymous caller could rename or DELETE every companion avatar. Now
+  read-public / write-admin, with 8 tests (confirmed they fail against the old code).
+- DRF default permission `AllowAny` → `IsAuthenticated` (fail closed). Audited first: every existing
+  view already sets its own, so behaviour is unchanged.
+- **`nowli-ai` `/api/v1/` now requires the caller's Django token**, verified locally with the same
+  HS256 secret. It mints OpenAI Realtime keys, so it was previously a direct route to the OpenAI
+  bill for anyone who knew the IP — which matters given the 07-23 key leak. Auth stays **off** when
+  `NOWLII_JWT_SECRET` is unset, so the deploy can be staged.
+- Full JWTs are no longer printed to logcat (3 files); Android release signing wired via
+  `key.properties`; `.env.example` written for both services.
+
+⚠️ **Before the next deploy:** `SECRET_KEY` on `~/backend/.env` (else the container crash-loops) and
+`NOWLII_JWT_SECRET` on `~/ai/.env`. See the STOP box at the top of `deploy-aws.md` — it includes the
+safe staging order so an old app build doesn't start getting 401s.
+
+---
+
 ## ✅ TOMORROW (2026-07-30) — do in this order
 
 **Everything through the paywall is committed AND deployed to EC2. Tomorrow is device testing.**

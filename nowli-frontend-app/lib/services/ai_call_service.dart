@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:nowlii/api/api_constant.dart';
 import 'package:nowlii/models/ai_call_models.dart';
+import 'package:nowlii/services/ai_auth_headers.dart';
 
 class AiCallService {
   // Create a new session
@@ -20,11 +21,7 @@ class AiCallService {
       
       final response = await http.post(
         url,
-        headers: {
-          'Content-Type': ApiConstants.contentType,
-          'Accept': ApiConstants.accept,
-          'ngrok-skip-browser-warning': 'true', // Skip ngrok browser warning
-        },
+        headers: await aiAuthHeaders(),
         body: jsonEncode({
           'user_name': userName,
           'system_name': systemName,
@@ -69,11 +66,7 @@ class AiCallService {
           '${ApiConstants.aiBaseUrl}${ApiConstants.aiEmotionBreakdown(sessionId)}');
       final response = await http.get(
         url,
-        headers: {
-          'Content-Type': ApiConstants.contentType,
-          'Accept': ApiConstants.accept,
-          'ngrok-skip-browser-warning': 'true',
-        },
+        headers: await aiAuthHeaders(),
       ).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
@@ -97,11 +90,7 @@ class AiCallService {
           '${ApiConstants.aiBaseUrl}${ApiConstants.aiCallInsights(sessionId)}');
       final response = await http.get(
         url,
-        headers: {
-          'Content-Type': ApiConstants.contentType,
-          'Accept': ApiConstants.accept,
-          'ngrok-skip-browser-warning': 'true',
-        },
+        headers: await aiAuthHeaders(),
       ).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
@@ -126,11 +115,7 @@ class AiCallService {
       final url = Uri.parse('${ApiConstants.aiBaseUrl}${ApiConstants.chatStream}');
       
       final request = http.Request('POST', url);
-      request.headers.addAll({
-        'Content-Type': ApiConstants.contentType,
-        'Accept': ApiConstants.accept,
-        'ngrok-skip-browser-warning': 'true', // Skip ngrok browser warning
-      });
+      request.headers.addAll(await aiAuthHeaders());
       request.body = jsonEncode({
         'message': message,
         'session_id': sessionId,

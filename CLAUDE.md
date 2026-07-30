@@ -33,7 +33,8 @@ The three projects are developed and run independently; there is no root-level b
   - `subtask_generator` — AI-generated subtasks. `POST /api/subtasks/generate/`.
   - `insights` — AI weekly reflections + quest suggestions. `GET /api/insights/`.
 - **AI provider abstraction**: `Apps/insights/ai_client.py` (and the parallel logic in `subtask_generator`) auto-selects a provider by which API key is set, in priority order **Anthropic → OpenAI → Google** (`get_active_provider()`). Prompts instruct the model to return raw JSON; `_parse()` strips ``` fences before `json.loads`. When touching AI code, keep all three provider callers (`_call_claude`, `_call_chatgpt`, `_call_gemini`) in sync.
-- **Auth**: SimpleJWT with `Bearer` scheme; access & refresh tokens both live 31 days; refresh rotation + blacklist enabled. Default DRF permission is `AllowAny` — permissions are enforced per-view, so don't assume endpoints are protected by default.
+- **Auth**: SimpleJWT with `Bearer` scheme; access & refresh tokens both live 31 days; refresh rotation + blacklist enabled. Default DRF permission is `IsAuthenticated` (since 2026-07-30 — it was `AllowAny`), but every view still declares its own `permission_classes`; keep doing that rather than relying on the default.
+- **Production guards** (`settings.py`): with `DEBUG=False` the app **refuses to start** on a weak `SECRET_KEY`. All HTTPS-dependent settings (`BEHIND_TLS_PROXY`, `SECURE_SSL_REDIRECT`, `SESSION/CSRF_COOKIE_SECURE`, HSTS) are env switches defaulting **off**, because production is still plain HTTP — do not "fix" them to on without TLS in front, it locks the admin out. See `.env.example`.
 - **Config**: driven by `.env` (loaded in `settings.py`). `DEBUG` defaults off. DB is SQLite unless `DB_ENGINE` points at Postgres (prod uses AWS RDS via `DB_HOST`). Media uses S3 when `AWS_ACCESS_KEY_ID` is set, else local `media/`. Static files via WhiteNoise. `CORS_ALLOW_ALL_ORIGINS = True`.
 - **Docker**: `entrypoint.sh` waits for the DB (only if `DB_HOST` set), runs `migrate`, `collectstatic`, and optionally creates a superuser from `DJANGO_SUPERUSER_*` env vars.
 
@@ -45,7 +46,7 @@ FastAPI app **"Emotion AI — Human Friend System"** (v4.2). This is the `:8001`
 - Install deps: `pip install -r requirements.txt` (dependency-only; no lockfile/`pyproject.toml`).
 - Run: `python test17.py` — binds `HOST`/`PORT` from env, defaulting to `0.0.0.0:8001` (the port the Flutter app expects; Django owns `:8000`). Override via `nowli-ai/.env` (`HOST`, `PORT`).
 - Alternative: `uvicorn test17:app --reload --port 8001` (the `__main__` host/port block is skipped in this mode).
-- No test suite is present.
+- Tests: `python test_auth_middleware.py` — the only test file; covers the `/api/v1/` auth gate. No test runner is configured, it is a standalone script.
 
 ### Architecture
 - **Entry point is `test17.py`** — a ~1300-line monolith that defines the `app` object and every served route. It imports helpers from `config.py`, `models.py`, and `services/`.
@@ -55,7 +56,8 @@ FastAPI app **"Emotion AI — Human Friend System"** (v4.2). This is the `:8001`
 - **Models**: OpenAI `gpt-4o` / `gpt-4o-mini` (chat, summaries, text emotion, quest suggestions) and `whisper-1`; `LLM_MODEL` overridable via env. Hume for voice; if no Hume key, voice emotion is skipped.
 - **Quest suggestions** call back into the Django API via `QUEST_API_URL` (defaults to `http://127.0.0.1:8000/api/quests/`); `mode` selects static vs GPT-generated.
 - **State**: sessions live in an in-memory dict (`_sessions`) — nothing is persisted; restarting drops all sessions.
-- **Config**: `config.py` loads `.env` (also strips inline `#` comments from values). CORS is `allow_origins=["*"]`.
+- **Auth (added 2026-07-30)**: every `/api/v1/` route requires the caller's **Django** access token (`Authorization: Bearer …`), verified locally in a `@app.middleware("http")` in `test17.py` against `NOWLII_JWT_SECRET`, which must equal the backend's `SECRET_KEY`. `/` and `/health` stay public; `/health` reports `auth_required`. **If `NOWLII_JWT_SECRET` is unset the gate is disabled** (warning on start) — that is the staging escape hatch, not the intended state.
+- **Config**: `config.py` loads `.env` (also strips inline `#` comments from values). CORS origins come from `AI_CORS_ORIGINS` (default `*`); CORS is not a security control here since the client is a mobile app — the token gate is.
 
 ### Gotchas
 - **Port contract**: this service must run on `:8001` (the Flutter `AI_BASE_URL` default) because Django owns `:8000`. Both `test17.py`'s `__main__` block and `nowli-ai/.env` now default to `PORT=8001` / `HOST=0.0.0.0`; keep them in sync if you change either.

@@ -21,7 +21,7 @@ class ProfileService {
       
       // Get access token
       final token = await SecureStorage.getAccessToken();
-      print('📱 Access Token: ${token ?? "NOT FOUND"}');
+      print('📱 Access token: ${token == null ? "NOT FOUND" : "present"}');
       
       if (token == null) {
         print('❌ ERROR: No access token found');
@@ -150,7 +150,7 @@ class ProfileService {
       
       // Get access token
       final token = await SecureStorage.getAccessToken();
-      print('📱 Access Token: ${token ?? "NOT FOUND"}');
+      print('📱 Access token: ${token == null ? "NOT FOUND" : "present"}');
       
       if (token == null) {
         print('❌ ERROR: No access token found');
@@ -229,7 +229,7 @@ class ProfileService {
       
       // Get access token
       final token = await SecureStorage.getAccessToken();
-      print('📱 Access Token: ${token ?? "NOT FOUND"}');
+      print('📱 Access token: ${token == null ? "NOT FOUND" : "present"}');
       
       if (token == null) {
         print('❌ ERROR: No access token found');

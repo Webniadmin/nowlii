@@ -11,10 +11,11 @@ class StorageService {
   static const String _profileDataKey = 'profile_data';
 
   Future<void> saveTokens(String accessToken, String refreshToken) async {
+    // Never print the token values. `print` still reaches logcat in release builds, and
+    // any app holding READ_LOGS (or anyone with the device plugged in) could lift a
+    // 31-day access token straight out of it.
     print('\n💾 Saving tokens to storage...');
-    print('🔑 Access Token: $accessToken');
-    print('🔄 Refresh Token: $refreshToken');
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_accessTokenKey, accessToken);
     await prefs.setString(_refreshTokenKey, refreshToken);
@@ -39,14 +40,14 @@ class StorageService {
   Future<String?> getAccessToken() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_accessTokenKey);
-    print('🔍 Retrieved Access Token: ${token ?? "NOT FOUND"}');
+    print('🔍 Access token: ${token == null ? "NOT FOUND" : "present"}');
     return token;
   }
 
   Future<String?> getRefreshToken() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_refreshTokenKey);
-    print('🔍 Retrieved Refresh Token: ${token ?? "NOT FOUND"}');
+    print('🔍 Refresh token: ${token == null ? "NOT FOUND" : "present"}');
     return token;
   }
 

@@ -28,6 +28,56 @@ for tomorrow. Deferred items go to `future-checklist.md`._
 
 ---
 
+## ✅ Done 2026-07-30 — production hardening pass
+
+Goal for the day was "make it production ready". It is not, and the reason is now precisely
+known — see the blocker at the bottom. What did land:
+
+- **Django `SECRET_KEY` can no longer be weak in production.** `settings.py` refuses to boot when
+  `DEBUG=False` and the key is the shipped default, `django-insecure-`-prefixed, under 50 chars or
+  under 5 distinct characters (Django's own `W009` thresholds). The local `.env` key fails all of
+  this today, and so does the box's.
+- **HTTPS switches added, all defaulting OFF** (`BEHIND_TLS_PROXY`, `SECURE_SSL_REDIRECT`,
+  `SESSION/CSRF_COOKIE_SECURE`, HSTS). Deliberately off: prod is plain HTTP, and enabling
+  secure-only cookies without TLS silently locks everyone out of the Django admin.
+  `SECURE_PROXY_SSL_HEADER` was being trusted unconditionally — now only behind a real proxy.
+  Always-on now: `X_FRAME_OPTIONS=DENY`, nosniff, referrer policy, HttpOnly session cookie.
+- **Fixed an open door: the companion catalogue was anonymously writable.**
+  `NowliiPredefinedOptionViewSet` was `AllowAny` on a full `ModelViewSet` — anyone on the internet
+  could POST/PATCH/**DELETE** every avatar. Now public to read (onboarding needs it pre-login),
+  admin-only to write. 8 regression tests; verified they fail 4/8 against the old code.
+- **DRF now fails closed** — default permission `AllowAny` → `IsAuthenticated`. Audited first: every
+  existing view already declares its own, so nothing changed behaviourally. It only catches views
+  added later that forget.
+- **`nowli-ai` is no longer an open door to the OpenAI bill.** `/api/v1/` now requires the caller's
+  Django access token, verified locally against the same HS256 secret (no extra network hop, no
+  second credential to embed in the APK). `/` and `/health` stay public; `/health` reports
+  `auth_required` so a deploy can be checked without a token. 10 checks in the repo's first-ever
+  `nowli-ai` test (`test_auth_middleware.py`). Flutter sends the header on all 4 AI endpoints.
+- **Stopped leaking JWTs into logcat** — `storage.dart`, `api_service.dart` and `profile_service.dart`
+  printed full access/refresh tokens. `print` reaches logcat in release builds too.
+- **Android release signing wired** — `key.properties` (git-ignored) + `.example`; falls back to the
+  debug keystore when absent so local `--release` still works. `*.jks`/`*.keystore` now git-ignored.
+- **`.env.example` for both services** — neither had one; the new required vars are documented there.
+
+**Verified:** `manage.py check --deploy` clean apart from the 4 expected HTTPS warnings (and clean
+with the HTTPS block on); 54 backend tests pass (44 existing + 10 new); 10/10 nowli-ai auth checks;
+`flutter analyze` 0 errors; first-ever release APK builds (111 MB, R8 minification works).
+
+- **Prod secrets rotated and staged on EC2.** `SECRET_KEY` (backend) and `NOWLII_JWT_SECRET`
+  (nowli-ai) generated **on the box** and written, byte-identical, with backups
+  (`*.env.bak-20260730-prehardening`). The old prod key was 66 chars but `django-insecure-`
+  prefixed — it would have crash-looped the container under the new guard. **Containers were
+  deliberately not restarted**, so production is untouched and still healthy (verified: backend
+  401 on a protected route, nowli-ai `/health` ok). The same was done for the local `.env` pair
+  with a *different* value, and the wiring was proved end to end: a JWT minted by Django with the
+  local key is accepted by nowli-ai (401 without it, 200 with it).
+
+**Code not deployed.** ⚠️ Read the box at the top of `deploy-aws.md` before deploying — the
+secrets are already in place, but two ordering consequences now apply: the first backend
+`up -d` logs every user out, and deploying `nowli-ai` without shipping a fresh APK at the same
+time breaks voice calls on the old build (no `Authorization` header → 401).
+
 ## 🔲 Today — on-phone verification (the whole point of the new APK)
 
 Install `build/app/outputs/flutter-apk/app-debug.apk`. **Use a NEW account** — `pavle` is on the
@@ -57,8 +107,20 @@ paywall allowlist and staff are exempt, so neither will ever see the trial or th
 
 ## ⚠️ Blockers / decisions needed
 
+- **🚧 NO DOMAIN = NO RELEASE. The ordered path to production is now known.**
+  A release APK **cannot reach the backend at all** — Android blocks cleartext HTTP since API 28
+  and `usesCleartextTraffic` is debug-only, so every request in a release build fails. Play also
+  rejects cleartext credential traffic, so widening the manifest is not an escape. Everything
+  else is downstream of this:
+  1. **Buy a domain** → Nginx + Let's Encrypt on EC2 in front of :8000 and :8001 → switch
+     `dart_defines.prod.json` to `https://` → flip the HTTPS block in `~/backend/.env`.
+  2. **Then** the release keystore + a signed build that actually works.
+  3. **Then** real IAP — it can only be tested through a signed build on an internal testing track.
+  Device testing meanwhile is unaffected: the **debug** APK still allows cleartext.
 - **No real money yet.** `activate` is a mock and `verify-receipt` is a 501 stub — anyone can
   "subscribe" for free. Phase 2 (Apple IAP / Google Play Billing) is the next subscriptions task.
+  Store accounts exist (both), so the missing pieces are the per-phase products in App Store
+  Connect / Play Console and a Play Developer API service account.
 - **Scheduled AI calls — waiting on the client.** Confirmed today that nothing exists: no
   notification/scheduling package, no backend reminder model, and `set_alarm` is stored but drives
   nothing (it's even hardcoded `true` on create). "Enable call" only shows an on-demand button.

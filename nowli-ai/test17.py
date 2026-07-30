@@ -34,14 +34,24 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional
 
 import httpx
+import jwt
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field, field_validator
 
-from config import HUME_API_KEY, LLM_MAX_TOKENS, LLM_MODEL, LLM_TEMPERATURE, OPENAI_API_KEY
+from config import (
+    AI_CORS_ORIGINS,
+    HUME_API_KEY,
+    LLM_MAX_TOKENS,
+    LLM_MODEL,
+    LLM_TEMPERATURE,
+    NOWLII_JWT_ALGORITHM,
+    NOWLII_JWT_SECRET,
+    OPENAI_API_KEY,
+)
 from models import EmotionScore
 from services.emotion_merger import merge_emotions
 from services.hume_emotion import detect_voice_emotions
@@ -748,11 +758,84 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_cors_origins = [o.strip() for o in AI_CORS_ORIGINS.split(",") if o.strip()] or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True,
+    allow_origins=_cors_origins,
+    # `*` origins and credentials are mutually exclusive per the CORS spec — browsers
+    # reject the combination outright — so only send credentials for an explicit list.
+    allow_credentials="*" not in _cors_origins,
     allow_methods=["*"], allow_headers=["*"],
 )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTH — every /api/v1/ route requires the caller's NOWLII access token
+# ══════════════════════════════════════════════════════════════════════════════
+# Without this the service is an open door to OpenAI spend: /realtime/token mints an
+# ephemeral Realtime key and /chat-stream, /chat/summary and /detect-emotion each run
+# a paid model. The app already holds a Django-issued JWT, signed HS256 with the
+# backend's SECRET_KEY, so we verify it here rather than adding a second credential
+# the client would have to embed (and that anyone could pull out of the APK).
+#
+# Public by design: "/", "/health", "/docs", "/openapi.json".
+
+AUTH_ENABLED = bool(NOWLII_JWT_SECRET)
+
+if not AUTH_ENABLED:
+    logger.warning(
+        "NOWLII_JWT_SECRET is not set — /api/v1/ is UNAUTHENTICATED. Anyone who can "
+        "reach this service can spend OpenAI credit. Set it to the Django SECRET_KEY."
+    )
+
+
+def _verify_access_token(header_value: str) -> dict:
+    """Return the token claims, or raise ValueError with a reason."""
+    if not header_value:
+        raise ValueError("missing Authorization header")
+
+    scheme, _, token = header_value.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise ValueError("expected 'Bearer <token>'")
+
+    try:
+        claims = jwt.decode(
+            token.strip(),
+            NOWLII_JWT_SECRET,
+            algorithms=[NOWLII_JWT_ALGORITHM],
+            # SimpleJWT sets no `aud`/`iss` by default; `exp` is verified automatically.
+            options={"verify_aud": False},
+        )
+    except jwt.ExpiredSignatureError:
+        raise ValueError("token expired")
+    except jwt.InvalidTokenError as exc:
+        raise ValueError(f"invalid token: {exc}")
+
+    # Refresh tokens are signed with the same key — only access tokens may be used here.
+    if claims.get("token_type") not in (None, "access"):
+        raise ValueError("not an access token")
+
+    return claims
+
+
+@app.middleware("http")
+async def require_nowlii_token(request: Request, call_next):
+    path = request.url.path
+    if not AUTH_ENABLED or not path.startswith("/api/v1/") or request.method == "OPTIONS":
+        return await call_next(request)
+
+    try:
+        claims = _verify_access_token(request.headers.get("authorization", ""))
+    except ValueError as exc:
+        logger.info("Rejected %s %s — %s", request.method, path, exc)
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Authentication required.", "reason": str(exc)},
+        )
+
+    # Downstream handlers can attribute usage to a user (e.g. for cost logging).
+    request.state.user_id = claims.get("user_id")
+    return await call_next(request)
 
 
 @app.get("/")
@@ -782,6 +865,9 @@ async def health():
         "status": "ok", "openai": bool(_resolve_openai_key()),
         "hume": bool(_resolve_hume_key()), "sessions": len(_sessions),
         "quest_zones": QUEST_ZONES,
+        # Surfaced so a deploy can be checked without a token: `false` here means the
+        # paid endpoints are open to the internet.
+        "auth_required": AUTH_ENABLED,
     }
 
 

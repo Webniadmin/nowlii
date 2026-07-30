@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:nowlii/api/api_constant.dart';
 import 'package:nowlii/models/call_summary_model.dart';
+import 'package:nowlii/services/ai_auth_headers.dart';
 
 class CallSummaryService {
   Future<CallSummaryResponse?> getSummary(String sessionId) async {
@@ -14,11 +15,7 @@ class CallSummaryService {
       
       final response = await http.post(
         url,
-        headers: {
-          'Content-Type': ApiConstants.contentType,
-          'Accept': ApiConstants.accept,
-          'ngrok-skip-browser-warning': 'true',
-        },
+        headers: await aiAuthHeaders(),
         body: jsonEncode({
           'session_id': sessionId,
         }),

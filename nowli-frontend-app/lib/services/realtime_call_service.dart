@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
 import 'package:nowlii/api/api_constant.dart';
+import 'package:nowlii/services/ai_auth_headers.dart';
 
 /// One completed exchange (what the user said + what Nowlii replied). Collected during a
 /// Realtime call and posted back to nowli-ai at call end so the existing summary / emotion
@@ -54,10 +55,7 @@ class RealtimeCallService {
       final tokenResp = await http
           .post(
             Uri.parse('${ApiConstants.aiBaseUrl}/api/v1/realtime/token'),
-            headers: {
-              'Content-Type': 'application/json',
-              'ngrok-skip-browser-warning': 'true',
-            },
+            headers: await aiAuthHeaders(),
             body: jsonEncode({'session_id': sessionId}),
           )
           .timeout(const Duration(seconds: 15));
@@ -277,10 +275,7 @@ class RealtimeCallService {
       await http
           .post(
             Uri.parse('${ApiConstants.aiBaseUrl}/api/v1/session/turns'),
-            headers: {
-              'Content-Type': 'application/json',
-              'ngrok-skip-browser-warning': 'true',
-            },
+            headers: await aiAuthHeaders(),
             body: jsonEncode({
               'session_id': sessionId,
               'turns': turns
