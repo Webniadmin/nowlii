@@ -131,6 +131,34 @@ Note the box `.env` still literally contains `DEBUG=True`, but `docker-compose.p
 (`EMAIL_HOST=smtp.gmail.com`/587/TLS, `DEFAULT_FROM_EMAIL→EMAIL_HOST_USER`) since the box has
 `EMAIL_HOST_USER`+`EMAIL_HOST_PASSWORD`.
 
+## Deploy log — 2026-07-30 (hardening + scheduled calls)
+
+Shipped commits `cb9d1ac`…`b3b0f27` from `feat/realtime-voice-call` (also pushed to GitHub).
+Rollback tags created first: **`:backup-20260730`** on both images.
+
+- **Backend**: migration `voice_calls.0005_scheduledcall` applied to prod RDS. The container
+  booted cleanly, which is itself the proof the rotated `SECRET_KEY` is production-safe —
+  the new guard refuses to start on a weak one. **Every previously issued JWT is now
+  invalid**; all users are logged out once, as expected.
+- **nowli-ai**: the `/api/v1/` auth gate is live.
+
+**Verified on the box, not assumed:**
+
+| check | before | after |
+|---|---|---|
+| `GET /api/voice-calls/scheduled/` | 404 (route didn't exist) | **401** — new code live |
+| `GET /api/quests/` | 401 | 401 — still healthy |
+| `nowli-ai /health` → `auth_required` | absent | **`true`** |
+| `nowli-ai /api/v1/quest-source`, no token | 200 (open!) | **401** — gate enforcing |
+
+The one that mattered most: a **real Django access token minted inside the backend
+container** was accepted by nowli-ai (**200**), and the same token with one character
+changed was rejected (**401**). That proves `SECRET_KEY` and `NOWLII_JWT_SECRET` actually
+match in production — a mismatch would have broken every voice call.
+
+Device build: `nowlii-prod.v0.1.apk` (debug, against live AWS) in
+`nowli-frontend-app/build/app/outputs/flutter-apk/`.
+
 ## Deploy log — 2026-07-29 (branch `feat/realtime-voice-call`)
 
 Shipped everything from the 07-28 / 07-29 sessions (the box had been running 07-21 backend + 07-23 ai).
