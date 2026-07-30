@@ -51,8 +51,24 @@ class _SplashState extends State<Splash> with SingleTickerProviderStateMixin {
       // Refresh entitlement before routing. On a fresh install this call is also what
       // STARTS the 7-day free trial (the backend grants it on first contact), so a new
       // user lands in the app with full access and nothing extra to tap.
+      //
+      // It doubles as the session check. A stored token can be rejected while still
+      // unexpired — the server key was rotated, the session was blacklisted, the password
+      // changed — and `getMyStatus` reports that 401 to Session, which tries a refresh and
+      // signs out if it cannot recover. Without the check below the user would be waved
+      // into a home screen where every request quietly fails.
       final status = await SubscriptionService().getMyStatus();
       if (!mounted) return;
+
+      // Re-read from disk: Session clears storage through its own instance, so the copy
+      // held here can be stale.
+      await prefs.reload();
+      if (!mounted) return;
+      if ((prefs.getString('access_token') ?? '').isEmpty) {
+        // Session ended during that call. Send them somewhere that works.
+        context.go(AppRoutespath.signInScreen);
+        return;
+      }
 
       if (status != null && !status.hasAccess) {
         context.go(AppRoutespath.nowliProSubscription); // trial over, nothing bought

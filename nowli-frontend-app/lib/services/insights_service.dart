@@ -50,6 +50,7 @@ class InsightsService {
         print('==========================================\n');
         return InsightsResponse.fromJson(data);
       } else {
+        if (response.statusCode == 401) await Session.reportUnauthorized();
         print('❌ Failed to fetch insights: ${response.statusCode}');
         print('==========================================\n');
         // 402 = free trial over / not subscribed → flip the cached entitlement so the

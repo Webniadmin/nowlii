@@ -196,10 +196,16 @@ class ProfileService {
           'profile': profile,
         };
       } else {
+        // A rejected token leaves _profileData null on the home screen, which silently
+        // falls back to the generic placeholder avatar instead of the user's chosen
+        // companion — it looks like a wrong image, not like a broken session.
+        if (response.statusCode == 401) {
+          await Session.reportUnauthorized();
+        }
         print('❌ Profile fetch failed');
         print('Error Details: $responseData');
         print('==========================================\n');
-        
+
         return {
           'success': false,
           'message': responseData['message'] ?? 'Failed to fetch profile',

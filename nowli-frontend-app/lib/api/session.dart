@@ -57,6 +57,23 @@ class Session {
     return _inFlight ??= _doRefresh().whenComplete(() => _inFlight = null);
   }
 
+  /// A request we believed was authenticated came back 401. Try to recover; sign out if not.
+  ///
+  /// Checking expiry is not enough on its own. A token can be **rejected while still being
+  /// unexpired** — the server's `SECRET_KEY` was rotated (which happened on 2026-07-30 and
+  /// broke every installed build), the session was blacklisted, the password changed, or the
+  /// account was deleted on another device. In all of those the local `exp` still looks fine,
+  /// so nothing would ever trigger a refresh and the app would sit there failing every
+  /// request in silence — the exact "app looks broken" symptom this whole file exists to
+  /// prevent.
+  ///
+  /// Returns true if the caller should retry.
+  static Future<bool> reportUnauthorized() async {
+    // If the token was rejected for a reason that also invalidates the refresh token (a key
+    // rotation does), this refresh fails with 401 and signs the user out — which is right.
+    return refreshNow();
+  }
+
   static Future<bool> _doRefresh() async {
     final refreshToken = await _storage.getRefreshToken();
     if (refreshToken == null || refreshToken.isEmpty) {

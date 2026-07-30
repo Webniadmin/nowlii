@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:nowlii/api/session.dart';
 import 'package:http/http.dart' as http;
 import 'package:nowlii/models/quest_suggestion_model.dart';
 import 'package:nowlii/api/api_constant.dart';
@@ -36,6 +37,7 @@ class QuestSuggestionService {
         print('==========================================\n');
         return QuestSuggestionResponse.fromJson(jsonData);
       } else {
+        if (response.statusCode == 401) await Session.reportUnauthorized();
         print('❌ Failed to fetch quest suggestions: ${response.statusCode}');
         print('==========================================\n');
         return null;

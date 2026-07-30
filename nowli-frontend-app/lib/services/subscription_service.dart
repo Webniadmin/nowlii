@@ -57,6 +57,7 @@ class SubscriptionService {
         await cacheAccess(status);
         return status;
       }
+      if (res.statusCode == 401) await Session.reportUnauthorized();
       print('❌ getMyStatus failed: ${res.statusCode} ${res.body}');
       return null;
     } catch (e) {

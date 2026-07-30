@@ -42,6 +42,7 @@ class StreakService {
         print('==========================================\n');
         return StreakResponse.fromJson(data);
       } else {
+        if (response.statusCode == 401) await Session.reportUnauthorized();
         print('❌ Failed to fetch streak: ${response.statusCode}');
         print('==========================================\n');
         return null;

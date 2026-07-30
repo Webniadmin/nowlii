@@ -109,6 +109,12 @@ class QuestService {
       if (response.statusCode == 402) {
         await SubscriptionService.markAccessRevoked();
       }
+      // 401 = the token was rejected even though it has not expired (server key rotated,
+      // session blacklisted, password changed). Recover or sign out — never sit here
+      // returning empty lists as if the user simply had no quests.
+      if (response.statusCode == 401) {
+        await Session.reportUnauthorized();
+      }
       return [];
     } catch (e) {
       print('❌ Error fetching quests: $e');
