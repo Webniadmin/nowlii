@@ -185,11 +185,26 @@ void main() {
       }
     });
 
-    test('honours a non-round time', () {
-      expect(
-        reminderFireTime(scheduledFor: DateTime(2026, 7, 30, 18, 42), now: now),
-        DateTime(2026, 7, 30, 18, 37),
-      );
+    test('is dynamic down to the minute, not just the hour', () {
+      // 16:30 must announce at 16:25 — nothing rounds to the hour.
+      const cases = {
+        [16, 30]: [16, 25],
+        [18, 42]: [18, 37],
+        [13, 2]: [12, 57], // crosses the hour backwards
+        [20, 0]: [19, 55],
+        [23, 59]: [23, 54],
+      };
+      cases.forEach((call, expected) {
+        expect(
+          reminderFireTime(
+            scheduledFor: DateTime(2026, 7, 30, call[0], call[1]),
+            now: now,
+          ),
+          DateTime(2026, 7, 30, expected[0], expected[1]),
+          reason: '${call[0]}:${call[1]} should announce at '
+              '${expected[0]}:${expected[1]}',
+        );
+      });
     });
 
     test('a call closer than the lead time still gets a reminder', () {

@@ -4,7 +4,8 @@ The point of most of these is the seam between a *plan* and the *quota*: a sched
 never reserves a slot, so the interesting cases are the ones where the user has fewer calls
 left than they have planned.
 """
-from datetime import date, datetime, time, timedelta
+from datetime import time, timedelta
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -61,6 +62,53 @@ class ScheduledCallSignalTests(TestCase):
             select_a_date=timezone.localdate() + timedelta(days=1),
             select_a_time=None, enable_call=True,
         )
+        self.assertFalse(ScheduledCall.objects.filter(quest=quest).exists())
+
+    def test_the_exact_minute_survives_the_whole_chain(self):
+        """16:30 must stay 16:30 — not round to the hour anywhere.
+
+        The time crosses several conversions on its way to a reminder: an "HH:MM" string
+        from the picker, a TimeField, `datetime.combine`, timezone-awareness, then ISO-8601
+        for the app. Any one of them silently dropping minutes would put every reminder on
+        the hour.
+        """
+        for hh, mm in [(16, 30), (6, 5), (23, 59), (9, 1), (18, 42)]:
+            quest = _quest(self.user, days_ahead=1, at=time(hh, mm), task=f'{hh}:{mm}')
+            local = timezone.localtime(ScheduledCall.objects.get(quest=quest).scheduled_for)
+            self.assertEqual(
+                (local.hour, local.minute), (hh, mm),
+                msg=f'{hh:02d}:{mm:02d} came back as {local.hour:02d}:{local.minute:02d}',
+            )
+
+    def test_a_time_string_from_the_picker_keeps_its_minutes(self):
+        """The picker sends "HH:MM".
+
+        post_save sees whatever is in memory, so a caller that assigns the raw string (a
+        management command, a fixture, a seed) hands us a str rather than a time. It must
+        still schedule 16:30, not blow up.
+        """
+        quest = Quests.objects.create(
+            user=self.user, task='Half past four', zone='Soft steps',
+            select_a_date=str(timezone.localdate() + timedelta(days=1)),
+            select_a_time='16:30',  # exactly what TimePickerCard emits
+            enable_call=True,
+        )
+        local = timezone.localtime(ScheduledCall.objects.get(quest=quest).scheduled_for)
+        self.assertEqual((local.hour, local.minute), (16, 30))
+
+    def test_a_quest_still_saves_when_scheduling_its_call_blows_up(self):
+        """The reminder is a convenience; the quest is the user's actual work.
+
+        Whatever goes wrong while scheduling, it must not make the quest impossible to
+        create — that would turn a missing reminder into lost work.
+        """
+        with mock.patch(
+            'Apps.voice_calls.signals._sync_scheduled_call',
+            side_effect=RuntimeError('scheduling exploded'),
+        ):
+            quest = _quest(self.user, days_ahead=1)
+
+        self.assertIsNotNone(quest.pk)
         self.assertFalse(ScheduledCall.objects.filter(quest=quest).exists())
 
     def test_moving_the_quest_moves_the_call(self):
