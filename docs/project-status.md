@@ -1,6 +1,34 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-07-29 (evening)_
+_Last reviewed: 2026-07-30 (evening)_
+
+## Completed this session (2026-07-30)
+
+_Full detail in `daily-reports/2026-07-30.md`; tomorrow's list in `daily-checklist.md`.
+11 commits, all deployed to EC2._
+
+- **Production hardening.** `nowli-ai` required no credentials at all while minting OpenAI
+  Realtime keys — an open door to the bill for anyone who knew the IP. The companion
+  catalogue was anonymously writable (any caller could DELETE every avatar). `SECRET_KEY` is
+  now enforced, DRF fails closed, JWTs no longer reach logcat, release signing is wired.
+- **Scheduled AI calls**, via a quest's existing "Enable call" toggle, with a local reminder
+  5 minutes before. The daily limit of 2 is fully wired in **without reserving anything** —
+  a scheduled call is a plan, not a booking — so the app warns before a swipe spends the
+  last call and offers "Move to tomorrow" after.
+- **Sessions now survive.** The app had stored a refresh token since day one with no route to
+  spend it; four rounds closed the gaps (route, lifetimes, 401 recovery, and a route guard
+  that accepted any non-empty string as a session).
+- **Account deletion is real.** It was a dialog that showed "Account deletion initiated" and
+  did nothing — a hard rejection under Play and Apple policy, and a false statement under the
+  GDPR. Privacy Policy is now linked; Terms of Service does not exist yet and is P0.
+- **A device report traced to one cause, not four bugs**: the day's `SECRET_KEY` rotation
+  invalidated every token, and the installed build had no way back from a 401.
+
+> ⛔ **Blocked on two external steps** before HTTPS: the `api`/`ai` DNS records at GoDaddy
+> (verified absent from the zone) and ports 80/443 in the AWS security group (verified
+> closed). HTTPS is what unblocks a real release build.
+
+_Previously reviewed: 2026-07-29 (evening)_
 
 ## Completed this session (2026-07-29, evening)
 

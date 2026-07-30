@@ -8,6 +8,23 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
+## ▶ START HERE (2026-07-31)
+
+**Two things block everything, and both are outside the code:** the `api`/`ai` A records at
+**GoDaddy** (checked against the authoritative nameservers — `NXDOMAIN`, so the record was
+never saved to that zone; adding it in Figma or Cloudflare has no effect), and **ports 80/443
+in the AWS security group** (confirmed closed, so certbot cannot issue). Exact steps in
+`daily-checklist.md`.
+
+Once those land: nginx + certbot → HTTPS on both subdomains → new APK → close 8000/8001.
+That is what removes the release blocker — a release build cannot use cleartext HTTP, so
+today it cannot reach the backend at all.
+
+Nothing was tested on a device on 2026-07-30. Scheduled-call reminders especially can only be
+proven there. Full day detail: `daily-reports/2026-07-30.md`.
+
+---
+
 ## ▶ RESUME HERE (2026-07-30) — production hardening + the real road to release
 
 **The headline: "production ready" has one blocker in front of everything else, and it is a
