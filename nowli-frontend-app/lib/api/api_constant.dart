@@ -29,6 +29,18 @@ class ApiConstants {
   static const String forgotPassword = '$apiPrefix/forgot-password/';
   static const String verifyForgotPasswordOtp = '$apiPrefix/verify-forgot-password-otp/';
   static const String setNewPassword = '$apiPrefix/set-new-password/';
+  // Permanent account deletion. Required by Google Play's data-deletion policy and Apple
+  // guideline 5.1.1(v) for any app that lets users create an account.
+  static const String deleteAccount = '$apiPrefix/delete-account/';
+
+  // ── Legal ──────────────────────────────────────────────────────────────────
+  // Play requires a reachable privacy policy URL for the listing AND in-app.
+  static const String privacyPolicyUrl = 'https://www.nowlii.com/privacy-policy';
+  // TODO(legal): Terms of Service does not exist yet. Publish it at
+  // https://www.nowlii.com/terms (or wherever), set it here, and re-enable the link on the
+  // sign-up screen — search for TODO(legal) in lib/screen/auth/sign_up.dart.
+  // Must be done before the store listing goes live.
+  static const String termsOfServiceUrl = '';
   
   // Profile endpoints
   static const String createProfile = '$profilePrefix/';

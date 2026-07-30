@@ -10,6 +10,26 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
 
 ---
 
+## P0 — Blocks the store listing
+
+- [ ] **Terms of Service does not exist.** The document was never written, so both places it
+      was referenced now hide the link rather than show dead text: the sign-up screen
+      (`lib/screen/auth/sign_up.dart`) and Settings → Privacy (`privacy_data_screen.dart`).
+      Both are marked `TODO(legal)`. **To restore:** publish the document, set
+      `ApiConstants.termsOfServiceUrl`, and uncomment the two blocks.
+      Privacy Policy is done — https://www.nowlii.com/privacy-policy, live and reachable
+      from both screens.
+- [ ] **HTTPS for the API.** Domain is `nowlii.com` (www is a Figma-hosted site behind
+      Cloudflare; the apex parks at a registrar IP). **Blocked on one DNS record:** an
+      `A` record for `api.nowlii.com` → `16.170.191.239`, DNS-only (grey cloud) so
+      Let's Encrypt can answer the HTTP-01 challenge on the box. Once it resolves:
+      nginx + certbot in front of :8000 and :8001, switch `dart_defines.prod.json` to
+      `https://`, then flip the HTTPS block in `~/backend/.env` (see `.env.example`).
+      Until then a **release** build cannot reach the backend at all — see `deploy-aws.md`.
+- [ ] **Release signing keystore** — not created yet; release builds fall back to the debug
+      keystore, which Play rejects. Wiring is done (`android/key.properties.example`).
+- [ ] **Real payments** — `activate` is a mock, `verify-receipt` a 501 stub. See P3 below.
+
 ## P1 — Security (do soon)
 
 - [ ] **Secret rotation (A5).** All `.env` secrets were exposed and must be rotated at the
@@ -38,8 +58,13 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
 - [ ] **Tests.** There is no test suite anywhere (backend `Apps` have no `tests.py`; `nowli-ai`
       has none). Add at least smoke/API tests for auth, quests CRUD, subtasks routing, and the
       Google login token-exchange view.
-- [ ] **Client-side JWT refresh.** No automatic refresh-token rotation on the client — services
-      just send the stored access token. Add refresh handling on 401.
+- [ ] **Client-side JWT refresh — the app looks broken after 31 days.** Nothing anywhere in
+      `lib/` handles a 401, and the stored refresh token is never used. The router guard only
+      checks that an `access_token` *exists*, not that it is valid, so once the 31-day access
+      token expires the user is let straight into the home screen where **every request
+      silently fails** — empty quests, empty Insights, refused calls — with nothing telling
+      them to sign in again. Fix: on 401, try the refresh token; if that fails too, clear
+      storage and route to sign-in.
 
 ## P3 — Features
 

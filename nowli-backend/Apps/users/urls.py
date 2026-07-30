@@ -10,6 +10,7 @@ from .views import (
     GoogleLoginAPI,
     AppleLoginAPI,
     apple_web_redirect,
+    DeleteAccountAPIView,
     LogoutAPIView,
     ForgotPasswordAPI,
     VerifyForgotPasswordOTPView,
@@ -39,6 +40,8 @@ urlpatterns = [
     # Apple web-redirect Return URL (Android web-flow only; see apple_web_redirect).
     path('auth/apple/callback/', apple_web_redirect, name='auth-apple-callback'),
     path('auth/logout/', LogoutAPIView.as_view(), name='auth-logout'),
+    # Required by Google Play's data-deletion policy and Apple guideline 5.1.1(v).
+    path('auth/delete-account/', DeleteAccountAPIView.as_view(), name='auth-delete-account'),
     path('auth/forgot-password/', ForgotPasswordAPI.as_view(), name='auth-forgot-password'),
     path('auth/verify-forgot-password-otp/', VerifyForgotPasswordOTPView.as_view(), name='auth-verify-forgot-password-otp'),
     path('auth/set-new-password/', SetNewPasswordAPI.as_view(), name='auth-set-new-password'),

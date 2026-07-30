@@ -1,6 +1,11 @@
 // Delete Account Confirmation Dialog
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:nowlii/api/auth_service.dart';
+import 'package:nowlii/api/storage.dart';
+import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
+import 'package:nowlii/services/call_reminder_service.dart';
 import 'package:nowlii/themes/text_styles.dart';
 
 class DeleteAccountDialog extends StatelessWidget {
@@ -141,13 +146,47 @@ class DeleteAccountDialog extends StatelessWidget {
     );
   }
 
-  void _handleDeleteAccount(BuildContext context) {
-    // Implement account deletion logic
+  /// Actually delete the account.
+  ///
+  /// This used to show "Account deletion initiated" and do nothing whatsoever — no request,
+  /// no endpoint. Now it deletes on the server, clears everything stored on the device and
+  /// sends the user back to the sign-in screen, because there is no longer an account for
+  /// them to return to.
+  Future<void> _handleDeleteAccount(BuildContext context) async {
+    // Blocking spinner: this is irreversible, so the user must not be able to tap it twice
+    // or wander off mid-request.
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final deleted = await AuthService().deleteAccount();
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // dismiss the spinner
+
+    if (!deleted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Couldn't delete your account. Please check your connection and try again."),
+          backgroundColor: Color(0xFFE53935),
+        ),
+      );
+      return;
+    }
+
+    // The account is gone, so every stored token and cached profile is meaningless.
+    await StorageService().clearAll();
+    // Reminders point at calls that no longer exist.
+    await CallReminderService.instance.cancelAll();
+    if (!context.mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Account deletion initiated'),
-        backgroundColor: Color(0xFFE53935),
+        content: Text('Your account and all of your data have been permanently deleted.'),
+        backgroundColor: Color(0xFF2E7D32),
       ),
     );
+    context.go(AppRoutespath.signInScreen);
   }
 }

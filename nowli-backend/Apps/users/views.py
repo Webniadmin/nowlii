@@ -13,8 +13,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
 
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
@@ -702,6 +707,90 @@ def apple_web_redirect(request):
     resp = HttpResponse(status=307)
     resp['Location'] = intent
     return resp
+
+
+# ------------------------------------------------------------------------------
+# DELETE ACCOUNT
+# ------------------------------------------------------------------------------
+class DeleteAccountAPIView(APIView):
+    """`POST /api/auth/delete-account/` — permanently delete the caller's account.
+
+    Both stores require this: Google Play's data-deletion policy and Apple's guideline
+    5.1.1(v) oblige any app that creates accounts to let the user delete theirs from inside
+    the app. It is also the GDPR right to erasure.
+
+    Everything the user owns is removed by database cascade — profile, quests and subtasks,
+    voice calls with their summaries and emotion snapshots, scheduled calls, insights,
+    subscription and support messages. The one thing a cascade does NOT take with it is the
+    uploaded avatar in S3, so that file is deleted explicitly.
+
+    Deliberately a hard delete, not a soft flag: "deleted" that still holds the data is not
+    what either store or the GDPR means.
+    """
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+    @swagger_auto_schema(
+        operation_summary="Delete my account permanently",
+        operation_description=(
+            "Irreversibly deletes the authenticated user and every record belonging to "
+            "them. Requires `confirm: true` in the body so a stray request cannot destroy "
+            "an account. Any token held by the client stops working immediately, because "
+            "the user it points at no longer exists."
+        ),
+        tags=['Authentication'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['confirm'],
+            properties={
+                'confirm': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    description='Must be true. Explicit acknowledgement that this is permanent.',
+                ),
+            },
+        ),
+        responses={
+            200: openapi.Response(description="Account deleted"),
+            400: openapi.Response(description="Missing confirmation"),
+            401: "Unauthorized - Authentication required",
+        },
+    )
+    def post(self, request):
+        if request.data.get('confirm') not in (True, 'true', 'True', 1, '1'):
+            return Response(
+                {'detail': 'Set "confirm": true to delete your account. This cannot be undone.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = request.user
+        user_id, user_email = user.pk, user.email
+
+        # The avatar lives in S3 and would survive the cascade as an orphaned object.
+        profile = getattr(user, 'profile', None)
+        if profile is not None and profile.profile_image:
+            try:
+                profile.profile_image.delete(save=False)
+            except Exception:
+                # Never block the deletion on a storage hiccup — the account matters more
+                # than one leftover file, and the row is going regardless.
+                logger.exception('Could not delete the avatar for user %s', user_id)
+
+        # Best-effort: stop any outstanding refresh tokens from being usable in the window
+        # before their rows cascade away.
+        try:
+            for token in OutstandingToken.objects.filter(user=user):
+                BlacklistedToken.objects.get_or_create(token=token)
+        except Exception:
+            logger.exception('Could not blacklist tokens for user %s', user_id)
+
+        user.delete()
+        logger.info('Deleted account %s (%s) at the user\'s request', user_id, user_email)
+
+        return Response(
+            {'message': 'Your account and all of your data have been permanently deleted.'},
+            status=status.HTTP_200_OK,
+        )
 
 
 # ------------------------------------------------------------------------------

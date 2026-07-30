@@ -1,9 +1,11 @@
 // AppsTextStyles.textDefaultStyle
 
 import 'package:flutter/material.dart';
+import 'package:nowlii/api/api_constant.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/screen/settings/privacy_data/delete_account_dialog/delete_account_dialog.dart';
 import 'package:nowlii/themes/text_styles.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class PrivacyDataScreen extends StatelessWidget {
   const PrivacyDataScreen({super.key});
@@ -70,20 +72,26 @@ class PrivacyDataScreen extends StatelessWidget {
                       height: 40,
                     ),
                     title: 'Privacy Policy',
-                    onTap: () => _navigateToPolicy(context, 'Privacy Policy'),
+                    onTap: () =>
+                        _openLegalUrl(context, ApiConstants.privacyPolicyUrl),
                   ),
                   const SizedBox(height: 12),
-                  _buildPrivacyItem(
-                    context: context,
-                    iconWidget: Image.asset(
-                      Assets.svgIcons.privacyPolicy.path,
-                      width: 40,
-                      height: 40,
-                    ),
-                    title: 'Terms of Use',
-                    onTap: () => _navigateToPolicy(context, 'Terms of Use'),
-                  ),
-                  const SizedBox(height: 12),
+                  // TODO(legal): Terms of Use is not written yet. The row is hidden rather
+                  // than left showing a dead "Opening Terms of Use" toast. Publish the
+                  // document, set ApiConstants.termsOfServiceUrl, and restore this block —
+                  // it must be live before the store listing.
+                  // _buildPrivacyItem(
+                  //   context: context,
+                  //   iconWidget: Image.asset(
+                  //     Assets.svgIcons.privacyPolicy.path,
+                  //     width: 40,
+                  //     height: 40,
+                  //   ),
+                  //   title: 'Terms of Use',
+                  //   onTap: () =>
+                  //       _openLegalUrl(context, ApiConstants.termsOfServiceUrl),
+                  // ),
+                  // const SizedBox(height: 12),
                   _buildPrivacyItem(
                     context: context,
                     iconWidget: Image.asset(
@@ -157,10 +165,19 @@ class PrivacyDataScreen extends StatelessWidget {
     );
   }
 
-  void _navigateToPolicy(BuildContext context, String policyType) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Opening $policyType')));
+  /// Open a legal document in the browser.
+  ///
+  /// This used to show an "Opening Privacy Policy" toast and go nowhere. Play requires the
+  /// policy to be genuinely reachable from inside the app, not just from the listing.
+  Future<void> _openLegalUrl(BuildContext context, String url) async {
+    if (url.isEmpty) return; // not published yet — see TODO(legal)
+    final opened =
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Couldn't open $url")),
+      );
+    }
   }
 
   void _showDeleteAccountDialog(BuildContext context) {

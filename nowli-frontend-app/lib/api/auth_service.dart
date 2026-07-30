@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import 'api_constant.dart';
@@ -200,5 +203,41 @@ class AuthService {
       ApiConstants.setNewPassword,
       request.toJson(),
     );
+  }
+
+  /// Permanently delete the signed-in account and everything belonging to it.
+  ///
+  /// Required by Google Play's data-deletion policy and Apple guideline 5.1.1(v), and by
+  /// the GDPR right to erasure. Irreversible — the caller is responsible for confirming
+  /// with the user first.
+  ///
+  /// Returns true only when the server actually deleted the account. On anything else the
+  /// caller must keep the user signed in and say so: wrongly reporting success here would
+  /// leave someone believing their data is gone when it is not.
+  Future<bool> deleteAccount() async {
+    try {
+      final token = await _storage.getAccessToken();
+      if (token == null || token.isEmpty) return false;
+
+      final response = await http
+          .post(
+            Uri.parse('${ApiConstants.baseUrl}${ApiConstants.deleteAccount}'),
+            headers: {
+              'Content-Type': ApiConstants.contentType,
+              'accept': ApiConstants.accept,
+              'Authorization': 'Bearer $token',
+            },
+            // The backend refuses without this, so a stray request cannot destroy an account.
+            body: jsonEncode({'confirm': true}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200) return true;
+      print('⚠️ deleteAccount status: ${response.statusCode} — ${response.body}');
+      return false;
+    } catch (e) {
+      print('❌ deleteAccount error: $e');
+      return false;
+    }
   }
 }

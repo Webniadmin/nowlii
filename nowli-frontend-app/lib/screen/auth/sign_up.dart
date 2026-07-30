@@ -7,8 +7,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart' show Assets;
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/themes/text_styles.dart' show AppsTextStyles;
+import 'package:nowlii/api/api_constant.dart';
 import 'package:nowlii/api/auth_controller.dart';
 import 'package:nowlii/api/google_sign_in_flow.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -122,6 +124,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
         ),
       ),
     );
+  }
+
+  /// Open a legal document in the browser.
+  ///
+  /// External application rather than an in-app webview: the policy is a real page on
+  /// nowlii.com and users should be able to see the address bar for something they are
+  /// being asked to agree to.
+  Future<void> _openLegalUrl(String url) async {
+    if (url.isEmpty) return; // not published yet — see TODO(legal)
+    final uri = Uri.parse(url);
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Couldn't open $url")),
+      );
+    }
   }
 
   Widget _buildContent(BuildContext context) {
@@ -412,26 +430,36 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 color: const Color(0xFF4C586E),
               ),
               children: [
-                const TextSpan(text: 'By signing up, you agree to Nowlii’s'),
+                const TextSpan(text: 'By signing up, you agree to Nowlii’s '),
                 TextSpan(
-                  text: 'Privacy Policy ',
+                  text: 'Privacy Policy',
                   style: GoogleFonts.workSans(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: const Color(0xFF4542EB),
                     decoration: TextDecoration.underline,
                   ),
+                  // Was styled as a link but had no recognizer, so it did nothing. Play
+                  // requires a reachable privacy policy, in-app as well as on the listing.
+                  recognizer: TapGestureRecognizer()
+                    ..onTap = () => _openLegalUrl(ApiConstants.privacyPolicyUrl),
                 ),
-                const TextSpan(text: '&'),
-                TextSpan(
-                  text: 'Terms of Service',
-                  style: GoogleFonts.workSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF4542EB),
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
+                // TODO(legal): Terms of Service is not written yet, so the link is hidden
+                // rather than shown as dead text. Publish it, set
+                // ApiConstants.termsOfServiceUrl, and restore the "&  Terms of Service"
+                // span below. MUST be done before the store listing goes live.
+                // const TextSpan(text: ' & '),
+                // TextSpan(
+                //   text: 'Terms of Service',
+                //   style: GoogleFonts.workSans(
+                //     fontSize: 14,
+                //     fontWeight: FontWeight.w600,
+                //     color: const Color(0xFF4542EB),
+                //     decoration: TextDecoration.underline,
+                //   ),
+                //   recognizer: TapGestureRecognizer()
+                //     ..onTap = () => _openLegalUrl(ApiConstants.termsOfServiceUrl),
+                // ),
                 const TextSpan(text: '.'),
               ],
             ),
