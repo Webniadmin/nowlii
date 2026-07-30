@@ -2,11 +2,13 @@ import 'dart:convert';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import 'package:nowlii/models/scheduled_call.dart';
+import 'package:nowlii/services/scheduled_call_state.dart';
 import 'package:nowlii/services/voice_call_service.dart';
 
 /// Local reminders for calls the user planned on a quest.
@@ -119,14 +121,18 @@ class CallReminderService {
     await _plugin.cancelAll();
 
     final now = DateTime.now();
-    final horizon = now.add(const Duration(days: _horizonDays));
     final today = DateTime(now.year, now.month, now.day);
 
     for (final call in scheduled) {
       if (!call.isPending) continue;
 
-      final fireAt = call.scheduledFor.subtract(const Duration(minutes: _leadMinutes));
-      if (fireAt.isBefore(now) || fireAt.isAfter(horizon)) continue;
+      final fireAt = reminderFireTime(
+        scheduledFor: call.scheduledFor,
+        now: now,
+        lead: const Duration(minutes: _leadMinutes),
+        horizon: const Duration(days: _horizonDays),
+      );
+      if (fireAt == null) continue;
 
       // Today's calls are dead if the quota is already gone. Say so, and offer the way out,
       // instead of inviting the user into a call the backend will refuse.
@@ -137,13 +143,22 @@ class CallReminderService {
 
   Future<void> _schedule(ScheduledCall call, DateTime fireAt,
       {required bool stranded}) async {
+    // Everything below is built from this call's own time — nothing about the copy is
+    // fixed to a particular hour.
+    final at = DateFormat('HH:mm').format(call.scheduledFor);
+    final quest = call.questTitle.trim();
+    final named = quest.isEmpty ? 'Your $at call' : '"$quest" at $at';
+
+    // How long the user really has when the reminder lands. Normally the full lead time,
+    // but less when the quest was created moments before its own start.
+    final minutesLeft = call.scheduledFor.difference(fireAt).inMinutes;
+
     final title = stranded ? 'No calls left today' : 'Time to talk to Nowlii';
     final body = stranded
-        ? "You've used both of today's calls. Tap to move "
-            '"${call.questTitle}" to tomorrow.'
-        : call.questTitle.isEmpty
-            ? 'Your call starts in $_leadMinutes minutes.'
-            : '"${call.questTitle}" — your call starts in $_leadMinutes minutes.';
+        ? "You've used both of today's calls, so $named can't run. Tap to move it to tomorrow."
+        : minutesLeft >= 1
+            ? '$named starts in $minutesLeft ${minutesLeft == 1 ? "minute" : "minutes"}.'
+            : '$named is starting now.';
 
     await _plugin.zonedSchedule(
       call.id, // reusing the row id keeps re-syncs idempotent

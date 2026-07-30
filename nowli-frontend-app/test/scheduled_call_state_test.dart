@@ -170,6 +170,60 @@ void main() {
     });
   });
 
+  group('when the reminder fires', () {
+    // Nothing here is tied to a particular hour — the fire time is always derived from the
+    // call's own time, whether the user picked 17:00, 06:30 or anything else.
+    test('fires the lead time before the call, whatever the hour', () {
+      // Tomorrow, so every hour of the day is genuinely in the future from `now` (12:00).
+      for (final hour in [6, 13, 17, 23]) {
+        final call = DateTime(2026, 7, 31, hour, 0);
+        expect(
+          reminderFireTime(scheduledFor: call, now: now),
+          call.subtract(const Duration(minutes: 5)),
+          reason: 'a $hour:00 call must be announced at ${hour - 1}:55',
+        );
+      }
+    });
+
+    test('honours a non-round time', () {
+      expect(
+        reminderFireTime(scheduledFor: DateTime(2026, 7, 30, 18, 42), now: now),
+        DateTime(2026, 7, 30, 18, 37),
+      );
+    });
+
+    test('a call closer than the lead time still gets a reminder', () {
+      // Created at 11:58 for 12:00 — the naive "skip anything in the past" check dropped
+      // this one silently.
+      final soon = now.add(const Duration(minutes: 2));
+      final fireAt = reminderFireTime(scheduledFor: soon, now: now);
+      expect(fireAt, isNotNull);
+      expect(fireAt!.isBefore(soon), isTrue);
+      expect(fireAt.difference(now).inSeconds, lessThan(60));
+    });
+
+    test('a call that has already passed gets none', () {
+      expect(
+        reminderFireTime(scheduledFor: now.subtract(const Duration(minutes: 1)), now: now),
+        isNull,
+      );
+    });
+
+    test('a call beyond the scheduling horizon gets none yet', () {
+      expect(
+        reminderFireTime(scheduledFor: now.add(const Duration(days: 8)), now: now),
+        isNull,
+      );
+    });
+
+    test('a call just inside the horizon is scheduled', () {
+      expect(
+        reminderFireTime(scheduledFor: now.add(const Duration(days: 6)), now: now),
+        isNotNull,
+      );
+    });
+  });
+
   test("the client's scenario: one call used, one planned, then a swipe", () {
     final planned = now.add(const Duration(hours: 5)); // 17:00
 

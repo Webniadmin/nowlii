@@ -85,6 +85,28 @@ bool isStartable(ScheduledCallState state) =>
 bool canReschedule(ScheduledCallState state) =>
     state == ScheduledCallState.locked || state == ScheduledCallState.missed;
 
+/// When a reminder for [scheduledFor] should actually fire, or null if it should not.
+///
+/// Normally [lead] before the call. Two edges matter:
+///  * the call itself has already passed → no reminder; the quest card shows it as missed
+///    and a notification would only be noise;
+///  * the call is closer than [lead] (a quest created at 17:58 for 18:00) → nudge almost
+///    immediately rather than dropping the reminder silently, which is what a naive
+///    "skip anything in the past" check does.
+DateTime? reminderFireTime({
+  required DateTime scheduledFor,
+  required DateTime now,
+  Duration lead = const Duration(minutes: 5),
+  Duration horizon = const Duration(days: 7),
+}) {
+  if (!scheduledFor.isAfter(now)) return null;
+
+  final fireAt = scheduledFor.subtract(lead);
+  if (fireAt.isAfter(now.add(horizon))) return null;
+  if (fireAt.isBefore(now)) return now.add(const Duration(seconds: 5));
+  return fireAt;
+}
+
 /// Whether starting a call *right now* would strand something already scheduled.
 ///
 /// Drives the confirmation on the home-screen swipe: spending the day's last call is fine,
