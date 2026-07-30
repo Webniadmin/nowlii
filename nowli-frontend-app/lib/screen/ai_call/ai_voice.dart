@@ -12,6 +12,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:nowlii/services/audio_stream_service.dart';
+import 'package:nowlii/services/call_time_announcer.dart';
 import 'package:nowlii/services/realtime_call_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -27,12 +28,23 @@ class AiVoice extends StatefulWidget {
   State<AiVoice> createState() => _AiVoiceState();
 }
 
-class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
+class _AiVoiceState extends State<AiVoice>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   // Call duration policy. The backend is the source of truth for the daily call *count*;
   // these constants govern the in-call *timer* the user sees. Initial 5 minutes, with a
   // single optional +2.5 minute extension → 7.5 minutes maximum.
   static const Duration _initialDuration = Duration(minutes: 5);
   static const Duration _extensionDuration = Duration(minutes: 2, seconds: 30);
+
+  // The "Add 2.5 minutes" card appears with this much time left.
+  static const int _extensionPromptSeconds = 60;
+  // Nowlii says it out loud this many seconds BEFORE that card appears, so the user hears
+  // the option coming instead of noticing a card mid-sentence — and knows the call ends by
+  // itself if they ignore it.
+  static const int _spokenWarningLeadSeconds = 10;
+  // How often the model is quietly told how much time is left, so it can answer "how long
+  // do we have?" truthfully. One item per minute is negligible against the call's cost.
+  static const int _timeContextIntervalSeconds = 60;
 
   // UI-TD-001: mic sound level (rms) above this ≈ the user is speaking. The
   // platform values are roughly dB on Android; the icon lights on voice activity.
@@ -61,6 +73,13 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
   bool _showStartNotice = false; // "this call lasts up to N minutes" on connect
   bool _showOneMinuteWarning = false; // 1 minute left (offers the extension if unused)
   bool _showThirtySecWarning = false; // 30 seconds left
+  // Owns the "when does Nowlii mention the clock" rules (fires once, re-arms on extension).
+  // Kept as a separate object so those rules are unit-tested — see call_time_announcer.dart.
+  final CallTimeAnnouncer _timeAnnouncer = CallTimeAnnouncer(
+    promptSeconds: _extensionPromptSeconds,
+    leadSeconds: _spokenWarningLeadSeconds,
+    contextIntervalSeconds: _timeContextIntervalSeconds,
+  );
   int _speechTimeoutStreak = 0; // consecutive "can't hear you" speech errors (no audio)
   bool _micHintShown = false;   // show the "check your microphone" hint at most once per streak
   int _countdownValue = 0; // >0 during the final 10-second countdown
@@ -148,9 +167,10 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     _totalDuration = _initialDuration;
     _elapsedTime = Duration.zero;
 
-    // Keep the screen awake for the whole call: if the phone locks / screen sleeps mid-call
-    // the WebRTC connection drops and the call is lost. Released in dispose(). Best-effort.
-    WakelockPlus.enable().catchError((e) => print('⚠️ Wakelock enable failed: $e'));
+    // Keep the screen awake for the whole call: if the screen sleeps mid-call the WebRTC
+    // connection drops and the call is lost. Released in dispose().
+    WidgetsBinding.instance.addObserver(this); // re-assert it when we come back to the front
+    _keepScreenAwake();
 
     // Progress animation
     _progressController = AnimationController(
@@ -166,6 +186,47 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
 
     // Gate the call on the backend daily limit before starting anything.
     _authorizeAndBegin();
+  }
+
+  /// Hold the screen on for the duration of the call.
+  ///
+  /// `WakelockPlus.enable()` sets `FLAG_KEEP_SCREEN_ON` on the current window, so the flag
+  /// belongs to the window and is lost whenever the app leaves the foreground — coming back
+  /// from a notification, another app, or the recents switcher returns with the screen free
+  /// to sleep again. So this is re-asserted on resume, not set once in initState.
+  ///
+  /// It is also verified rather than fired and forgotten: a silently failed enable is
+  /// exactly the case the user reports as "the screen still locked and the call died".
+  Future<void> _keepScreenAwake() async {
+    try {
+      await WakelockPlus.enable();
+      final on = await WakelockPlus.enabled;
+      if (!on) {
+        // One retry — some OEM ROMs drop the first request right after a permission dialog.
+        await WakelockPlus.enable();
+        print('⚠️ Wakelock did not take on the first try; retried. '
+            'Now: ${await WakelockPlus.enabled}');
+      }
+    } catch (e) {
+      print('⚠️ Wakelock enable failed: $e — the screen may sleep and drop the call');
+    }
+  }
+
+  Future<void> _releaseScreenAwake() async {
+    try {
+      await WakelockPlus.disable();
+    } catch (e) {
+      print('⚠️ Wakelock disable failed: $e');
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // Only while the call is actually running — once it is over, let the screen sleep.
+    if (state == AppLifecycleState.resumed && !_questCompleted) {
+      _keepScreenAwake();
+    }
   }
 
   /// Ask the backend to register a new call (this enforces the per-user daily limit).
@@ -355,6 +416,9 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     if (mounted) setState(() => _connecting = false);
     _startCall();
     _showStartDurationNotice();
+    // Give the model the clock up front, so it is time-aware from the first turn rather
+    // than only once the first minute boundary passes.
+    _sendTimeContext(_totalDuration.inSeconds);
   }
 
   void _showStartDurationNotice() {
@@ -1177,37 +1241,95 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
 
   void _startCall() {
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!_isPaused && mounted) {
-        setState(() {
-          _elapsedTime = Duration(seconds: _elapsedTime.inSeconds + 1);
+      if (_isPaused || !mounted) return;
 
-          // Update progress relative to the current total (grows if the call is extended).
-          _progressController.value = _elapsedTime.inSeconds / _totalDuration.inSeconds;
+      // Time-based notifications are all measured against the *remaining* time so they
+      // adapt automatically to the extended 7.5-minute maximum when used.
+      final remaining = _totalDuration.inSeconds - (_elapsedTime.inSeconds + 1);
 
-          // Time-based notifications, all measured against the *remaining* time so they
-          // adapt automatically to the extended 7.5-minute maximum when used.
-          final remaining = _totalDuration.inSeconds - _elapsedTime.inSeconds;
+      setState(() {
+        _elapsedTime = Duration(seconds: _elapsedTime.inSeconds + 1);
 
-          if (remaining <= 0) {
-            // Time is up — end the call automatically.
-            _countdownValue = 0;
-            _onQuestComplete();
-          } else if (remaining <= 10) {
-            // Final 10 seconds: show the countdown, hide the banners.
-            _countdownValue = remaining;
-            _showOneMinuteWarning = false;
-            _showThirtySecWarning = false;
-          } else if (remaining <= 30) {
-            // 30 seconds left.
-            _showThirtySecWarning = true;
-            _showOneMinuteWarning = false;
-          } else if (remaining <= 60) {
-            // 1 minute left (offers the one-time extension while it is still unused).
-            _showOneMinuteWarning = true;
-          }
-        });
-      }
+        // Update progress relative to the current total (grows if the call is extended).
+        _progressController.value = _elapsedTime.inSeconds / _totalDuration.inSeconds;
+
+        if (remaining <= 0) {
+          // Time is up — end the call automatically.
+          _countdownValue = 0;
+          _onQuestComplete();
+        } else if (remaining <= 10) {
+          // Final 10 seconds: show the countdown, hide the banners.
+          _countdownValue = remaining;
+          _showOneMinuteWarning = false;
+          _showThirtySecWarning = false;
+        } else if (remaining <= 30) {
+          // 30 seconds left.
+          _showThirtySecWarning = true;
+          _showOneMinuteWarning = false;
+        } else if (remaining <= _extensionPromptSeconds) {
+          // 1 minute left (offers the one-time extension while it is still unused).
+          _showOneMinuteWarning = true;
+        }
+      });
+
+      // Kept out of setState: these talk to the model, which is not a UI concern and must
+      // never run from a build.
+      if (remaining > 0) _updateAiTimeAwareness(remaining);
     });
+  }
+
+  /// Keep Nowlii aware of the clock, and have it warn the user before the call runs out.
+  ///
+  /// The *when* lives in [CallTimeAnnouncer]; this only carries out what it decides.
+  void _updateAiTimeAwareness(int remaining) {
+    switch (_timeAnnouncer.onTick(remaining)) {
+      case CallTimeCue.speakEndingSoonCanExtend:
+        _announceCallEndingSoon(canExtend: true);
+      case CallTimeCue.speakEndingSoonFinal:
+        _announceCallEndingSoon(canExtend: false);
+      case CallTimeCue.sendSilentTimeContext:
+        _sendTimeContext(remaining);
+      case null:
+        break;
+    }
+  }
+
+  /// Tell the model how much time is left, silently — it must not read this out.
+  void _sendTimeContext(int remaining) {
+    if (!_useRealtime || !_realtime.isConnected) return;
+    final mins = remaining ~/ 60;
+    final secs = remaining % 60;
+    final left = mins > 0 ? '$mins min ${secs}s' : '${secs}s';
+    _realtime.sendSilentContext(
+      'Background information only — do not mention it unless the user asks about time: '
+      'about $left of this call remains. '
+      '${_extensionUsed ? 'It has already been extended and cannot be extended again.' : 'The user can add 2.5 minutes once, by tapping a card that appears near the end.'}',
+    );
+  }
+
+  /// Nowlii tells the user, out loud and in its own words, that time is nearly up.
+  ///
+  /// When [canExtend] is false the extension is already spent, so the wording must not
+  /// dangle an option that no longer exists.
+  void _announceCallEndingSoon({required bool canExtend}) {
+    final instructions = canExtend
+        ? 'The call has about a minute left. In one short, warm sentence, tell the user a card '
+          'will appear on screen that they can tap to add 2.5 more minutes, and that otherwise '
+          'the call will end on its own. Do not ask a question.'
+        : 'The call has about a minute left and cannot be extended again. In one short, warm '
+          'sentence, let the user know you will need to wrap up soon so they can finish their '
+          'thought. Do not ask a question.';
+
+    if (_useRealtime) {
+      if (_realtime.isConnected) _realtime.speak(instructions);
+      return;
+    }
+
+    // Legacy speech-to-text/TTS fallback path: no model to instruct, so speak fixed copy.
+    _speakText(canExtend
+        ? "We have about a minute left. Tap the card on your screen to add two and a half "
+          "more minutes — otherwise the call will end on its own."
+        : "We're nearly out of time, so let's start wrapping up.");
   }
 
   void _togglePause() {
@@ -1282,6 +1404,11 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
       _showThirtySecWarning = false;
       _countdownValue = 0;
     });
+
+    // Arm the spoken warning again so the user is told before the *real* end too — this
+    // time without offering another extension, since there isn't one.
+    _timeAnnouncer.onExtended();
+    _sendTimeContext(_totalDuration.inSeconds - _elapsedTime.inSeconds);
 
     // Show success popup (same style as the existing in-call dialogs)
     showDialog(
@@ -1400,7 +1527,8 @@ class _AiVoiceState extends State<AiVoice> with TickerProviderStateMixin {
     // Best-effort: if the user leaves the screen mid-call, still record the end.
     _reportCallEnd();
     // Let the screen sleep normally again now that the call is over.
-    WakelockPlus.disable().catchError((e) => print('⚠️ Wakelock disable failed: $e'));
+    WidgetsBinding.instance.removeObserver(this);
+    _releaseScreenAwake();
     _timer?.cancel();
     _listeningCheckTimer?.cancel(); // Cancel listening check timer
     _micOffTimer?.cancel(); // UI-TD-001: cancel the mic-icon debounce timer

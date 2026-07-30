@@ -33,6 +33,12 @@ class RealtimeCallService {
   bool _dcOpen = false;
   final List<Map<String, dynamic>> _outbox = []; // events queued until the channel opens
 
+  // The Realtime API allows only one response at a time — asking for a second while one is
+  // generating is rejected outright. A prompt we send on a timer (the end-of-call warning)
+  // can land mid-reply, so track the state and hold the request until the model finishes.
+  bool _responseActive = false;
+  Map<String, dynamic>? _deferredResponse;
+
   // Transcript collection for the end-of-call summary.
   final List<RealtimeTurn> _turns = [];
   String _pendingUser = '';
@@ -182,6 +188,7 @@ class RealtimeCallService {
         }
         break;
       case 'response.created':
+        _responseActive = true;
         _pendingAssistant = '';
         onAiSpeakingChange?.call(true);
         break;
@@ -197,6 +204,7 @@ class RealtimeCallService {
         if (_pendingAssistant.isNotEmpty) onAssistantText?.call(_pendingAssistant);
         break;
       case 'response.done':
+        _responseActive = false;
         onAiSpeakingChange?.call(false);
         if (_pendingUser.isNotEmpty || _pendingAssistant.isNotEmpty) {
           _turns.add(RealtimeTurn(
@@ -205,6 +213,13 @@ class RealtimeCallService {
           ));
           _pendingUser = '';
           _pendingAssistant = '';
+        }
+        // A prompt that arrived mid-reply waited for this moment.
+        final deferred = _deferredResponse;
+        if (deferred != null) {
+          _deferredResponse = null;
+          _responseActive = true;
+          _enqueue(deferred);
         }
         break;
       case 'error':
@@ -244,6 +259,46 @@ class RealtimeCallService {
       'response': {
         'instructions':
             'Greet$who warmly in one short, natural sentence and gently ask how they are doing right now.',
+      },
+    });
+  }
+
+  /// Have Nowlii say something the app decided it should say (e.g. "your call is nearly
+  /// up"), in its own voice and language.
+  ///
+  /// [instructions] is a directive to the model, not a script — it replaces the session
+  /// instructions for this one response, so say what to convey rather than the exact words.
+  ///
+  /// If the model is mid-reply the request is held until it finishes, because the Realtime
+  /// API rejects a second concurrent response. Only the latest held request survives: an
+  /// out-of-date time warning is worse than none.
+  void speak(String instructions) {
+    final event = {
+      'type': 'response.create',
+      'response': {'instructions': instructions},
+    };
+    if (_responseActive) {
+      _deferredResponse = event;
+      return;
+    }
+    _responseActive = true;
+    _enqueue(event);
+  }
+
+  /// Add context the model can use but must not read out — e.g. how much of the call is
+  /// left, so it can answer "how much time do we have?" truthfully.
+  ///
+  /// Deliberately does NOT trigger a response: this only lands in the conversation for the
+  /// model's *next* turn, so it costs input tokens and never interrupts the user.
+  void sendSilentContext(String text) {
+    _enqueue({
+      'type': 'conversation.item.create',
+      'item': {
+        'type': 'message',
+        'role': 'system',
+        'content': [
+          {'type': 'input_text', 'text': text},
+        ],
       },
     });
   }
@@ -294,6 +349,11 @@ class RealtimeCallService {
 
   Future<void> disconnect() async {
     _connected = false;
+    _dcOpen = false;
+    // Drop anything still waiting to be said — the call is over.
+    _responseActive = false;
+    _deferredResponse = null;
+    _outbox.clear();
     try {
       await _dc?.close();
     } catch (_) {}
