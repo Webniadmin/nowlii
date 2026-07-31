@@ -181,7 +181,7 @@ class _AvatarLogoState extends State<AvatarLogo> {
             //   textStyle: AppsTextStyles.letsStartNext.copyWith(fontSize: 36),
             // ),
             GestureDetector(
-              onTap: () => context.push("/avatarLogoAndName"),
+              onTap: () => context.go("/avatarLogoAndName"),
               child: Container(
                 width: 354,
                 height: 116,

@@ -105,7 +105,11 @@ class _AnimatedOnboardingTopbarState extends State<AnimatedOnboardingTopbar>
             if (widget.onBackPressed != null) {
               widget.onBackPressed!();
             } else if (widget.backRoute.isNotEmpty) {
-              context.push(widget.backRoute);
+              // `go`, not `push`. Onboarding is a straight line, and pushing
+              // for *back* grew the stack on every tap — walking back and
+              // forth a few times left a dozen dead screens underneath, and
+              // the system back gesture then replayed them all.
+              context.go(widget.backRoute);
             }
           },
           child: SizedBox(
@@ -211,7 +215,8 @@ class _AnimatedOnboardingTopbarState extends State<AnimatedOnboardingTopbar>
         ),
         SizedBox(width: widget.screenWidth * 0.015),
         GestureDetector(
-          onTap: () => context.push(widget.skipRoute),
+          // Same reason as back: replace rather than stack.
+          onTap: () => context.go(widget.skipRoute),
           child: Container(
             padding: EdgeInsets.symmetric(
               horizontal: widget.isSmallDevice ? 8 : 12,

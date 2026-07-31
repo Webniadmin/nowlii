@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:nowlii/api/onboarding_data.dart';
 import 'package:nowlii/api/session.dart';
 import 'package:nowlii/core/app_routes/app_pages.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
@@ -29,6 +30,11 @@ void main() async {
     );
   };
   await reminders.init();
+
+  // Bring back any half-finished onboarding. Without this, killing the app
+  // mid-flow lost every answer, and since the account already exists by then the
+  // user could end up in the app with no profile and no way to make one.
+  await OnboardingData().restore();
 
   // When the refresh token is finally spent, the session is genuinely over — take the user
   // to sign-in instead of leaving them on a screen where everything quietly fails. Wired

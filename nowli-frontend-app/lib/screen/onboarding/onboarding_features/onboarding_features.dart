@@ -114,7 +114,7 @@ class OnboardingFeatures extends StatelessWidget {
 
                     /// Let's start button
                     GestureDetector(
-                      onTap: () => context.push("/nowliHowToUse"),
+                      onTap: () => context.go("/nowliHowToUse"),
                       child: Container(
                         width: double.infinity,
                         height: 116,

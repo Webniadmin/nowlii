@@ -38,8 +38,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     super.dispose();
   }
 
+  /// Pages actually in the [PageView] below: name, then gender.
+  static const int _pageCount = 2;
+
   void nextPage() {
-    if (currentPage < 4) {
+    // Was `currentPage < 4`, left over from a longer flow — it let the
+    // controller animate to pages that do not exist.
+    if (currentPage < _pageCount - 1) {
       setState(() {
         currentPage++;
       });
@@ -108,7 +113,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               child: AnimatedOnboardingTopbar(
                 currentStep: currentPage + 1,
                 totalSteps: kOnboardingTotalSteps,
-                backRoute: "/welcome",
+                // Empty, not "/welcome" — that path was never registered
+                // (the route is `/welcomeScreen`), so tapping back on step 1
+                // navigated to nothing. There is genuinely nowhere to go back
+                // to here: onboarding only runs once the account exists, and
+                // `onBackPressed` covers stepping back within the PageView.
+                backRoute: "",
                 skipRoute: "/onbordingFetures",
                 isSmallDevice: isSmallDevice,
                 isMediumDevice: isMediumDevice,

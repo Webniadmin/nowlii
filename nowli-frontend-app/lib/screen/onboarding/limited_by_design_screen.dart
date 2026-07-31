@@ -95,7 +95,7 @@ class LimitedByDesignScreen extends StatelessWidget {
                 ),
               ),
               OnboardingContinueButton(
-                onPressed: () => context.push(AppRoutespath.tonightsReceipt),
+                onPressed: () => context.go(AppRoutespath.tonightsReceipt),
               ),
               const SizedBox(height: 20),
             ],

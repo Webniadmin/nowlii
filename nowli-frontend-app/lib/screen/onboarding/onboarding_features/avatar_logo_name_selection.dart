@@ -90,7 +90,7 @@ class _AvatarLogoAndNameState extends State<AvatarLogoAndName> {
             GestureDetector(
               onTap: _selectedName.trim().isEmpty
                   ? null
-                  : () => context.push("/limitedByDesign"),
+                  : () => context.go("/limitedByDesign"),
               child: Opacity(
                 opacity: _selectedName.trim().isEmpty ? 0.5 : 1.0,
                 child: Container(

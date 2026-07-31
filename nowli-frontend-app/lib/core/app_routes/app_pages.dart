@@ -262,11 +262,10 @@ class AppPages {
       ),
 
       /*  create a quets end here  */
-      /*   on boarding */
-      GoRoute(
-        path: AppRoutespath.onboardingFlow,
-        builder: (context, state) => const OnboardingFlow(),
-      ),
+      // NOTE: `/onboardingFlow` was registered a second time here, without the
+      // `?page=` handling. go_router matches the first registration, so this one
+      // was unreachable — and would have silently ignored the query parameter
+      // had the order ever changed. The live definition is above.
 
       GoRoute(
         path: AppRoutespath.onbordingFetures,

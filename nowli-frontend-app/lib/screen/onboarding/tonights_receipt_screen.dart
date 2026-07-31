@@ -87,7 +87,7 @@ class TonightsReceiptScreen extends StatelessWidget {
                 ),
               ),
               OnboardingContinueButton(
-                onPressed: () => context.push(AppRoutespath.popupSpeking),
+                onPressed: () => context.go(AppRoutespath.popupSpeking),
               ),
               const SizedBox(height: 20),
             ],

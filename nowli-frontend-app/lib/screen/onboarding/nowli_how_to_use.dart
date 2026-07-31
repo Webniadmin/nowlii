@@ -280,7 +280,7 @@ class NowliHowToUse extends StatelessWidget {
 
                     // Next Button
                     GestureDetector(
-                      onTap: () => context.push("/avatarLogo"),
+                      onTap: () => context.go("/avatarLogo"),
                       child: Container(
                         width: double.infinity,
                         height: screenHeight * 0.13,

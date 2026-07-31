@@ -439,7 +439,10 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                 child: Column(
                   children: [
                     Text(
-                      "YOU'RE ALL SET, JULIE!",
+                      // "JULIE" was hardcoded from the mock — every real user
+                      // was greeted by a stranger's name on the last screen of
+                      // onboarding, right after typing their own.
+                      "YOU'RE ALL SET, ${OnboardingData().greetingName.toUpperCase()}!",
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: const Color(0xFF011F54),
