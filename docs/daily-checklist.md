@@ -8,57 +8,81 @@ for tomorrow. Deferred items go to `future-checklist.md`._
 
 ---
 
-## ⛔ BLOCKED ON YOU — two things, everything else waits on them
+## ✅ HTTPS IS LIVE — `https://api.nowlii.com` + `https://ai.nowlii.com` (2026-07-31)
 
-Both are outside the codebase. Neither takes more than a few minutes.
+**The release blocker is gone.** Both services are behind a domain with a valid Let's Encrypt
+certificate, and a new APK built against them is ready to install.
 
-### 1. DNS records at **GoDaddy** (not Cloudflare, not Figma)
+### What landed
 
-Checked with the authoritative nameservers (`ns41/ns42.domaincontrol.com`): `api.nowlii.com`
-returns **NXDOMAIN** — the name does not exist in the zone, under any spelling. Also checked
-`ai`, `www.api`, `api.www`, `www.ai`, `backend`, `api-nowlii`: nothing. This is **not** slow
-propagation; propagation would show the record at the authoritative server first.
+- **DNS at GoDaddy** — `api` and `ai` both → `16.170.191.239`, propagated everywhere.
+  > First attempt pointed both at `204.69.207.1`, the GoDaddy **parking** IP copied from the
+  > `@` record. The names existed but led nowhere. If a subdomain "exists but doesn't work",
+  > check the *value*, not just that the record is there.
+- **Security group** — 80 and 443 opened. 8000/8001 deliberately still open (see cutover below).
+  > **Not scriptable from the dev machine.** The `Nowlii` IAM keys in `nowli-backend/.env` are
+  > **S3-only** — a permissions boundary denies every `ec2:` action, reads included (verified
+  > 2026-07-31; `deploy-aws.md` used to claim EC2 FullAccess and was wrong). Console only.
+- **nginx 1.24 + certbot 2.9** installed; `certbot.timer` enabled for auto-renewal.
+  `ufw` confirmed **inactive** — the security group is genuinely the only firewall.
+- **Vhosts** `/etc/nginx/sites-available/{api,ai}.nowlii.com` → `:8000` / `:8001`.
+  `ai` gets `proxy_buffering off` + 3600 s timeouts so **SSE `chat-stream` isn't held back**;
+  both get `client_max_body_size 25m` for media / recorded audio.
+- **Certificate** — one cert, both SANs (`api.nowlii.com`, `ai.nowlii.com`), expires
+  **2026-10-29**. Issued `--no-redirect` on purpose: a forced HTTP→HTTPS redirect while the
+  old APK still talks plain HTTP to `:8000` would have broken it.
+- **`~/backend/.env`** — `ALLOWED_HOSTS` + `CSRF_TRUSTED_ORIGINS` extended with both subdomains
+  (backup `.env.bak-20260731-predomain`); container **force-recreated**, because `env_file` is
+  baked in at container *create* time and a plain `restart` would not have picked it up.
+- **`dart_defines.prod.json`** → `https://api.nowlii.com` / `https://ai.nowlii.com`.
+  The old IP config is kept as **`dart_defines.prod-ip.json`** for a fast rollback build.
 
-The zone today holds only `www → sites.figma.net` and `nowlii.com → 204.69.207.1` (parking).
-**If the record was added in Figma or Cloudflare it has no effect** — only GoDaddy is
-authoritative for this domain.
+### Verified, not assumed
 
-GoDaddy → My Products → `nowlii.com` → **DNS** → Add New Record, twice:
+| Check | Result |
+|---|---|
+| TLS cert from outside | valid, `CN=api.nowlii.com`, SANs cover both, Let's Encrypt |
+| `api` `/api/docs/`, `/admin/login/` | 200 |
+| `api` protected routes, no token | 401 |
+| `ai` `/health` | 200 |
+| `ai` `/api/v1/*`, no token | 401 (gate enforcing) |
+| **Authenticated** over HTTPS — quests, profiles, rest-days, quota, subscriptions, scheduled | **all 200** |
+| `ai` `/api/v1/*` with a **Django** token | 200 — cross-service JWT still matches |
+| same token, one char changed | 401 |
+| `session/new` → `realtime/token` | 200, `gpt-realtime-mini`, `voice: marin` (cost cap + gender intact) |
+| APK contents | `https://api.nowlii.com` + `https://ai.nowlii.com` present, old IP **absent** |
 
-| Type | Name | Value | TTL |
-|---|---|---|---|
-| A | `api` | `16.170.191.239` | 600 |
-| A | `ai` | `16.170.191.239` | 600 |
+**New build:** `nowlii-https.v0.2.apk` (debug, HTTPS) in
+`nowli-frontend-app/build/app/outputs/flutter-apk/`.
 
-`Name` is just `api` / `ai` — GoDaddy appends the domain itself.
-Two subdomains, not one, so the app's paths stay unchanged: Django is on `:8000`, `nowli-ai`
-on `:8001`. Verify at https://dnschecker.org/#A/api.nowlii.com
+### Social login on the new domain (2026-07-31)
 
-### 2. AWS security group — open 80 and 443
+- **Google — nothing to change, and nothing was.** The native Android flow never involves the
+  backend URL: Google matches by package `com.nowlii.app` + SHA-1, and the app posts the
+  `id_token` to whatever `BASE_URL` it was built with. Verified on the new domain: a bad token
+  gives **401**, not 503, so the audience check is live.
+  > ⚠️ **Coming with the release keystore:** register the **release SHA-1** in Google Cloud
+  > `274971792537` alongside the debug one, or Google login dies with `DEVELOPER_ERROR` on the
+  > signed build. Unrelated to the domain, easy to forget.
+- **Apple — moved onto the permanent URL.** Portal + backend + build config all verified; the
+  Android `intent://` bounce bug is the only thing left. Detail in `apple-login.md`.
+  > **Found while doing it:** prod had **no `APPLE_CLIENT_IDS` at all** (503 on every attempt).
+  > It lived only in the local `.env` and was never copied to the box — the same "prod `.env`
+  > lags local" trap `deploy-aws.md` warns about. Now set, backup `.env.bak-20260731-preapple`.
 
-Confirmed from outside: **80 and 443 are closed**, only 8000/8001 are reachable. Certbot
-proves domain ownership over port 80, so it cannot issue a certificate until this is open.
+### 🔲 Cutover — only after the new APK is confirmed on a phone
 
-EC2 → instance `i-0c053bc7fea33f0df` → Security → the security group → Edit inbound rules:
-HTTP/80 and HTTPS/443, source `0.0.0.0/0`.
+Deliberately **not** done yet, in this order:
 
-⚠️ **Leave 8000 and 8001 open for now.** The current APK points at
-`http://16.170.191.239:8000`; closing them before the HTTPS switch would cut the phone off.
-
----
-
-## 🔲 Then — HTTPS, and the release blocker it removes
-
-Once the two above are done, this is mine and runs end to end:
-
-- [ ] Verify the records resolve to the box
-- [ ] nginx + certbot; certificates for both subdomains
-- [ ] Proxy `api.nowlii.com → :8000`, `ai.nowlii.com → :8001`
+- [ ] Install `nowlii-https.v0.2.apk`, confirm login + quests + a voice call all work
 - [ ] Flip the HTTPS block in `~/backend/.env` (`BEHIND_TLS_PROXY`, `SECURE_SSL_REDIRECT`,
-      `SESSION/CSRF_COOKIE_SECURE`, HSTS — see `nowli-backend/.env.example`) and extend
-      `ALLOWED_HOSTS` + `CSRF_TRUSTED_ORIGINS`
-- [ ] `dart_defines.prod.json` → `https://`, new APK
-- [ ] Only after the new APK is confirmed working: close 8000/8001
+      `SESSION/CSRF_COOKIE_SECURE`, HSTS — see `nowli-backend/.env.example`) and add the
+      nginx HTTP→HTTPS redirect
+      > ⚠️ `SECURE_SSL_REDIRECT=True` redirects **every** insecure request, including direct
+      > `:8000` ones — it would break the old APK the moment it is set. Hence: new APK first.
+- [ ] Close 8000/8001 in the security group
+- [ ] Then a **release** build becomes possible for the first time (cleartext no longer needed;
+      still needs the upload keystore — see `deploy-aws.md`)
 
 **This is what unblocks a real release build.** A release APK cannot use cleartext HTTP, so
 today it cannot reach the backend at all — see `deploy-aws.md`.

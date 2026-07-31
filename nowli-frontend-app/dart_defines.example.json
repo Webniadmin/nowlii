@@ -1,4 +1,4 @@
 {
-  "BASE_URL": "http://16.170.191.239:8000",
-  "AI_BASE_URL": "http://16.170.191.239:8001"
+  "BASE_URL": "https://api.nowlii.com",
+  "AI_BASE_URL": "https://ai.nowlii.com"
 }

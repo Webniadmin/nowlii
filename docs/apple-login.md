@@ -1,4 +1,33 @@
-# Sign in with Apple (B2) — prepared, keys pending
+# Sign in with Apple (B2) — on the permanent domain; one client-side bug left
+
+> ## STATUS 2026-07-31 — permanent Return URL is LIVE, config verified against Apple
+>
+> The temporary `trycloudflare` tunnel is **gone**. Everything server-side and portal-side is
+> now correct and proven; what remains is the Android `intent://` bounce bug (below).
+>
+> | Piece | State |
+> |---|---|
+> | Return URL | **`https://api.nowlii.com/api/auth/apple/callback/`** — registered on Services ID `com.nowlii.app.web` |
+> | `POST /api/auth/apple/` on prod | **401** on a bad token (was **503** — `APPLE_CLIENT_IDS` had never been copied to the box) |
+> | `POST /api/auth/apple/callback/` | 307 → `intent://callback?…;package=com.nowlii.app;scheme=signinwithapple;end` |
+> | `dart_defines.prod.json` / `.android.json` | `APPLE_SERVICE_ID` + the permanent `APPLE_REDIRECT_URI` |
+> | `ALLOWED_HOSTS` | includes `api.nowlii.com` |
+>
+> **Verified by asking Apple directly** — `GET appleid.apple.com/auth/authorize` with our
+> `client_id` + `redirect_uri` returns the **sign-in page**. Control probes make that result
+> meaningful: a wrong path, a wrong host, the **old tunnel URL**, and a bogus Services ID are
+> all **rejected**. So the portal entry is right and the stale tunnel really was removed.
+>
+> **Domain-verification file** is pre-wired: drop Apple's
+> `apple-developer-domain-association.txt` into `/var/www/apple/` on the box and it serves at
+> `https://api.nowlii.com/.well-known/apple-developer-domain-association.txt` (nginx snippet
+> `snippets/apple-domain-assoc.conf`, an **exact-match** location so it cannot shadow
+> `/.well-known/acme-challenge/` and break certificate renewal — both paths were probed).
+>
+> ⚠️ **Still broken on Android, and the domain does not fix it:** see the open issue below —
+> after the 307, Chrome does not follow the server-driven `intent://` without a user gesture, so
+> the app never receives the credential. The fix (an HTML page with JS + a tap-through link) is
+> **not yet implemented**. iOS is unaffected (native sheet, no Return URL) but needs a Mac.
 
 > **STATUS 2026-07-10 — backend ENABLED & verified.** Client provided the identifiers, so
 > `nowli-backend/.env` now has `APPLE_CLIENT_IDS=com.nowlii.app,com.nowlii.app.web` (iOS bundle

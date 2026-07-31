@@ -92,10 +92,18 @@ ssh -i ~/.ssh/id_ed25519 ubuntu@16.170.191.239 \
 Pavle's key `~/.ssh/id_ed25519` (`justweb.rs@gmail.com`) is in `~ubuntu/.ssh/authorized_keys`.
 Connect: `ssh -i ~/.ssh/id_ed25519 ubuntu@16.170.191.239`.
 
-**To re-bootstrap access from scratch** (e.g. a new machine): AWS Console (IAM user `Nowlii`, has
-EC2/RDS/S3 FullAccess) → open **CloudShell** → `aws ec2-instance-connect ssh --instance-id
-i-0c053bc7fea33f0df --os-user ubuntu --region eu-north-1` → append the new public key to
-`~/.ssh/authorized_keys`. The browser "EC2 Instance Connect" button also works.
+**To re-bootstrap access from scratch** (e.g. a new machine): AWS Console (IAM user `Nowlii`) → open
+**CloudShell** → `aws ec2-instance-connect ssh --instance-id i-0c053bc7fea33f0df --os-user ubuntu
+--region eu-north-1` → append the new public key to `~/.ssh/authorized_keys`. The browser
+"EC2 Instance Connect" button also works.
+
+> ⚠️ **The `AWS_*` keys in `nowli-backend/.env` are S3-only — they cannot touch EC2** (verified
+> 2026-07-31). This doc previously claimed `Nowlii` had "EC2/RDS/S3 FullAccess"; it does not. STS
+> authenticates fine (`arn:aws:iam::227755136391:user/Nowlii`), but every `ec2:` call fails with
+> `UnauthorizedOperation … no permissions boundary allows the ec2:… action` — a permissions boundary
+> denies EC2 as a whole, reads included. **Consequence: security-group changes (e.g. opening 80/443)
+> cannot be scripted from the dev machine** — they must be done in the AWS Console, or the boundary
+> must be widened first.
 
 > ⚠️ **Clock-skew trap:** if AWS Console/CloudShell/CLI throws `Signature expired` / `Request has expired`
 > / credential 500s, the **dev machine clock is wrong**, not IAM. Fix the Windows clock first

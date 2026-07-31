@@ -2,3 +2,6 @@
 # containers (`exec /app/entrypoint.sh: no such file or directory`). See docs/deploy-aws.md.
 *.sh text eol=lf
 entrypoint.sh text eol=lf
+
+# nginx configs get copied onto the Linux box verbatim — keep them LF for the same reason.
+deploy/nginx/**/*.conf text eol=lf

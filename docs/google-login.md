@@ -1,5 +1,46 @@
 # Google Sign-In (B1) — implementation & setup
 
+## ✅ 2026-07-31 — the move to `https://api.nowlii.com` needed NO Google changes
+
+Checked rather than assumed, because "we changed the backend URL" sounds like it should matter:
+
+- **The native Android flow never involves the backend URL.** Google identifies the app by
+  package `com.nowlii.app` + SHA-1; the app then posts the resulting `id_token` to whatever
+  `BASE_URL` it was built with. No redirect URI, no JS origin, nothing host-shaped.
+- **Client ids match**: prod `SOCIAL_AUTH_GOOGLE_CLIENT_ID` and the app's `GOOGLE_WEB_CLIENT_ID`
+  are the same `274971792537-m5oca…` value. A mismatch here is the classic silent failure —
+  the `id_token`'s `aud` wouldn't match and every login would 401.
+- **Verified live:** `POST https://api.nowlii.com/api/auth/google/` with a bad token → **401**
+  (not 503), so the audience check is configured and running on the new domain.
+- `SOCIAL_AUTH_GOOGLE_OAUTH2_CALLBACK_URL` still defaults to `127.0.0.1:8000` — **harmless dead
+  config**: it is defined in `settings.py` and read by nothing (python-social-auth isn't
+  installed; this repo uses allauth + a custom endpoint).
+
+### The one real find: allauth was generating `http://` redirect URIs
+
+`/accounts/` **is** mounted (`allauth.urls`), so a browser flow exists at
+`/accounts/google/login/` even though the app doesn't use it. Behind nginx it was building
+`redirect_uri=http://api.nowlii.com/...` — Django had no idea it was behind TLS.
+
+Fixed by setting **`BEHIND_TLS_PROXY=True`** on the box (now `https://…`, confirmed). That flag
+*only* sets `SECURE_PROXY_SSL_HEADER`; it redirects nothing, so it was safe to enable while
+`:8000` is still open and old builds still talk plain HTTP to it. `SECURE_SSL_REDIRECT` stays
+**off** until the cutover — it would redirect those direct `:8000` requests and break them.
+
+> Same flag also protects the media-URL fallback in `users/serializers.py`
+> (`request.build_absolute_uri`), which fires only if S3 URL generation fails — it would have
+> produced an `http://` image URL that a **release** APK refuses to load as cleartext.
+
+**Optional, not needed for the app:** if browser-based Google login is ever wanted, add
+`https://api.nowlii.com/accounts/google/login/callback/` as an Authorized redirect URI in Google
+Cloud `274971792537`. Nothing uses it today.
+
+⚠️ **Still pending, unrelated to the domain:** the **release SHA-1** must be registered in the
+same project once the upload keystore exists, or Google login fails with `DEVELOPER_ERROR` on
+the signed build.
+
+---
+
 ## ✅ CURRENT STATE (verified end-to-end on Android, 2026-07-03)
 
 Google login **works on Android** (emulator confirmed; same flow on a physical device).
