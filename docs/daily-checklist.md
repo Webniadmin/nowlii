@@ -131,7 +131,10 @@ Install `nowlii-prod.v0.1.apk` (`nowli-frontend-app/build/app/outputs/flutter-ap
 - [ ] **Release keystore** → then a signed build that actually works (needs HTTPS first)
 - [ ] **Real payments (IAP)** — the biggest remaining product gap; `activate` is a mock and
       `verify-receipt` a 501 stub, so anyone can "subscribe" for free
-- [ ] Merge `feat/realtime-voice-call` → `main` (16 commits ahead)
+- [x] **Merge `feat/realtime-voice-call` → `main`** — done 2026-07-31. A clean fast-forward (26
+      commits; `main` had nothing the branch lacked), so `main` now matches what production
+      actually runs. Design work continues on **`feat/design-implementation`**, branched from
+      the merged `main`.
 
 ---
 
