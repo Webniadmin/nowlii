@@ -24,10 +24,23 @@
 > `snippets/apple-domain-assoc.conf`, an **exact-match** location so it cannot shadow
 > `/.well-known/acme-challenge/` and break certificate renewal — both paths were probed).
 >
-> ⚠️ **Still broken on Android, and the domain does not fix it:** see the open issue below —
-> after the 307, Chrome does not follow the server-driven `intent://` without a user gesture, so
-> the app never receives the credential. The fix (an HTML page with JS + a tap-through link) is
-> **not yet implemented**. iOS is unaffected (native sheet, no Return URL) but needs a Mac.
+> ### The Android `intent://` bounce — FIXED 2026-07-31 (`9e6fee3`), deployed
+>
+> The 307 is gone. `apple_web_redirect` now serves a small HTML page that attempts the
+> `intent://` hop automatically **and** offers a "Continue to NOWLII" button, because the
+> gesture is the part Chrome actually wants. Apple's parameters are HTML-escaped in the `href`
+> and JSON-quoted in the JS — they arrive in a POST body, so they are attacker-influenced.
+>
+> Live on prod: `POST /api/auth/apple/callback/` → **200 text/html** carrying
+> `href="intent://callback?…"` + `window.location.replace(…)`; a `"><script>` parameter comes
+> back with **zero** raw script tags. 6 tests in `Apps/users/tests.py::AppleWebRedirectTests`.
+>
+> ⚠️ **Not yet proven on hardware.** The fix addresses the *diagnosed* cause; the 2026-07-10
+> session also saw the emulator killing the backgrounded FlutterActivity, which this does not
+> address. Needs an APK built with the Apple defines (`dart_defines.prod.json` has them; the
+> existing `nowlii-https.v0.2.apk` predates them) and a real device.
+>
+> iOS is unaffected either way — the native sheet uses no Return URL — but needs a Mac.
 
 > **STATUS 2026-07-10 — backend ENABLED & verified.** Client provided the identifiers, so
 > `nowli-backend/.env` now has `APPLE_CLIENT_IDS=com.nowlii.app,com.nowlii.app.web` (iOS bundle
