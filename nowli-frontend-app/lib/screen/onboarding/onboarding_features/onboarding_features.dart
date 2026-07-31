@@ -44,7 +44,7 @@ class OnboardingFeatures extends StatelessWidget {
               /// Top bar
               AnimatedOnboardingTopbar(
                 currentStep: 3,
-                totalSteps: 6,
+                totalSteps: kOnboardingTotalSteps,
                 backRoute: "/onboardingFlow?page=1",
                 skipRoute: "/nowliHowToUse",
                 isSmallDevice: isSmallDevice,
@@ -70,9 +70,12 @@ class OnboardingFeatures extends StatelessWidget {
                       child: _buildResponsiveCard(
                         color: Colors.blue.shade300,
                         svgPath: Assets.svgIcons.realCompany.path,
-                        title: "REAL \nCOMPANY",
+                        // The Figma layer reads "REAL COMPAnion" — a stray lowercase
+                        // "n" in the mock, not a style choice. Set in full caps like
+                        // its two siblings.
+                        title: "REAL \nCOMPANION",
                         description:
-                            "Nowlii is your always-available friend. Here for you - anytime, anywhere.",
+                            "Nowlii is your always-available friend — here whenever you need a moment.",
                         isSmallDevice: isSmallDevice,
                         isMediumDevice: isMediumDevice,
                         screenWidth: screenWidth,

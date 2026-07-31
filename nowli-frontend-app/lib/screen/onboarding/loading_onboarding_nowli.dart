@@ -102,7 +102,7 @@ class _LoadingContentState extends State<LoadingContent> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Text(
-            "Hold on a sec, Nowlii is preparing your space...",
+            "Hold on a sec, Nowlii is saving your info...",
             textAlign: TextAlign.center,
             style: AppsTextStyles.extraBold32Centered,
           ),

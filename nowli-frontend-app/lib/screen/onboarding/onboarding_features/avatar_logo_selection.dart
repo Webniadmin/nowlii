@@ -75,7 +75,7 @@ class _AvatarLogoState extends State<AvatarLogo> {
               padding: const EdgeInsets.all(16.0),
               child: AnimatedOnboardingTopbar(
                 currentStep: 5,
-                totalSteps: 6,
+                totalSteps: kOnboardingTotalSteps,
                 backRoute: "/nowliHowToUse",
                 skipRoute: "/avatarLogoAndName",
                 isSmallDevice: isSmallDevice,

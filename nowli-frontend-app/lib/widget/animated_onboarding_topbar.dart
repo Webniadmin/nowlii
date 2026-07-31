@@ -4,6 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 
+/// How many steps the numbered onboarding flow has, end to end.
+///
+/// Every screen in the flow renders "n/[kOnboardingTotalSteps]", so this lives in
+/// one place — the count was previously hardcoded at five separate call sites and
+/// they drift the moment a screen is added or removed.
+const int kOnboardingTotalSteps = 6;
+
 class AnimatedOnboardingTopbar extends StatefulWidget {
   final int currentStep;
   final int totalSteps;

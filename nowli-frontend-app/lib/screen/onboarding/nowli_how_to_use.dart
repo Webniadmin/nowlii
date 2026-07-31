@@ -5,6 +5,36 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/widget/animated_onboarding_topbar.dart';
 
+/// Section heading inside the blue tips sheet.
+///
+/// `small` is for the two sub-headings under "A couple of honest truths" — they
+/// sit a level below it, so they must not compete with it visually.
+Widget _sectionHeading(String text, double screenWidth, {bool small = false}) {
+  return Text(
+    text,
+    style: GoogleFonts.workSans(
+      color: const Color(0xFFFFFCF1),
+      fontSize: screenWidth * (small ? 0.042 : 0.05),
+      fontWeight: FontWeight.w900,
+      height: 1.25,
+      letterSpacing: -0.10,
+    ),
+  );
+}
+
+Widget _sectionBody(String text, double screenWidth) {
+  return Text(
+    text,
+    style: GoogleFonts.workSans(
+      color: const Color(0xFFFFFCF1),
+      fontSize: screenWidth * 0.04,
+      fontWeight: FontWeight.w500,
+      height: 1.50,
+      letterSpacing: -0.10,
+    ),
+  );
+}
+
 class NowliHowToUse extends StatelessWidget {
   const NowliHowToUse({super.key});
 
@@ -31,7 +61,7 @@ class NowliHowToUse extends StatelessWidget {
                   // Top Row
                   AnimatedOnboardingTopbar(
                     currentStep: 4,
-                    totalSteps: 6,
+                    totalSteps: kOnboardingTotalSteps,
                     backRoute: "/onbordingFetures",
                     skipRoute: "/avatarLogo",
                     isSmallDevice: isSmallDevice,
@@ -157,6 +187,9 @@ class NowliHowToUse extends StatelessWidget {
 
                     SizedBox(height: screenHeight * 0.02),
 
+                    _sectionHeading('TIME IT RIGHT', screenWidth),
+                    SizedBox(height: screenHeight * 0.012),
+
                     // ✅ Description - Fixed 5 lines all devices
                     FittedBox(
                       fit: BoxFit.scaleDown,
@@ -205,7 +238,45 @@ class NowliHowToUse extends StatelessWidget {
                       ),
                     ),
 
+                    SizedBox(height: screenHeight * 0.035),
+
+                    // ── "A couple of honest truths" ──
+                    // Added 2026-07-31 from the updated onboarding design; this
+                    // section is why the screen now scrolls rather than fitting a
+                    // single viewport.
+                    _sectionHeading('A COUPLE OF HONEST TRUTHS', screenWidth),
+                    SizedBox(height: screenHeight * 0.02),
+
+                    _sectionHeading(
+                      'CLOSE TO YOURSELF, CLOSER TO OTHERS',
+                      screenWidth,
+                      small: true,
+                    ),
+                    SizedBox(height: screenHeight * 0.01),
+                    _sectionBody(
+                      'We all carry heavy loads. Sometimes the biggest act of love '
+                      'to yourself and others is to first talk it out with yourself '
+                      'and let your voice lead your way.',
+                      screenWidth,
+                    ),
+
                     SizedBox(height: screenHeight * 0.025),
+
+                    _sectionHeading(
+                      "YOUR EASY IS SOMEONE'S HARD. AND OTHER WAY AROUND.",
+                      screenWidth,
+                      small: true,
+                    ),
+                    SizedBox(height: screenHeight * 0.01),
+                    _sectionBody(
+                      'Making a quick phone call can feel like climbing a mountain. '
+                      'Running a marathon can feel like a breeze. We all have '
+                      'different hard. No judgment, no comparison — know and be '
+                      'honest with yourself.',
+                      screenWidth,
+                    ),
+
+                    SizedBox(height: screenHeight * 0.035),
 
                     // Next Button
                     GestureDetector(

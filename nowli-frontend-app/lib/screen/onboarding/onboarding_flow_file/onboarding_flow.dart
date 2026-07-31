@@ -107,7 +107,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               padding: const EdgeInsets.all(16.0),
               child: AnimatedOnboardingTopbar(
                 currentStep: currentPage + 1,
-                totalSteps: 6,
+                totalSteps: kOnboardingTotalSteps,
                 backRoute: "/welcome",
                 skipRoute: "/onbordingFetures",
                 isSmallDevice: isSmallDevice,
