@@ -90,6 +90,9 @@ class ApiConstants {
   // One GPT-free call at call end: both the emotion breakdown AND the low-mood phrases.
   static String aiCallInsights(String sessionId) =>
       '$aiCallPrefix/conversation/call-insights/$sessionId';
+  // Emotion detection from text and/or audio. Used by the onboarding voice check to
+  // prove the microphone path works end to end before the first real call.
+  static const String aiDetectEmotion = '$aiCallPrefix/detect-emotion';
   
   // Google Sign-In server/web client id — becomes the `id_token` audience the backend
   // verifies. Pass at build/run time (same as the base URLs):

@@ -203,6 +203,12 @@ class CallSummary(models.Model):
     # kept alongside the text so history/progress views don't need CallEmotionSnapshot too.
     dominant_emotion = models.CharField(max_length=20, blank=True)
     top_emotions     = models.JSONField(default=dict, blank=True)
+    # Words the user themselves kept returning to, verbatim from the transcript, e.g.
+    # ``["should", "later", "honestly"]``. Extracted by the same GPT pass that writes the
+    # sentences above — no extra model call, so no extra cost. Shown back on the call
+    # summary as "Words you circled around". Empty is a valid, honest answer: a short call
+    # has no pattern, and the UI hides the section rather than inventing one.
+    words_circled = models.JSONField(default=list, blank=True)
     language     = models.CharField(max_length=8, blank=True)
     total_turns  = models.PositiveIntegerField(default=0)
     created_at   = models.DateTimeField(auto_now_add=True)

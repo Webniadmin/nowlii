@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/services/call_summary_service.dart';
 import 'package:nowlii/services/voice_call_service.dart';
@@ -101,6 +102,7 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
       nextStep: summary.nextStep,
       dominantEmotion: summary.dominantEmotion,
       topEmotions: summary.topEmotions,
+      wordsCircled: summary.wordsCircled,
       language: summary.language,
       totalTurns: summary.totalTurns,
     );
@@ -285,6 +287,8 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                             icon: Icons.trending_up,
                           ),
                           
+                          _buildWordsCircledSection(),
+
                           const SizedBox(height: 32),
 
                           _buildEmotionsSection(),
@@ -434,6 +438,73 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
 
   // Emotions detected across this call (5-category split from the summary GPT pass over the
   // whole transcript). Hidden when there's no data. Sorted most-present first.
+  /// "Words you circled around" — the user's own words, handed back.
+  ///
+  /// Renders nothing when the list is empty. A short call genuinely has no
+  /// pattern, and an empty state here would either lie or draw attention to a
+  /// gap; the onboarding preview already set the expectation, so silence is the
+  /// honest option.
+  Widget _buildWordsCircledSection() {
+    final words = _summary?.wordsCircled ?? const <String>[];
+    if (words.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: ShapeDecoration(
+          color: const Color(0xFFFFFCF1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Words you circled around',
+              style: GoogleFonts.workSans(
+                color: const Color(0xFF4C586E),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final word in words)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: ShapeDecoration(
+                      color: const Color(0xFFE6F0FF),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    child: Text(
+                      '“$word”',
+                      style: GoogleFonts.workSans(
+                        color: const Color(0xFF011F54),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmotionsSection() {
     final emotions = _summary?.topEmotions ?? const <String, double>{};
     final entries = emotions.entries.where((e) => e.value > 0).toList()

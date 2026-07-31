@@ -15,6 +15,10 @@ class CallSummaryResponse {
   // 5-category Top-Emotion split for this call (happy/motivated/angry/tired/sad, sums ~100),
   // extracted from the transcript by the summary GPT call.
   final Map<String, double> topEmotions;
+  /// Words the user kept returning to, verbatim from the transcript. Empty is a
+  /// valid answer — a short call has no pattern — and the UI hides the section
+  /// rather than showing a placeholder.
+  final List<String> wordsCircled;
   final double processingMs;
 
   CallSummaryResponse({
@@ -32,6 +36,7 @@ class CallSummaryResponse {
     required this.emotionCounts,
     required this.emotionTimeline,
     this.topEmotions = const {},
+    this.wordsCircled = const [],
     required this.processingMs,
   });
 
@@ -57,6 +62,11 @@ class CallSummaryResponse {
             (key, value) => MapEntry(key.toString(), (value as num).toDouble()),
           ) ??
           {},
+      wordsCircled: (json['words_circled'] as List?)
+              ?.map((w) => w.toString())
+              .where((w) => w.trim().isNotEmpty)
+              .toList() ??
+          const [],
       processingMs: (json['processing_ms'] ?? 0).toDouble(),
     );
   }

@@ -329,6 +329,39 @@ _SUMMARY_FALLBACKS: dict[str, dict[str, str]] = {
 }
 
 
+_WORDS_CIRCLED_MAX      = 5
+_WORDS_CIRCLED_MAX_CHARS = 32
+
+
+def _clean_words_circled(raw: Any) -> List[str]:
+    """Sanitise the model's `words_circled` before it reaches the user.
+
+    These are displayed back as the user's *own* words, so anything malformed is
+    dropped rather than guessed at: wrong type, empty, or long enough to be a
+    sentence the model wrote instead of a word the user said. Duplicates are
+    collapsed case-insensitively while keeping the first spelling seen.
+    """
+    if not isinstance(raw, list):
+        return []
+
+    cleaned: List[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        word = item.strip().strip('"').strip("'").strip()
+        if not word or len(word) > _WORDS_CIRCLED_MAX_CHARS:
+            continue
+        key = word.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(word)
+        if len(cleaned) >= _WORDS_CIRCLED_MAX:
+            break
+    return cleaned
+
+
 def _build_summary_prompt(session: "Session") -> str:
     lang      = session.language
     timeline  = session.emotion_timeline()
@@ -343,16 +376,24 @@ def _build_summary_prompt(session: "Session") -> str:
     return (
         f"Here is the full turn-by-turn log:\n{turns_text}\n\n"
         f"First emotion: {first_emotion}\nLast emotion: {last_emotion}\nFrequency: {counts}\n\n"
-        "Return ONLY a JSON object with exactly these 5 keys:\n"
+        "Return ONLY a JSON object with exactly these 6 keys:\n"
         "{\n"
         f'  "mood_detected": "<{keys["mood_detected"]}>",\n'
         f'  "focus_topic":   "<{keys["focus_topic"]}>",\n'
         f'  "energy_shift":  "<{keys["energy_shift"]}>",\n'
         f'  "next_step":     "<{keys["next_step"]}>",\n'
-        '  "top_emotions":  {"happy": <n>, "motivated": <n>, "angry": <n>, "tired": <n>, "sad": <n>}\n'
+        '  "top_emotions":  {"happy": <n>, "motivated": <n>, "angry": <n>, "tired": <n>, "sad": <n>},\n'
+        '  "words_circled": ["<word>", "<word>", "<word>"]\n'
         "}\n"
         "The five top_emotions numbers estimate the user's overall emotional split across the "
-        "whole chat and MUST sum to 100. No markdown. No extra keys. No text outside the JSON."
+        "whole chat and MUST sum to 100.\n"
+        "words_circled: 3 to 5 single words or very short phrases the USER kept coming back to, "
+        "copied EXACTLY as they said them — same wording, same language, lowercase. These are "
+        "shown back to the user as their own words, so do NOT paraphrase, translate, summarise "
+        "or invent. Skip filler like 'yeah', 'okay', 'like', 'um' and pick words that carry "
+        "weight. If the conversation was too short or had no such pattern, return an empty list "
+        "rather than reaching for something.\n"
+        "No markdown. No extra keys. No text outside the JSON."
     )
 
 
@@ -504,6 +545,11 @@ class MoodSummaryResponse(BaseModel):
     # 5-category Top-Emotion split for this call (happy/motivated/angry/tired/sad, sums ~100).
     # Extracted from the transcript by the same summary GPT call (per-message detection removed).
     top_emotions: Dict[str, float] = {}
+    # Words the user themselves kept returning to — the "receipt" the app shows after a
+    # call. Verbatim from the transcript, never paraphrased. Empty when the summary call
+    # failed or the conversation was too short to have a pattern; an empty list is a
+    # truthful answer and the UI hides the section rather than inventing one.
+    words_circled: List[str] = []
 
 
 class EmotionBreakdownResponse(BaseModel):
@@ -1378,6 +1424,7 @@ async def chat_summary(request: SummaryRequest):
     top_emotions = ({c: round(v / _te_total * 100, 1) for c, v in _te.items()}
                     if _te_total > 0 else {**{c: 0.0 for c in _TOP_EMOTIONS}, "happy": 100.0})
     dominant = max(top_emotions, key=top_emotions.get)
+    words_circled = _clean_words_circled(gpt_data.get("words_circled"))
 
     return MoodSummaryResponse(
         session_id=request.session_id, user_name=session.user_name,
@@ -1389,6 +1436,7 @@ async def chat_summary(request: SummaryRequest):
         #   dominant_emotion=session.overall_dominant(),
         dominant_emotion=dominant, emotion_counts=session.dominant_emotion_counts(),
         emotion_timeline=session.emotion_timeline(), top_emotions=top_emotions,
+        words_circled=words_circled,
         processing_ms=round(elapsed_ms, 1),
     )
 

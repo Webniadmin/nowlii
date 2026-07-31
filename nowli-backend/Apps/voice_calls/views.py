@@ -95,6 +95,39 @@ def _persist_low_mood_snapshot(call, data):
 _TOP_EMOTION_KEYS = ('happy', 'motivated', 'angry', 'tired', 'sad')
 
 
+#: Shown back to the user as their own words, so anything that does not look like a
+#: word the user said is dropped rather than cleaned up into something plausible.
+_WORDS_CIRCLED_MAX = 5
+_WORDS_CIRCLED_MAX_CHARS = 32
+
+
+def _clean_words_circled(raw):
+    """Normalise the client's ``words_circled`` list. Never trusts it blindly.
+
+    The app forwards whatever nowli-ai's GPT pass produced, so this re-validates on
+    the way in: wrong types, blanks, and anything long enough to be a sentence are
+    discarded, duplicates collapse case-insensitively, and the list is capped.
+    """
+    if not isinstance(raw, list):
+        return []
+
+    cleaned, seen = [], set()
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        word = item.strip().strip('"').strip("'").strip()
+        if not word or len(word) > _WORDS_CIRCLED_MAX_CHARS:
+            continue
+        key = word.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(word)
+        if len(cleaned) >= _WORDS_CIRCLED_MAX:
+            break
+    return cleaned
+
+
 def _persist_call_summary(call, data):
     """Store the conversational summary for a call if the app sent one.
 
@@ -135,6 +168,7 @@ def _persist_call_summary(call, data):
             'next_step': nxt,
             'dominant_emotion': str(data.get('dominant_emotion') or '')[:20],
             'top_emotions': top_emotions,
+            'words_circled': _clean_words_circled(data.get('words_circled')),
             'language': str(data.get('language') or '')[:8],
             'total_turns': total_turns,
         },

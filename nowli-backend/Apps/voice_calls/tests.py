@@ -15,7 +15,8 @@ from rest_framework.test import APIClient
 
 from Apps.quests.models import Quests
 
-from .models import ScheduledCall, VoiceCall
+from .models import CallSummary, ScheduledCall, VoiceCall
+from .views import _clean_words_circled
 
 User = get_user_model()
 
@@ -363,3 +364,98 @@ class ScheduledCallDetailTests(TestCase):
         self.client.force_authenticate(user=self.other)
         response = self.client.patch(self.url, {'cancel': True}, format='json')
         self.assertEqual(response.status_code, 404)
+
+
+class WordsCircledTests(TestCase):
+    """"Words you circled around" — the user's own words, handed back to them.
+
+    Because they are presented as verbatim quotes, anything that does not look
+    like something a person said is dropped rather than tidied into shape.
+    """
+
+    def test_a_normal_list_survives_intact(self):
+        self.assertEqual(
+            _clean_words_circled(['should', 'later', 'honestly']),
+            ['should', 'later', 'honestly'],
+        )
+
+    def test_non_list_input_yields_nothing(self):
+        for junk in (None, 'should', 42, {'a': 1}):
+            self.assertEqual(_clean_words_circled(junk), [])
+
+    def test_non_string_entries_are_dropped(self):
+        self.assertEqual(_clean_words_circled(['should', 7, None, 'later']),
+                         ['should', 'later'])
+
+    def test_blank_entries_are_dropped(self):
+        self.assertEqual(_clean_words_circled(['should', '   ', '', 'later']),
+                         ['should', 'later'])
+
+    def test_a_whole_sentence_is_rejected(self):
+        """Guards against the model writing prose instead of quoting a word."""
+        sentence = 'you kept saying you should do it later on in the evening'
+        self.assertEqual(_clean_words_circled(['should', sentence]), ['should'])
+
+    def test_duplicates_collapse_case_insensitively_keeping_the_first(self):
+        self.assertEqual(_clean_words_circled(['Should', 'should', 'SHOULD']),
+                         ['Should'])
+
+    def test_the_list_is_capped(self):
+        many = [f'word{i}' for i in range(20)]
+        self.assertEqual(len(_clean_words_circled(many)), 5)
+
+    def test_surrounding_quotes_are_stripped(self):
+        # The UI adds its own quotation marks; doubling them looks like a bug.
+        self.assertEqual(_clean_words_circled(['"should"', "'later'"]),
+                         ['should', 'later'])
+
+
+class CallSummaryWordsPersistenceTests(TestCase):
+    """The words have to survive the round trip, since nowli-ai forgets them."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='wordsuser', email='words@example.com', password='pw-for-tests-123',
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.call = VoiceCall.objects.create(user=self.user)
+
+    def _save(self, payload):
+        return self.client.post(
+            reverse('voice_calls:voice-call-summary', args=[self.call.pk]), payload, format='json',
+        )
+
+    def test_words_are_stored_and_returned(self):
+        response = self._save({
+            'mood_detected': 'You sounded tired.',
+            'focus_topic': 'We talked a lot about work.',
+            'energy_shift': 'You started out flat.',
+            'next_step': 'Rest tonight!',
+            'words_circled': ['should', 'later', 'honestly'],
+        })
+        self.assertIn(response.status_code, (200, 201))
+
+        summary = CallSummary.objects.get(call=self.call)
+        self.assertEqual(summary.words_circled, ['should', 'later', 'honestly'])
+
+    def test_a_summary_without_words_is_still_saved(self):
+        """A short call has no pattern — that must not block the summary."""
+        response = self._save({
+            'mood_detected': 'You sounded tired.',
+            'focus_topic': 'We talked a lot about work.',
+            'energy_shift': 'You started out flat.',
+            'next_step': 'Rest tonight!',
+        })
+        self.assertIn(response.status_code, (200, 201))
+        self.assertEqual(CallSummary.objects.get(call=self.call).words_circled, [])
+
+    def test_junk_from_the_model_is_not_persisted(self):
+        self._save({
+            'mood_detected': 'You sounded tired.',
+            'focus_topic': 'We talked a lot about work.',
+            'energy_shift': 'You started out flat.',
+            'next_step': 'Rest tonight!',
+            'words_circled': 'should, later',
+        })
+        self.assertEqual(CallSummary.objects.get(call=self.call).words_circled, [])

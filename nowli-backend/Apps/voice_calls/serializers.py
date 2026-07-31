@@ -50,6 +50,7 @@ class CallSummarySerializer(serializers.ModelSerializer):
         fields = [
             'call_id', 'started_at', 'duration_seconds',
             'mood_detected', 'focus_topic', 'energy_shift', 'next_step',
-            'dominant_emotion', 'top_emotions', 'language', 'total_turns',
+            'dominant_emotion', 'top_emotions', 'words_circled',
+            'language', 'total_turns',
             'created_at',
         ]

@@ -176,6 +176,7 @@ class VoiceCallService {
     required String nextStep,
     String? dominantEmotion,
     Map<String, double>? topEmotions,
+    List<String>? wordsCircled,
     String? language,
     int? totalTurns,
   }) async {
@@ -192,6 +193,7 @@ class VoiceCallService {
               'next_step': nextStep,
               if (dominantEmotion != null) 'dominant_emotion': dominantEmotion,
               if (topEmotions != null) 'top_emotions': topEmotions,
+              if (wordsCircled != null) 'words_circled': wordsCircled,
               if (language != null) 'language': language,
               if (totalTurns != null) 'total_turns': totalTurns,
             }),
