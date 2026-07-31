@@ -8,20 +8,33 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
-## ▶ START HERE (2026-07-31)
+## ▶ START HERE (2026-08-01)
 
-**Two things block everything, and both are outside the code:** the `api`/`ai` A records at
-**GoDaddy** (checked against the authoritative nameservers — `NXDOMAIN`, so the record was
-never saved to that zone; adding it in Figma or Cloudflare has no effect), and **ports 80/443
-in the AWS security group** (confirmed closed, so certbot cannot issue). Exact steps in
-`daily-checklist.md`.
+**The release blocker is gone.** HTTPS is live on `https://api.nowlii.com` and
+`https://ai.nowlii.com` (nginx + Let's Encrypt on EC2, cert to 2026-10-29, auto-renewing).
+A release build can finally reach production.
 
-Once those land: nginx + certbot → HTTPS on both subdomains → new APK → close 8000/8001.
-That is what removes the release blocker — a release build cannot use cleartext HTTP, so
-today it cannot reach the backend at all.
+**What now gates everything is a single device test.** Four days of work have stacked up
+behind it — the money flow, scheduled-call reminders, the voice call, and the whole onboarding
+redesign have never run on real hardware. Tomorrow is one continuous task, in order:
 
-Nothing was tested on a device on 2026-07-30. Scheduled-call reminders especially can only be
-proven there. Full day detail: `daily-reports/2026-07-30.md`.
+1. **Deploy phase 4** — it touches the backend (migration `voice_calls.0006`) and `nowli-ai`
+   (summary prompt). Phases 1–3 are frontend-only and ride in the APK.
+2. **Build one APK** against `dart_defines.prod.json` (now `https://`, with Apple defines).
+3. **Get it on a phone and work through the list.**
+
+Only after that: flip `SECURE_SSL_REDIRECT`, add the nginx HTTP→HTTPS redirect, close
+8000/8001. Each of those breaks any pre-HTTPS build the instant it lands, so the installed
+APK is the safety net until the new one is proven.
+
+Step-by-step list, including what to test on the phone: **`daily-checklist.md`**.
+Full detail of what shipped: `daily-reports/2026-07-31.md`.
+
+> **Onboarding was redesigned on 2026-07-31** (`feat/design-implementation`, 4 commits). The
+> flow is now **8 steps**, not 6. Four things it fixed are worth knowing about because they
+> were silent: onboarding could complete **without ever creating a profile** and leave the
+> user permanently stranded; answers were lost if the app was killed mid-flow; the last screen
+> greeted everyone as "Julie"; and the voice check never opened the microphone at all.
 
 ---
 

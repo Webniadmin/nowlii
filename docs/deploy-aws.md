@@ -251,7 +251,27 @@ flutter build apk --debug --dart-define-from-file=dart_defines.prod.json   # →
   phone works over any internet connection (WiFi or mobile data) — no LAN needed.
 - Google login works on the debug APK (debug-keystore SHA-1 is registered in Google Cloud `274971792537`).
 
-### ⛔ A release build cannot talk to production today (confirmed 2026-07-30)
+### ✅ RESOLVED 2026-07-31 — production is on HTTPS
+
+The section below described the state before the domain landed. It is kept because the
+reasoning still explains *why* the cutover has to happen in a specific order.
+
+**Now:** `https://api.nowlii.com` → `:8000` and `https://ai.nowlii.com` → `:8001`, behind nginx
+with one Let's Encrypt cert (both SANs, expires 2026-10-29, `certbot.timer` renews).
+`dart_defines.prod.json` points at the `https://` URLs; the old IP config is kept as
+`dart_defines.prod-ip.json` for a rollback build. nginx config is checked in at
+`deploy/nginx/`.
+
+**Still deliberately pending, in this order:** `:8000`/`:8001` remain open and
+`SECURE_SSL_REDIRECT` remains off until an HTTPS APK is confirmed on a device — that flag
+redirects *every* insecure request, including the direct `:8000` ones the installed build
+still makes, so turning it on early cuts the phone off. `BEHIND_TLS_PROXY` **is** on (it only
+sets `SECURE_PROXY_SSL_HEADER` and redirects nothing); it was needed because allauth was
+generating `http://` redirect URIs behind the proxy.
+
+---
+
+### ⛔ A release build cannot talk to production today (confirmed 2026-07-30 — since fixed)
 
 This is the single hard blocker to shipping, and it is **not** a build-config problem — it is the
 plain-HTTP backend.
