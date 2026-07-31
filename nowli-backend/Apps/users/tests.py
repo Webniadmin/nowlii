@@ -315,3 +315,61 @@ class DefaultPermissionTests(TestCase):
     def test_protected_endpoint_rejects_anonymous(self):
         response = self.client.get(reverse("profile-detail"))
         self.assertIn(response.status_code, (401, 403))
+
+
+class AppleWebRedirectTests(TestCase):
+    """The Android leg of Sign in with Apple.
+
+    Apple `form_post`s here and we must hand the credential back to the app through
+    the plugin's custom-scheme intent. This used to be a bare 307, which Chrome
+    silently refused to follow without a user gesture — the login simply never
+    completed. So the page itself is the fix, and these tests pin the parts that
+    make it work rather than just asserting a 200.
+    """
+
+    def setUp(self):
+        self.url = reverse("auth-apple-callback")
+
+    def test_apples_form_post_is_answered_with_a_page_not_a_redirect(self):
+        response = self.client.post(self.url, {"code": "abc123", "state": "xyz"})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Location", response)
+        self.assertIn("text/html", response["Content-Type"])
+
+    def test_the_intent_carries_apples_parameters_back_to_the_app(self):
+        response = self.client.post(self.url, {"code": "abc123", "state": "xyz"})
+        body = response.content.decode()
+        self.assertIn("intent://callback?", body)
+        self.assertIn("code=abc123", body)
+        self.assertIn("state=xyz", body)
+        self.assertIn("package=com.nowlii.app", body)
+        self.assertIn("scheme=signinwithapple", body)
+
+    def test_there_is_a_tappable_link_because_the_automatic_hop_may_be_blocked(self):
+        """The whole point of the rewrite: a real user gesture as a fallback.
+
+        Chrome blocks server-driven intent:// navigation, so an automatic hop alone
+        reproduces the original bug.
+        """
+        body = self.client.post(self.url, {"code": "abc123"}).content.decode()
+        self.assertIn('href="intent://callback?', body)
+        self.assertIn("window.location.replace", body)
+
+    def test_apples_error_response_is_passed_through_rather_than_swallowed(self):
+        body = self.client.post(self.url, {"error": "user_cancelled"}).content.decode()
+        self.assertIn("error=user_cancelled", body)
+
+    def test_a_hostile_parameter_cannot_break_out_into_markup(self):
+        """Values come from a POST body, so they are attacker-influenced input."""
+        response = self.client.post(
+            self.url, {"state": '"><script>alert(1)</script>'}
+        )
+        body = response.content.decode()
+        self.assertNotIn("<script>alert(1)</script>", body)
+        self.assertNotIn('"><script', body)
+
+    def test_it_needs_no_csrf_token_because_the_caller_is_apple(self):
+        from django.test import Client
+
+        response = Client(enforce_csrf_checks=True).post(self.url, {"code": "abc"})
+        self.assertEqual(response.status_code, 200)

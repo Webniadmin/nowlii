@@ -3,8 +3,11 @@ from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.http import HttpResponse
 from django.utils.decorators import method_decorator
+from django.utils.html import escape
 from django.views.decorators.csrf import csrf_exempt
 from urllib.parse import urlencode
+
+import json
 
 from rest_framework import status, viewsets
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
@@ -695,6 +698,39 @@ class AppleLoginAPI(APIView):
 # (e.g. https://<public-host>/api/auth/apple/callback/) and set as APPLE_REDIRECT_URI
 # on the client. iOS native does NOT use this (it has no redirect). No auth / CSRF:
 # the caller is Apple, not our client.
+# Placeholders are substituted with str.replace rather than str.format/%, so the CSS
+# braces below need no escaping.
+_APPLE_BOUNCE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signing you in…</title>
+<style>
+  body { margin:0; min-height:100vh; display:flex; align-items:center;
+         justify-content:center; background:#faf9f6; color:#1c1b1f;
+         font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  main { text-align:center; padding:24px; max-width:22rem; }
+  h1 { font-size:1.15rem; font-weight:600; margin:0 0 .5rem; }
+  p  { font-size:.95rem; line-height:1.5; color:#4a4a4a; margin:0 0 1.5rem; }
+  a.btn { display:inline-block; padding:.85rem 1.6rem; border-radius:999px;
+          background:#1c1b1f; color:#fff; text-decoration:none; font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Signing you in…</h1>
+  <p>If NOWLII doesn't open automatically, tap below.</p>
+  <a class="btn" href="__INTENT_ATTR__">Continue to NOWLII</a>
+</main>
+<script>
+  try { window.location.replace(__INTENT_JS__); } catch (e) {}
+</script>
+</body>
+</html>
+"""
+
+
 @csrf_exempt
 def apple_web_redirect(request):
     params = request.POST.dict() or request.GET.dict()
@@ -702,11 +738,22 @@ def apple_web_redirect(request):
         "intent://callback?" + urlencode(params) +
         "#Intent;package=com.nowlii.app;scheme=signinwithapple;end"
     )
-    # 307 keeps the method/semantics while the Custom Tab hands the intent:// URL to
-    # Android, which routes it to the plugin's SignInWithAppleCallback activity.
-    resp = HttpResponse(status=307)
-    resp['Location'] = intent
-    return resp
+    # This used to be a bare 307, and it did not work: Chrome refuses to follow a
+    # server-driven intent:// redirect that no user gesture asked for, so the Custom
+    # Tab sat there and the app never received the credential (confirmed on the
+    # emulator 2026-07-10 — Apple form_post'ed back and we returned the 307, but
+    # POST /api/auth/apple/ never fired). Serving a page gives two chances: an
+    # automatic navigation, and a real tap if Chrome swallowed it.
+    #
+    # urlencode() percent-escapes every value, so `intent` cannot carry markup out of
+    # these contexts on its own; the attribute is HTML-escaped and the JS operand
+    # JSON-quoted anyway, since the values originate from Apple's POST body.
+    page = (
+        _APPLE_BOUNCE_PAGE
+        .replace("__INTENT_ATTR__", escape(intent))
+        .replace("__INTENT_JS__", json.dumps(intent))
+    )
+    return HttpResponse(page, content_type="text/html; charset=utf-8")
 
 
 # ------------------------------------------------------------------------------
