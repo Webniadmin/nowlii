@@ -9,7 +9,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 /// Every screen in the flow renders "n/[kOnboardingTotalSteps]", so this lives in
 /// one place — the count was previously hardcoded at five separate call sites and
 /// they drift the moment a screen is added or removed.
-const int kOnboardingTotalSteps = 6;
+const int kOnboardingTotalSteps = 8;
 
 class AnimatedOnboardingTopbar extends StatefulWidget {
   final int currentStep;

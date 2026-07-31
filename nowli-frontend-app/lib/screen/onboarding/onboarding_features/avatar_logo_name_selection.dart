@@ -47,7 +47,7 @@ class _AvatarLogoAndNameState extends State<AvatarLogoAndName> {
                 currentStep: 6,
                 totalSteps: kOnboardingTotalSteps,
                 backRoute: "/avatarLogo",
-                skipRoute: "/popupSpeking",
+                skipRoute: "/limitedByDesign",
                 isSmallDevice: isSmallDevice,
                 isMediumDevice: isMediumDevice,
                 screenWidth: screenWidth,
@@ -90,7 +90,7 @@ class _AvatarLogoAndNameState extends State<AvatarLogoAndName> {
             GestureDetector(
               onTap: _selectedName.trim().isEmpty
                   ? null
-                  : () => context.push("/popupSpeking"),
+                  : () => context.push("/limitedByDesign"),
               child: Opacity(
                 opacity: _selectedName.trim().isEmpty ? 0.5 : 1.0,
                 child: Container(

@@ -19,6 +19,10 @@ class AppRoutespath {
   static const String nowliHowToUse = "/nowliHowToUse";
   static const String avatarLogo = "/avatarLogo";
   static const String avatarLogoAndName = "/avatarLogoAndName";
+  // Steps 7 and 8: what the product deliberately will not do (two calls a day)
+  // and what the user gets back afterwards.
+  static const String limitedByDesign = "/limitedByDesign";
+  static const String tonightsReceipt = "/tonightsReceipt";
   static const String popupSpeking = "/popupSpeking";
   static const String procrastinationScreen = "/procrastinationScreen";
   static const String aiVoice = "/aiVoice";

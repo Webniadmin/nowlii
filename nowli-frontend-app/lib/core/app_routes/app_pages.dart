@@ -10,8 +10,10 @@ import 'package:nowlii/screen/home/swipe_to_talk/voice_check/popup_your_share_yo
 import 'package:nowlii/screen/home/swipe_to_talk/voice_check/popup_speaking.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/voice_check/popup_processing.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/voice_check/popup_error.dart';
+import 'package:nowlii/screen/onboarding/limited_by_design_screen.dart';
 import 'package:nowlii/screen/onboarding/loading_onboarding_nowli.dart';
 import 'package:nowlii/screen/onboarding/nowli_how_to_use.dart';
+import 'package:nowlii/screen/onboarding/tonights_receipt_screen.dart';
 import 'package:nowlii/screen/onboarding/onboarding_features/onboarding_features.dart';
 import 'package:nowlii/screen/onboarding/onboarding_flow_file/onboarding_flow.dart';
 import 'package:nowlii/screen/ai_call/ai_voice.dart';
@@ -288,6 +290,14 @@ class AppPages {
       GoRoute(
         path: AppRoutespath.avatarLogoAndName,
         builder: (context, state) => const AvatarLogoAndName(),
+      ),
+      GoRoute(
+        path: AppRoutespath.limitedByDesign,
+        builder: (context, state) => const LimitedByDesignScreen(),
+      ),
+      GoRoute(
+        path: AppRoutespath.tonightsReceipt,
+        builder: (context, state) => const TonightsReceiptScreen(),
       ),
       GoRoute(
         path: AppRoutespath.popupSpeking,
