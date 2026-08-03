@@ -60,8 +60,13 @@ C:\src\flutter\bin\flutter.bat build apk --debug --dart-define-from-file=dart_de
 URLs are actually baked in before installing — unzip the APK and grep `kernel_blob.bin` for
 `https://api.nowlii.com` and for the absence of `16.170.191.239`.
 
-- [ ] APK built and URL-verified
-- [ ] Installed on the phone
+- [x] APK built and URL-verified — **`C:\Users\Pavle\Desktop\nowlii-20260803-debug.apk`**
+      (238 MB debug). `kernel_blob.bin` contains `https://api.nowlii.com` and
+      `https://ai.nowlii.com`, and **zero** occurrences of `16.170.191.239`.
+- [ ] Installed on the phone ← **you are here**
+
+> Build warns that 8 plugins still apply the Kotlin Gradle Plugin, which a future Flutter
+> will refuse to build. Not a problem today; worth a look before the release build.
 
 ### 3. On-device testing
 
