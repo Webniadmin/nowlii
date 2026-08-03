@@ -399,6 +399,7 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
             _ScheduleRow(
               step: schedule[i],
               dotColour: dotFor(schedule[i], i),
+              incomingColour: i == 0 ? null : dotFor(schedule[i - 1], i - 1),
               isLast: i == schedule.length - 1,
             ),
         ],
@@ -432,11 +433,19 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
 class _ScheduleRow extends StatelessWidget {
   final PriceStep step;
   final Color dotColour;
+
+  /// Colour of the segment arriving from the row above; null on the first row, which has
+  /// nothing above it to join to.
+  final Color? incomingColour;
   final bool isLast;
+
+  /// How far down the row the dot sits, so it lines up with the stage name.
+  static const double _dotTopOffset = 24;
 
   const _ScheduleRow({
     required this.step,
     required this.dotColour,
+    required this.incomingColour,
     required this.isLast,
   });
 
@@ -451,16 +460,25 @@ class _ScheduleRow extends StatelessWidget {
       height: 60,
       child: Row(
         children: [
-          // Dot plus the connector down to the next row. The row the subscriber is on gets
-          // a frame so the eye lands on it before reading anything.
+          // The rail. It has to read as one continuous line down the card, so each row
+          // draws the segment *arriving* at its dot as well as the one leaving it —
+          // otherwise the space above every dot is blank and the line looks broken.
+          //
+          // The arriving segment takes the colour of the row above, so a stage change is a
+          // colour change at the dot rather than mid-gap.
           SizedBox(
             width: 16,
             child: Column(
               children: [
+                SizedBox(
+                  height: _dotTopOffset,
+                  child: incomingColour == null
+                      ? null
+                      : Container(width: 2, color: incomingColour),
+                ),
                 Container(
                   width: 12,
                   height: 12,
-                  margin: const EdgeInsets.only(top: 24),
                   decoration: BoxDecoration(color: dotColour, shape: BoxShape.circle),
                 ),
                 if (!isLast)
