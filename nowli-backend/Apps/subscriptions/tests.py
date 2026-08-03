@@ -295,3 +295,156 @@ class AccessGateTests(APITestCase):
         self.client.get("/api/subscriptions/me/")
         self._expire_trial()
         self.assertNotEqual(self.client.get("/api/quests/").status_code, 402)
+
+
+class StepDownTests(APITestCase):
+    """The price ladder is four separate store products and neither store lets a server
+    move a subscriber between them. Everything here is about that gap: noticing it, not
+    inventing it, and not nagging people it does not apply to.
+    """
+
+    def _sub(self, months_ago, product, platform="google"):
+        u = User.objects.create_user(username=f"step{months_ago}{product}", password="x")
+        return Subscription.objects.create(
+            user=u,
+            started_at=date(2026, 1, 10),
+            status=Subscription.Status.ACTIVE,
+            platform=platform,
+            store_product_id=product,
+        )
+
+    def test_product_matches_the_schedule(self):
+        self.assertEqual(services.store_product_for_month(1, "google"), "tier1")
+        self.assertEqual(services.store_product_for_month(4, "google"), "tier2")
+        self.assertEqual(services.store_product_for_month(7, "google"), "tier3")
+        self.assertEqual(services.store_product_for_month(12, "google"), "tier4")
+        self.assertEqual(services.store_product_for_month(4, "apple"), "com.nowlii.pro.tier2")
+        # Nothing to sell past the ladder.
+        self.assertEqual(services.store_product_for_month(13, "google"), "")
+
+    def test_no_step_while_on_the_right_rung(self):
+        sub = self._sub(0, "tier1")
+        due = services.step_down_due(sub, date(2026, 2, 1))   # still month 1
+        self.assertFalse(due["due"])
+
+    def test_a_step_is_due_once_the_month_moves_on(self):
+        sub = self._sub(0, "tier1")
+        due = services.step_down_due(sub, date(2026, 4, 10))  # month 4 → tier2
+        self.assertTrue(due["due"])
+        self.assertEqual(due["from_product"], "tier1")
+        self.assertEqual(due["to_product"], "tier2")
+        self.assertEqual(due["to_price"], 14.99)
+
+    def test_a_skipped_rung_goes_straight_to_the_right_one(self):
+        """Someone who did not open the app for six months should not be walked down one
+        rung at a time — they should land on what they should be paying now."""
+        sub = self._sub(0, "tier1")
+        due = services.step_down_due(sub, date(2026, 10, 10))  # month 10 → tier4
+        self.assertEqual(due["to_product"], "tier4")
+
+    def test_past_the_ladder_the_answer_is_cancel_not_switch(self):
+        sub = self._sub(0, "tier4")
+        due = services.step_down_due(sub, date(2027, 2, 10))   # month 14
+        self.assertFalse(due["due"])
+        self.assertTrue(due["cancel"])
+        self.assertEqual(due["to_product"], "")
+
+    def test_nothing_left_to_cancel_is_not_a_pending_action(self):
+        sub = self._sub(0, "")
+        sub.store_product_id = ""
+        due = services.step_down_due(sub, date(2027, 2, 10))
+        self.assertFalse(due["cancel"])
+
+    def test_a_trial_user_is_never_asked_to_switch(self):
+        u = User.objects.create_user(username="steptrial", password="x")
+        sub = Subscription.objects.create(
+            user=u, started_at=None, trial_started_at=date(2026, 1, 10),
+            status=Subscription.Status.TRIAL, platform=Subscription.Platform.GOOGLE,
+        )
+        self.assertFalse(services.step_down_due(sub, date(2026, 6, 1))["due"])
+
+    def test_mock_subscriptions_are_left_alone(self):
+        """Mock is the test-only platform; there is no store product to move."""
+        sub = self._sub(0, "tier1", platform="mock")
+        self.assertFalse(services.step_down_due(sub, date(2026, 6, 1))["due"])
+
+    def test_the_gap_is_recorded_and_then_cleared(self):
+        sub = self._sub(0, "tier1")
+        services.sync_step_down_state(sub, date(2026, 4, 10))
+        sub.refresh_from_db()
+        self.assertEqual(sub.step_down_pending_since, date(2026, 4, 10))
+
+        # Seen again later: the date must stay the FIRST day it was noticed, because that
+        # is what says how long they have been overpaying.
+        services.sync_step_down_state(sub, date(2026, 5, 10))
+        sub.refresh_from_db()
+        self.assertEqual(sub.step_down_pending_since, date(2026, 4, 10))
+
+        # The app finally switched them.
+        sub.store_product_id = "tier2"
+        sub.save(update_fields=["store_product_id"])
+        services.sync_step_down_state(sub, date(2026, 5, 11))
+        sub.refresh_from_db()
+        self.assertIsNone(sub.step_down_pending_since)
+
+
+class ConfirmSwitchEndpointTests(APITestCase):
+    """The device is the only thing that can move a subscriber down the ladder, so this is
+    how the truth gets back to the backend afterwards."""
+
+    def setUp(self):
+        self.u = User.objects.create_user(username="switcher", password="x")
+        self.client.force_authenticate(user=self.u)
+        self.sub = Subscription.objects.create(
+            user=self.u,
+            started_at=date.today() - timedelta(days=100),   # ~month 4 → tier2 is due
+            status=Subscription.Status.ACTIVE,
+            platform=Subscription.Platform.GOOGLE,
+            store_product_id="tier1",
+        )
+
+    def test_me_reports_the_step_as_due(self):
+        body = self.client.get("/api/subscriptions/me/").data
+        self.assertTrue(body["step_down"]["due"])
+        self.assertEqual(body["step_down"]["to_product"], "tier2")
+
+    def test_confirming_the_switch_closes_the_gap(self):
+        response = self.client.post(
+            "/api/subscriptions/confirm-switch/", {"store_product_id": "tier2"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["step_down"]["due"])
+
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.store_product_id, "tier2")
+        self.assertIsNone(self.sub.step_down_pending_since)
+
+    def test_reading_the_status_records_that_they_are_overpaying(self):
+        self.client.get("/api/subscriptions/me/")
+        self.sub.refresh_from_db()
+        self.assertIsNotNone(self.sub.step_down_pending_since)
+
+    def test_an_unknown_product_is_rejected(self):
+        response = self.client.post(
+            "/api/subscriptions/confirm-switch/", {"store_product_id": "tier9"}, format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.store_product_id, "tier1")
+
+    def test_a_missing_product_is_rejected(self):
+        self.assertEqual(
+            self.client.post("/api/subscriptions/confirm-switch/", {}, format="json").status_code,
+            400,
+        )
+
+    def test_apple_products_are_accepted_too(self):
+        self.sub.platform = Subscription.Platform.APPLE
+        self.sub.store_product_id = "com.nowlii.pro.tier1"
+        self.sub.save()
+        response = self.client.post(
+            "/api/subscriptions/confirm-switch/",
+            {"store_product_id": "com.nowlii.pro.tier2"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["step_down"]["due"])

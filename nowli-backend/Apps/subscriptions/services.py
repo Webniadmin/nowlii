@@ -29,18 +29,89 @@ def current_month_index(start: date, ref: date = None) -> int:
 
 
 def phase_for_month(month_index: int) -> dict:
-    """Return ``{phase, price, is_free}`` for a 1-based billing-month index."""
+    """Return ``{phase, price, is_free, google_base_plan, apple_product}`` for a 1-based
+    billing-month index. The product ids are empty for the free stage, which no store sells.
+    """
     if month_index > config.FREE_AFTER_MONTH:
-        return {"phase": "free", "price": 0.0, "is_free": True}
+        return {"phase": "free", "price": 0.0, "is_free": True,
+                "google_base_plan": "", "apple_product": ""}
     for p in config.PHASES:
         if p["from_month"] <= month_index <= p["to_month"]:
             return {
                 "phase": f"{p['from_month']}-{p['to_month']}",
                 "price": float(p["price"]),
                 "is_free": False,
+                "google_base_plan": p.get("google_base_plan", ""),
+                "apple_product": p.get("apple_product", ""),
             }
     # Outside the defined ranges → treat as free (defensive; shouldn't normally happen).
-    return {"phase": "free", "price": 0.0, "is_free": True}
+    return {"phase": "free", "price": 0.0, "is_free": True,
+            "google_base_plan": "", "apple_product": ""}
+
+
+def store_product_for_month(month_index: int, platform: str) -> str:
+    """The store product that should be billing a subscriber in ``month_index``.
+
+    Empty string once the schedule reaches the free stage — there is no product to move to,
+    the subscription is cancelled instead.
+    """
+    phase = phase_for_month(month_index)
+    if platform == "apple":
+        return phase["apple_product"]
+    if platform == "google":
+        return phase["google_base_plan"]
+    return ""
+
+
+def step_down_due(subscription, ref: date = None) -> dict:
+    """Is this subscriber being billed more than the schedule says they should be?
+
+    This exists because **neither store lets a server move a subscriber to a cheaper plan**.
+    The price ladder is four separate store products, and the change from one to the next can
+    only be initiated from the device. So the backend's job is to notice the gap and the
+    app's job is to close it the next time the user opens it.
+
+    ``cancel`` is the end of the ladder: past the last paid month there is nothing to move to
+    and the store subscription should simply be cancelled, after which access comes from
+    ``lifetime_free`` alone.
+
+    Returns ``due=False`` for anyone the question does not apply to — trial-only, mock
+    platform, lifetime-free, or already on the right product.
+    """
+    ref = ref or timezone.localdate()
+    if subscription is None or subscription.started_at is None:
+        return {"due": False, "cancel": False, "from_product": "", "to_product": "",
+                "to_price": 0.0}
+    if subscription.platform not in ("apple", "google"):
+        return {"due": False, "cancel": False, "from_product": "", "to_product": "",
+                "to_price": 0.0}
+
+    idx = current_month_index(subscription.started_at, ref)
+    expected = store_product_for_month(idx, subscription.platform)
+    billed = subscription.store_product_id
+
+    # Past the ladder: cancel rather than switch. Only meaningful while a store subscription
+    # is still on file — once it is cancelled there is nothing left to ask the app to do.
+    if idx > config.FREE_AFTER_MONTH:
+        return {
+            "due": False,
+            "cancel": bool(billed),
+            "from_product": billed,
+            "to_product": "",
+            "to_price": 0.0,
+        }
+
+    if not billed or billed == expected:
+        return {"due": False, "cancel": False, "from_product": billed,
+                "to_product": "", "to_price": 0.0}
+
+    return {
+        "due": True,
+        "cancel": False,
+        "from_product": billed,
+        "to_product": expected,
+        "to_price": phase_for_month(idx)["price"],
+    }
 
 
 def phase_schedule() -> dict:
@@ -57,6 +128,27 @@ def phase_schedule() -> dict:
             for p in config.PHASES
         ],
     }
+
+
+def sync_step_down_state(subscription, ref: date = None):
+    """Record when a subscriber first fell behind the price ladder, and clear it when they
+    catch up. Idempotent; the date is the *first* day the gap was seen, not the latest.
+
+    Kept separate from ``step_down_due`` so the read stays pure — this is the one that
+    writes, and it is called from the status endpoint the app hits anyway.
+    """
+    ref = ref or timezone.localdate()
+    if subscription is None:
+        return subscription
+
+    due = step_down_due(subscription, ref)["due"]
+    if due and subscription.step_down_pending_since is None:
+        subscription.step_down_pending_since = ref
+        subscription.save(update_fields=["step_down_pending_since", "updated_at"])
+    elif not due and subscription.step_down_pending_since is not None:
+        subscription.step_down_pending_since = None
+        subscription.save(update_fields=["step_down_pending_since", "updated_at"])
+    return subscription
 
 
 def sync_lifetime(subscription, ref: date = None):
