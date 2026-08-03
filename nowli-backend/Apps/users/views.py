@@ -169,6 +169,40 @@ class NowliiPredefinedOptionViewSet(viewsets.ModelViewSet):
 # ------------------------------------------------------------------------------
 # PROFILE
 # ------------------------------------------------------------------------------
+class ClearAIMemoryView(APIView):
+    """POST /api/profiles/clear-ai-memory/ — delete everything the AI remembers about me.
+
+    Backs the "Clear All AI Memory" button, which until now showed "cleared successfully"
+    and deleted nothing.
+
+    What goes: the AI's *interpretations* — per-call summaries, emotion and low-mood
+    snapshots, and the cached weekly/monthly insight text. Those are the whole of what the
+    companion knows about someone across calls; nowli-ai's own sessions are in-memory and end
+    with the call.
+
+    What deliberately stays: the ``VoiceCall`` rows themselves. They are the ledger the daily
+    limit is counted from, so deleting them would hand every user an unlimited supply of
+    calls. Clearing a memory must not also clear a quota.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from Apps.insights.models import InsightCache
+        from Apps.voice_calls.models import (
+            CallEmotionSnapshot, CallLowMoodSnapshot, CallSummary,
+        )
+
+        user = request.user
+        deleted = {
+            "summaries": CallSummary.objects.filter(user=user).delete()[0],
+            "emotion_snapshots": CallEmotionSnapshot.objects.filter(user=user).delete()[0],
+            "low_mood_snapshots": CallLowMoodSnapshot.objects.filter(user=user).delete()[0],
+            "insight_caches": InsightCache.objects.filter(user=user).delete()[0],
+        }
+        logger.info("Cleared AI memory for user=%s | %s", user.pk, deleted)
+        return Response({"detail": "AI memory cleared.", "deleted": deleted})
+
+
 @method_decorator(name='list', decorator=swagger_auto_schema(
     operation_summary="List all profiles",
     operation_description="Get a list of all profile entries.",

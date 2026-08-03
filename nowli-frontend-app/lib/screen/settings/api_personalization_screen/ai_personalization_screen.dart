@@ -245,7 +245,6 @@
 //   }
 // }
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/screen/settings/api_personalization_screen/clear_memory_popup/clear_memory_popup.dart';
 import 'package:nowlii/screen/settings/api_personalization_screen/restricted_topics_popup/restricted_topiccs_popup.dart';
 import 'package:nowlii/screen/settings/api_personalization_screen/voice_selector_popup/voice_selector_popup.dart';
@@ -253,6 +252,7 @@ import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/api/profile_controller.dart';
 import 'package:nowlii/api/storage.dart';
+import 'package:nowlii/api/profile_service.dart';
 
 class AIPersonalizationScreen extends StatefulWidget {
   const AIPersonalizationScreen({super.key});
@@ -264,6 +264,7 @@ class AIPersonalizationScreen extends StatefulWidget {
 
 class _AIPersonalizationScreenState extends State<AIPersonalizationScreen> {
   bool _useDataToImproveAI = true;
+  List<String> _restrictedTopics = const [];
 
   @override
   void initState() {
@@ -271,30 +272,58 @@ class _AIPersonalizationScreenState extends State<AIPersonalizationScreen> {
     _loadSettings();
   }
 
+  /// Read from the cached profile, which is where the backend's copy lands.
+  ///
+  /// These settings used to live in SharedPreferences and be read by nothing. They belong
+  /// to the account rather than the handset: the restricted topics go into the AI's prompt
+  /// on the server, and a privacy choice that never leaves the device is not a choice about
+  /// anything the server does.
   Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
+    final profile = await StorageService().getProfileData();
+    if (!mounted || profile == null) return;
     setState(() {
-      _useDataToImproveAI = prefs.getBool('ai_use_data_to_improve') ?? true;
+      _useDataToImproveAI = profile.useDataToImprove;
+      _restrictedTopics = profile.restrictedTopics;
     });
   }
 
-  Future<void> _saveUseDataSetting(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('ai_use_data_to_improve', value);
+  /// Save to the local cache first, then the backend.
+  ///
+  /// The cache is what the call screen reads when it starts a session, so writing it first
+  /// means a change applies to the very next call even if the network is slow or down.
+  Future<void> _persist({List<String>? topics, bool? useData}) async {
+    final storage = StorageService();
+    final profile = await storage.getProfileData();
+    if (profile != null) {
+      await storage.saveProfileData(profile.copyWith(
+        restrictedTopics: topics,
+        useDataToImprove: useData,
+      ));
+    }
+    await ProfileController().updateProfile(
+      restrictedTopics: topics,
+      useDataToImprove: useData,
+    );
   }
 
   void _showClearMemoryDialog(BuildContext context) async {
     final confirmed = await ClearMemoryPopup.show(context);
-    if (confirmed == true) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('AI Memory cleared successfully'),
-            backgroundColor: Color(0xFFE53935),
-          ),
-        );
-      }
-    }
+    if (confirmed != true) return;
+
+    final cleared = await ProfileService.clearAiMemory();
+    if (!mounted) return;
+    // Only claim success when the server confirmed it. Reporting "cleared" on a failed
+    // request is exactly the bug this replaces, and it is the worst kind: the user believes
+    // their data is gone.
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(cleared
+            ? 'AI memory cleared'
+            : "Couldn't clear AI memory — check your connection and try again"),
+        backgroundColor:
+            cleared ? const Color(0xFFE53935) : const Color(0xFF4C586E),
+      ),
+    );
   }
 
   @override
@@ -392,18 +421,22 @@ class _AIPersonalizationScreenState extends State<AIPersonalizationScreen> {
                     onTap: () async {
                       final selectedTopics = await RestrictedTopicsPopup.show(
                         context,
+                        initialTopics: _restrictedTopics,
                       );
-                      if (selectedTopics != null) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Selected ${selectedTopics.length} topics',
-                              ),
-                            ),
-                          );
-                        }
-                      }
+                      if (selectedTopics == null) return;
+                      if (!mounted) return;
+                      setState(() => _restrictedTopics = selectedTopics);
+                      await _persist(topics: selectedTopics);
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(selectedTopics.isEmpty
+                              ? 'Nowlii can talk about anything again'
+                              : "Nowlii won't bring up "
+                                  '${selectedTopics.length} '
+                                  '${selectedTopics.length == 1 ? "topic" : "topics"}'),
+                        ),
+                      );
                     },
                     hasArrow: true,
                   ),
@@ -422,7 +455,7 @@ class _AIPersonalizationScreenState extends State<AIPersonalizationScreen> {
                       setState(() {
                         _useDataToImproveAI = value;
                       });
-                      _saveUseDataSetting(value);
+                      _persist(useData: value);
                     },
                   ),
                   const SizedBox(height: 12),

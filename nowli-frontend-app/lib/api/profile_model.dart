@@ -9,6 +9,13 @@ class ProfileModel {
   final String language;
   final String voice;
 
+  /// Topics the user asked the companion to steer clear of. Sent to nowli-ai when a call
+  /// starts, so this is one of the few settings that changes what the AI actually says.
+  final List<String> restrictedTopics;
+
+  /// Whether this user's conversations may be used to improve the AI.
+  final bool useDataToImprove;
+
   ProfileModel({
     this.id,
     required this.name,
@@ -19,6 +26,8 @@ class ProfileModel {
     this.customNowliiName,
     required this.language,
     required this.voice,
+    this.restrictedTopics = const [],
+    this.useDataToImprove = true,
   });
 
   // From JSON
@@ -32,7 +41,14 @@ class ProfileModel {
       nowliiName: json['nowlii_name'],
       customNowliiName: json['custom_nowlii_name'],
       language: json['language'] ?? 'English',
-      voice: json['voice'] ?? 'Male',
+      // Female is the product default; an older row that never set one still reads as the
+      // voice the caller actually hears, because nowli-ai falls back to the female voice.
+      voice: json['voice'] ?? 'Female',
+      restrictedTopics: (json['restricted_topics'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      useDataToImprove: json['use_data_to_improve'] ?? true,
     );
   }
 
@@ -48,6 +64,8 @@ class ProfileModel {
       if (customNowliiName != null) 'custom_nowlii_name': customNowliiName,
       'language': language,
       'voice': voice,
+      'restricted_topics': restrictedTopics,
+      'use_data_to_improve': useDataToImprove,
     };
   }
 
@@ -62,6 +80,8 @@ class ProfileModel {
     String? customNowliiName,
     String? language,
     String? voice,
+    List<String>? restrictedTopics,
+    bool? useDataToImprove,
   }) {
     return ProfileModel(
       id: id ?? this.id,
@@ -73,6 +93,8 @@ class ProfileModel {
       customNowliiName: customNowliiName ?? this.customNowliiName,
       language: language ?? this.language,
       voice: voice ?? this.voice,
+      restrictedTopics: restrictedTopics ?? this.restrictedTopics,
+      useDataToImprove: useDataToImprove ?? this.useDataToImprove,
     );
   }
 }
@@ -155,6 +177,10 @@ class UpdateProfileRequest {
   // since `avatar_logo`/`nowlii_name` are read-only server-side (the backend copies
   // the avatar/name from the chosen predefined option in Profile.save()).
   final int? predefinedOption;
+  /// AI Personalization → Restricted Topics. Validated server-side against a known list,
+  /// because these end up inside the AI's prompt.
+  final List<String>? restrictedTopics;
+  final bool? useDataToImprove;
 
   UpdateProfileRequest({
     this.name,
@@ -166,11 +192,15 @@ class UpdateProfileRequest {
     this.language,
     this.voice,
     this.predefinedOption,
+    this.restrictedTopics,
+    this.useDataToImprove,
   });
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = {};
     if (name != null) data['name'] = name;
+    if (restrictedTopics != null) data['restricted_topics'] = restrictedTopics;
+    if (useDataToImprove != null) data['use_data_to_improve'] = useDataToImprove;
     
     // Validate gender - only allow valid choices
     if (gender != null) {

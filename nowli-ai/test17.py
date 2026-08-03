@@ -442,6 +442,56 @@ class TurnRecord:
         self.ts               = time.time()
 
 
+# The Restricted Topics catalogue, mirroring Apps/users/models.py Profile.RESTRICTED_TOPIC_CHOICES.
+# Kept here as well because this service is reachable directly: the backend validates what it
+# stores, but nothing stops a client posting straight to /session/new. Anything not on this
+# list is dropped rather than passed into a prompt.
+_RESTRICTED_TOPICS: Dict[str, str] = {
+    "Health or medical discussions":        "health or medical matters",
+    "Relationship advice":                  "advice about their relationships",
+    "Emotionally heavy or distress topics": "heavy emotional territory",
+    "Sensitive news / politics":            "news or politics",
+}
+
+
+def _clean_restricted_topics(raw) -> List[str]:
+    """Keep only known topic labels, in order, without duplicates."""
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out, seen = [], set()
+    for item in raw:
+        topic = str(item).strip()
+        if topic in _RESTRICTED_TOPICS and topic not in seen:
+            seen.add(topic)
+            out.append(topic)
+    return out
+
+
+def _restricted_topics_block(topics: List[str]) -> str:
+    """The per-user addition to the persona.
+
+    Two things it is careful about. It describes what the companion should not *raise*, not
+    what the user is allowed to say — someone who brings up their own health is not to be
+    stonewalled by their own setting. And it carves out safety explicitly: a preference about
+    subject matter must never become a reason to deflect somebody at risk.
+    """
+    if not topics:
+        return ""
+    phrases = [_RESTRICTED_TOPICS[t] for t in topics]
+    if len(phrases) == 1:
+        joined = phrases[0]
+    else:
+        joined = ", ".join(phrases[:-1]) + " and " + phrases[-1]
+    return (
+        f"\n\nThis person has asked you not to bring up {joined}. Do not introduce those "
+        "subjects or steer the conversation toward them. If they raise one themselves, follow "
+        "their lead warmly — this shapes what you start, not what they may talk about."
+        "\n\nThis never applies to safety. If anything they say suggests they may be at risk "
+        "of harming themselves or someone else, respond with care and stay with them. A topic "
+        "preference is never a reason to deflect that."
+    )
+
+
 def _normalize_voice_gender(value: str) -> str:
     """Normalize the client's voice choice (Profile.voice: 'Male'/'Female') to 'male'/'female'.
 
@@ -458,13 +508,17 @@ def _normalize_voice_gender(value: str) -> str:
 class Session:
     def __init__(self, session_id: str, user_name: str = "User",
                  system_name: str = "Aria", language: str = DEFAULT_LANGUAGE,
-                 voice: str = ""):
+                 voice: str = "", restricted_topics: Optional[List[str]] = None):
         self.session_id  = session_id
         self.user_name   = user_name.strip()   or "User"
         self.system_name = system_name.strip() or "Aria"
         self.language    = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
         # Chosen companion voice ('male'/'female' or '' for default) — drives the Realtime voice.
         self.voice_gender = _normalize_voice_gender(voice)
+        # Topics this user asked the companion not to bring up (AI Personalization →
+        # Restricted Topics). Only names from the known list survive the backend's
+        # validation, so these are labels, never free text from the client.
+        self.restricted_topics = _clean_restricted_topics(restricted_topics)
         self.turns: List[TurnRecord] = []
         self.created_at  = time.time()
 
@@ -547,6 +601,9 @@ class NewSessionRequest(BaseModel):
     # Chosen companion voice: 'Male'/'Female' (from the user's profile). Optional — an unset
     # or unknown value keeps the default Realtime voice.
     voice:       str = Field(default="")
+    # Topics the user asked the companion to steer clear of. The Django backend validates
+    # these against its own list before they ever get here.
+    restricted_topics: List[str] = Field(default_factory=list)
 
     @field_validator("language")
     @classmethod
@@ -972,7 +1029,7 @@ async def new_session(request: NewSessionRequest = NewSessionRequest()):
     _sessions[sid] = Session(
         session_id=sid, user_name=request.user_name,
         system_name=request.system_name, language=request.language,
-        voice=request.voice,
+        voice=request.voice, restricted_topics=request.restricted_topics,
     )
     s = _sessions[sid]
     logger.info("New session | id=%s | user=%s | friend=%s | lang=%s | voice=%s",
@@ -1072,8 +1129,10 @@ def _realtime_instructions(session) -> str:
         base = _REALTIME_PERSONA_EN.format(
             system_name=session.system_name, user_name=session.user_name,
         )
-        return base + _VOICE_RULES.get("en", "")
-    return _build_system_prompt("neutral", session.user_name, session.system_name, lang)
+        return (base + _VOICE_RULES.get("en", "")
+                + _restricted_topics_block(getattr(session, "restricted_topics", [])))
+    return (_build_system_prompt("neutral", session.user_name, session.system_name, lang)
+            + _restricted_topics_block(getattr(session, "restricted_topics", [])))
 
 
 class RealtimeTokenRequest(BaseModel):

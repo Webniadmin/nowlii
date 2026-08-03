@@ -13,6 +13,9 @@ class AiCallService {
     String language = 'en',
     // Chosen companion voice ('Male'/'Female') — selects the male/female Realtime voice.
     String voice = '',
+    // Topics the user asked the companion not to raise (AI Personalization). Folded into
+    // the call persona server-side.
+    List<String> restrictedTopics = const [],
   }) async {
     try {
       final url = Uri.parse('${ApiConstants.aiBaseUrl}${ApiConstants.createSession}');
@@ -27,6 +30,7 @@ class AiCallService {
           'system_name': systemName,
           'language': language,
           if (voice.isNotEmpty) 'voice': voice,
+          if (restrictedTopics.isNotEmpty) 'restricted_topics': restrictedTopics,
         }),
       ).timeout(
         const Duration(seconds: 10),

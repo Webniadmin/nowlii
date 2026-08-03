@@ -358,6 +358,34 @@ class ProfileService {
     }
   }
 
+  /// Delete everything the AI has concluded about this user.
+  ///
+  /// Backs "Clear All AI Memory", which used to report success and delete nothing. The
+  /// backend removes call summaries, emotion and low-mood snapshots and cached insights,
+  /// and deliberately keeps the call rows themselves — those are what the daily limit is
+  /// counted from.
+  ///
+  /// Returns true only when the server confirms it. The button must not claim success on a
+  /// failed request; that is the bug this replaces.
+  static Future<bool> clearAiMemory() async {
+    try {
+      final token = await Session.accessToken();
+      if (token == null) return false;
+
+      final response = await http.post(
+        Uri.parse('${ApiConstants.baseUrl}${ApiConstants.clearAiMemory}'),
+        headers: {
+          'Content-Type': ApiConstants.contentType,
+          'Accept': ApiConstants.accept,
+          'Authorization': 'Bearer $token',
+        },
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // Get cached profile from local storage
   static Future<ProfileModel?> getCachedProfile() async {
     return await SecureStorage.getProfileData();

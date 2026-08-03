@@ -105,6 +105,29 @@ class ProfileSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['user', 'avatar_logo', 'nowlii_name']
 
+    def validate_restricted_topics(self, value):
+        """Only topics the AI has been told how to handle.
+
+        These end up inside the call persona, so an unrecognised string would be instructions
+        written by the client straight into the model's prompt. Validating against the known
+        list keeps that door shut and stops typos silently doing nothing.
+        """
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Expected a list of topics.")
+
+        allowed = Profile.RESTRICTED_TOPIC_CHOICES
+        cleaned, seen = [], set()
+        for item in value:
+            topic = str(item).strip()
+            if topic not in allowed:
+                raise serializers.ValidationError(
+                    f"'{topic}' is not a known restricted topic."
+                )
+            if topic not in seen:      # order preserved, duplicates dropped
+                seen.add(topic)
+                cleaned.append(topic)
+        return cleaned
+
 
 # ------------------------------------------------------------------------------
 # REGISTRATION

@@ -110,6 +110,8 @@ class ProfileController extends ChangeNotifier {
     String? language,
     String? voice,
     int? predefinedOption,
+    List<String>? restrictedTopics,
+    bool? useDataToImprove,
     File? avatarLogoFile,
     File? profileImageFile,
     XFile? avatarLogoXFile,
@@ -130,6 +132,8 @@ class ProfileController extends ChangeNotifier {
         language: language,
         voice: voice,
         predefinedOption: predefinedOption,
+        restrictedTopics: restrictedTopics,
+        useDataToImprove: useDataToImprove,
       );
 
       final result = await ProfileService.updateProfile(

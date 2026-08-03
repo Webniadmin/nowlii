@@ -846,16 +846,26 @@ class _AiVoiceState extends State<AiVoice>
     return profile?.voice.trim() ?? '';
   }
 
+  /// Topics the user asked the companion not to raise (Settings → AI Personalization).
+  /// Read from the cached profile so the choice applies to this call even offline; the
+  /// backend folds them into the call persona.
+  Future<List<String>> _resolveRestrictedTopics() async {
+    final profile = await StorageService().getProfileData();
+    return profile?.restrictedTopics ?? const [];
+  }
+
   Future<void> _createAiSession() async {
     try {
       final userName = await _resolveUserName();
       final companionName = await _resolveCompanionName();
       final companionVoice = await _resolveCompanionVoice();
+      final restrictedTopics = await _resolveRestrictedTopics();
       final session = await _aiCallService.createSession(
         userName: userName,
         systemName: companionName,
         language: 'en',
         voice: companionVoice,
+        restrictedTopics: restrictedTopics,
       );
       
       if (session != null) {

@@ -190,6 +190,16 @@ class Profile(models.Model):
         ('Female', 'Female'),
     ]
 
+    # The canonical Restricted Topics list. It lives here rather than in the app because the
+    # app offers it, the backend stores it and nowli-ai puts it in a prompt — three copies of
+    # the same list drift, and the one that drifts silently is the prompt.
+    RESTRICTED_TOPIC_CHOICES = [
+        'Health or medical discussions',
+        'Relationship advice',
+        'Emotionally heavy or distress topics',
+        'Sensitive news / politics',
+    ]
+
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile', null=True, blank=True)
     name = models.CharField(max_length=50, blank=True, null=True)
     gender = models.CharField(max_length=150, choices=GENDER_CHOICES, blank=True, null=True)
@@ -209,6 +219,17 @@ class Profile(models.Model):
     # Weekday names (e.g. ["Sunday"]) the user marked as intentional rest days. These are
     # excluded from Insights "skipped days" so a deliberate day off isn't nagged as a miss.
     rest_days = models.JSONField(default=list, blank=True)
+    # Topics from AI Personalization → Restricted Topics that this user asked the companion
+    # to stay away from. Sent to nowli-ai when a call starts and folded into the persona, so
+    # this is one of the few settings that changes what the AI actually says.
+    #
+    # "Avoid" means the companion does not *raise* them. It never means refusing someone who
+    # brings up their own distress — see the persona rules in nowli-ai.
+    restricted_topics = models.JSONField(default=list, blank=True)
+    # Whether this user's conversations may be used to improve the AI. Stored server-side
+    # because a privacy choice that lives only on the device is not a choice about anything
+    # the server does.
+    use_data_to_improve = models.BooleanField(default=True)
 
     def save(self, *args, **kwargs):
         # Handle nowlii name and logo logic

@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     ProfileViewSet,
+    ClearAIMemoryView,
     RegisterAPI,
     VerifyOTPView,
     ResendOTPView, 
@@ -32,6 +33,9 @@ urlpatterns = [
         'patch': 'partial_update',
         'delete': 'destroy'
     }), name='profile-detail'),
+    # "Clear All AI Memory" in AI Personalization. Deletes what the AI concluded, not the
+    # call ledger the daily limit is counted from.
+    path('profiles/clear-ai-memory/', ClearAIMemoryView.as_view(), name='profile-clear-ai-memory'),
     path('auth/register/', RegisterAPI.as_view(), name='auth-register'),
     path('auth/verify-otp/', VerifyOTPView.as_view(), name='auth-verify-otp'),
     path('auth/resend-otp/', ResendOTPView.as_view(), name='auth-resend-otp'), 
