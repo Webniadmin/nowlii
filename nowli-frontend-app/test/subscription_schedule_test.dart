@@ -75,4 +75,82 @@ void main() {
       expect(addMonths(DateTime(2028, 1, 31), 1), DateTime(2028, 2, 29));
     });
   });
+
+  group('a subscriber sees where they are', () {
+    final plan = SubscriptionPlan(
+      currency: 'USD',
+      freeAfterMonth: 12,
+      graduatedStage: 'Graduated',
+      phases: [
+        SubscriptionPhase(fromMonth: 1, toMonth: 3, price: 19.99, stage: 'Spark'),
+        SubscriptionPhase(fromMonth: 4, toMonth: 6, price: 14.99, stage: 'Rhythm'),
+        SubscriptionPhase(
+            fromMonth: 7, toMonth: 9, price: 9.99, stage: 'Independence'),
+        SubscriptionPhase(
+            fromMonth: 10, toMonth: 12, price: 4.99, stage: 'Release'),
+      ],
+    );
+    final anchor = DateTime(2026, 8, 3);
+
+    List<PriceStep> at(int month) => buildPriceSchedule(
+          plan: plan, anchor: anchor, currentMonth: month,
+        );
+
+    test('the opening stage appears once subscribed', () {
+      // The bug this fixes: Spark was missing from its own timeline, so the screen showed
+      // everything except the thing being paid for.
+      expect(at(1).first.stage, 'Spark');
+      expect(at(1), hasLength(5));
+    });
+
+    test('someone still deciding is not shown a stage they are not on', () {
+      final steps = buildPriceSchedule(plan: plan, anchor: anchor);
+      expect(steps.first.stage, 'Rhythm');   // the opening price is the headline above
+      expect(steps.any((s) => s.current), isFalse);
+    });
+
+    test('every stage becomes current in its own months', () {
+      expect(at(1).firstWhere((s) => s.current).stage, 'Spark');
+      expect(at(3).firstWhere((s) => s.current).stage, 'Spark');
+      expect(at(4).firstWhere((s) => s.current).stage, 'Rhythm');
+      expect(at(7).firstWhere((s) => s.current).stage, 'Independence');
+      expect(at(10).firstWhere((s) => s.current).stage, 'Release');
+      expect(at(12).firstWhere((s) => s.current).stage, 'Release');
+    });
+
+    test('exactly one stage is current at a time', () {
+      for (final month in [1, 4, 7, 10, 13, 25]) {
+        expect(at(month).where((s) => s.current).length, 1, reason: 'month $month');
+      }
+    });
+
+    test('stages behind you read as completed', () {
+      final steps = at(7);
+      expect(steps[0].badgeLabel, 'COMPLETED');   // Spark
+      expect(steps[1].badgeLabel, 'COMPLETED');   // Rhythm
+      expect(steps[2].badgeLabel, 'CURRENT PLAN');
+      expect(steps[3].badgeLabel, 'NEXT PLAN');
+      expect(steps[4].badgeLabel, 'PROVISIONAL'); // Graduated
+    });
+
+    test('after the year, Graduated is where you live and it is free', () {
+      final steps = at(13);
+      final graduated = steps.last;
+      expect(graduated.stage, 'Graduated');
+      expect(graduated.current, isTrue);
+      expect(graduated.badgeLabel, 'CURRENT PLAN');
+      expect(graduated.priceLabel, '\$0.00');
+      expect(graduated.isFinalFree, isTrue);
+      // Everything paid is behind them.
+      expect(steps.take(4).every((s) => s.completed), isTrue);
+    });
+
+    test('Graduated stays current forever, not just in month 13', () {
+      expect(at(60).last.current, isTrue);
+    });
+
+    test('the last paid stage promotes Graduated to next', () {
+      expect(at(10).last.badgeLabel, 'NEXT PLAN');
+    });
+  });
 }

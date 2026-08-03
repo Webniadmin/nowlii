@@ -90,7 +90,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       height: 40,
                     ),
                     title: 'Nowlii Pro',
-                    onTap: () => {context.push('/subscriptionPage')},
+                    // The Pro screen, not the trial explainer. This used to open
+                    // /subscriptionPage — the "seven days on us" pitch — so a paying
+                    // subscriber tapping their own plan was offered a free trial instead of
+                    // being shown where they are in it.
+                    onTap: () => context.push(AppRoutespath.nowliProSubscription),
                   ),
                   const SizedBox(height: 12),
                   _buildSettingsItem(

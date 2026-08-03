@@ -89,8 +89,26 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
     return DateTime.now();
   }
 
-  List<PriceStep> get _schedule =>
-      buildPriceSchedule(plan: _plan, anchor: _anchor);
+  /// The daily call allowance named in the subscriber copy. The backend owns the real
+  /// number (`VOICE_CALL_DAILY_LIMIT`); this screen has no reason to fetch a quota, so it
+  /// states the shipped default and stays a word, not a promise about a specific count.
+  static const int _dailySparks = 2;
+
+  /// The subscriber's 1-based billing month, or null while they are still deciding.
+  ///
+  /// `month_index` is 0 for anyone who has not started paying, which is exactly the "no
+  /// current stage" case — the timeline then quotes a schedule instead of locating them in
+  /// one.
+  int? get _currentMonth {
+    final index = _status?.monthIndex ?? 0;
+    return index > 0 ? index : null;
+  }
+
+  List<PriceStep> get _schedule => buildPriceSchedule(
+        plan: _plan,
+        anchor: _anchor,
+        currentMonth: _currentMonth,
+      );
 
   /// "for the next three months" — how long the price being quoted actually holds.
   String get _firstPhaseDuration {
@@ -259,6 +277,26 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
             ),
           ),
           const SizedBox(height: 12),
+          // A subscriber is not being quoted a price — they already pay it. The headline
+          // answers their question ("am I still set up?") instead of selling.
+          if (_currentMonth != null) ...[
+            Text(
+              'READY TO CONTINUE?',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.archivoBlack(color: _orange, fontSize: 40),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Pick back up where you left off. Same $_dailySparks sparks a day, '
+              'same receipts — nothing new to unlock.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.workSans(
+                color: _ink,
+                fontSize: 16,
+                height: 1.4,
+              ),
+            ),
+          ] else ...[
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Row(
@@ -292,18 +330,38 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
               letterSpacing: -0.5,
             ),
           ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildScheduleCard(List<PriceStep> schedule) {
-    const dotColours = [
+    // Fading orange for a prospect, who is reading a quote and has no position in it.
+    const quotedDots = [
       Color(0xFFFF8F26),
       Color(0xFFFFA551),
       Color(0xFFFFCB9B),
       Color(0xFFC3DBFF),
     ];
+
+    /// A subscriber's rail is read as a journey: green behind them, orange where they
+    /// stand, faded ahead.
+    Color dotFor(PriceStep step, int index) {
+      switch (step.status) {
+        case PriceStepStatus.completed:
+          return const Color(0xFF10B981);
+        case PriceStepStatus.current:
+          return const Color(0xFFFF8F26);
+        case PriceStepStatus.next:
+          return const Color(0xFFFFA551);
+        case PriceStepStatus.confirmed:
+        case PriceStepStatus.provisional:
+          return _currentMonth == null
+              ? quotedDots[index.clamp(0, quotedDots.length - 1)]
+              : const Color(0xFFC3DBFF);
+      }
+    }
 
     return Container(
       width: double.infinity,
@@ -326,8 +384,10 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'WE DON’T WANT YOUR TIME AND MONEY IF WE ARE NOT MAKING YOUR '
-            'LIFE BETTER !',
+            _currentMonth == null
+                ? 'WE DON’T WANT YOUR TIME AND MONEY IF WE ARE NOT MAKING '
+                    'YOUR LIFE BETTER !'
+                : 'YOUR JOURNEY TIMELINE',
             style: GoogleFonts.workSans(
               color: _cardInk,
               fontSize: 13,
@@ -338,7 +398,7 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
           for (int i = 0; i < schedule.length; i++)
             _ScheduleRow(
               step: schedule[i],
-              dotColour: dotColours[i.clamp(0, dotColours.length - 1)],
+              dotColour: dotFor(schedule[i], i),
               isLast: i == schedule.length - 1,
             ),
         ],
@@ -352,8 +412,8 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
     if (_isSubscribed) {
       return PaywallTapButton(
         label: _isFreeForever
-            ? 'Active — free forever'
-            : 'Active — \$${_monthlyPrice.toStringAsFixed(2)}/mo',
+            ? 'Continue — free forever'
+            : 'Continue for \$${_monthlyPrice.toStringAsFixed(2)}',
         knobIcon: Assets.svgIcons.paywallSparkle.svg(width: 24, height: 24),
         onTap: null,
       );
@@ -391,7 +451,8 @@ class _ScheduleRow extends StatelessWidget {
       height: 60,
       child: Row(
         children: [
-          // Dot plus the connector down to the next row.
+          // Dot plus the connector down to the next row. The row the subscriber is on gets
+          // a frame so the eye lands on it before reading anything.
           SizedBox(
             width: 16,
             child: Column(
@@ -411,7 +472,18 @@ class _ScheduleRow extends StatelessWidget {
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: Row(
+            child: Container(
+              padding: step.current
+                  ? const EdgeInsets.symmetric(horizontal: 10, vertical: 6)
+                  : EdgeInsets.zero,
+              decoration: step.current
+                  ? BoxDecoration(
+                      color: const Color(0xFFFFF7ED),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFF7941D)),
+                    )
+                  : null,
+              child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Column(
@@ -451,10 +523,11 @@ class _ScheduleRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    _StatusBadge(confirmed: confirmed),
+                    _StatusBadge(step: step),
                   ],
                 ),
               ],
+              ),
             ),
           ),
         ],
@@ -463,25 +536,60 @@ class _ScheduleRow extends StatelessWidget {
   }
 }
 
+/// The badge on the right of a timeline row.
+///
+/// Four states rather than two, because a subscriber's question is different from a
+/// prospect's: behind them, on them, next, and further out.
 class _StatusBadge extends StatelessWidget {
-  final bool confirmed;
+  final PriceStep step;
 
-  const _StatusBadge({required this.confirmed});
+  const _StatusBadge({required this.step});
+
+  static const _green = Color(0xFF059669);
+  static const _greenBg = Color(0xFFE6FAF0);
+  static const _orange = Color(0xFFF7941D);
 
   @override
   Widget build(BuildContext context) {
+    late final Color background;
+    late final Color ink;
+    Border? border;
+
+    switch (step.status) {
+      case PriceStepStatus.completed:
+        background = _greenBg;
+        ink = _green;
+        break;
+      case PriceStepStatus.current:
+        background = _orange;
+        ink = Colors.white;
+        break;
+      case PriceStepStatus.next:
+        background = Colors.transparent;
+        ink = _NowliProSubscriptionState._cardInk;
+        border = Border.all(color: const Color(0xFFD1D5DB));
+        break;
+      case PriceStepStatus.confirmed:
+        background = _greenBg;
+        ink = _green;
+        break;
+      case PriceStepStatus.provisional:
+        background = const Color(0xFFF3F4F6);
+        ink = _NowliProSubscriptionState._cardMuted;
+        break;
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: ShapeDecoration(
-        color: confirmed ? const Color(0xFFE6FAF0) : const Color(0xFFF3F4F6),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      decoration: BoxDecoration(
+        color: background,
+        border: border,
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        confirmed ? 'CONFIRMED' : 'PROVISIONAL',
+        step.badgeLabel,
         style: GoogleFonts.martianMono(
-          color: confirmed
-              ? const Color(0xFF059669)
-              : _NowliProSubscriptionState._cardMuted,
+          color: ink,
           fontSize: 9,
           fontWeight: FontWeight.w700,
         ),

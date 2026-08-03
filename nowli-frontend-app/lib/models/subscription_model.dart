@@ -8,10 +8,16 @@ class SubscriptionPhase {
   final int toMonth;
   final double price;
 
+  /// The stage's name on the paywall — "Spark", "Rhythm", … Served by the backend, which
+  /// owns the schedule, so the app cannot hold a second list that drifts from the prices
+  /// it labels.
+  final String stage;
+
   SubscriptionPhase({
     required this.fromMonth,
     required this.toMonth,
     required this.price,
+    this.stage = '',
   });
 
   factory SubscriptionPhase.fromJson(Map<String, dynamic> json) {
@@ -19,6 +25,7 @@ class SubscriptionPhase {
       fromMonth: json['from_month'] ?? 0,
       toMonth: json['to_month'] ?? 0,
       price: (json['price'] ?? 0).toDouble(),
+      stage: json['stage'] ?? '',
     );
   }
 }
@@ -28,16 +35,21 @@ class SubscriptionPlan {
   final int freeAfterMonth;
   final List<SubscriptionPhase> phases;
 
+  /// What the free-forever stage is called. Not a phase — there is no price to bill.
+  final String graduatedStage;
+
   SubscriptionPlan({
     required this.currency,
     required this.freeAfterMonth,
     required this.phases,
+    this.graduatedStage = 'Graduated',
   });
 
   factory SubscriptionPlan.fromJson(Map<String, dynamic> json) {
     return SubscriptionPlan(
       currency: json['currency'] ?? 'USD',
       freeAfterMonth: json['free_after_month'] ?? 12,
+      graduatedStage: json['graduated_stage'] ?? 'Graduated',
       phases: (json['phases'] as List?)
               ?.map((e) => SubscriptionPhase.fromJson(e))
               .toList() ??
