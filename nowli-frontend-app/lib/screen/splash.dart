@@ -7,6 +7,7 @@ import 'package:nowlii/core/app_routes/app_pages.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/services/call_reminder_service.dart';
 import 'package:nowlii/services/subscription_service.dart';
+import 'package:nowlii/services/trial_intro_gate.dart';
 
 class Splash extends StatefulWidget {
   const Splash({super.key});
@@ -76,9 +77,9 @@ class _SplashState extends State<Splash> with SingleTickerProviderStateMixin {
       }
 
       // Show the "7 days free" explainer once, the first time a trial is running.
-      final seenIntro = prefs.getBool('seen_trial_intro') ?? false;
-      if (status != null && status.inTrial && !seenIntro) {
-        await prefs.setBool('seen_trial_intro', true);
+      // Normally the end of onboarding gets there first; this catches an existing install
+      // whose trial has only just been granted, and anyone who quit before reaching it.
+      if (await claimTrialIntro(status)) {
         if (!mounted) return;
         context.go(AppRoutespath.subscriptionPage);
         return;

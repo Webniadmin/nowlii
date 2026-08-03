@@ -8,6 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/api/onboarding_data.dart';
 import 'package:nowlii/api/profile_controller.dart';
 import 'package:nowlii/api/file_helper.dart';
+import 'package:nowlii/core/app_routes/app_routes.dart';
+import 'package:nowlii/services/subscription_service.dart';
+import 'package:nowlii/services/trial_intro_gate.dart';
 
 class NoticeLoaderScreen extends StatefulWidget {
   const NoticeLoaderScreen({super.key});
@@ -87,9 +90,20 @@ class _NoticeLoaderScreenState extends State<NoticeLoaderScreen> {
     if (!mounted) return;
 
     if (_profileCreated) {
+      // The "Seven days. On us." screen belongs here, at the end of sign-up — the
+      // trial was granted on the account's first authenticated request, so by now it
+      // is already running. The splash carries the same check as a fallback for anyone
+      // who quits before reaching this point.
+      final status = await SubscriptionService().getMyStatus();
+      if (!mounted) return;
+      final showIntro = await claimTrialIntro(status);
+      if (!mounted) return;
+
       // `go`, not `push`: onboarding is finished, so it should not stay on the
       // stack underneath home.
-      context.go("/homeScreen");
+      context.go(showIntro
+          ? AppRoutespath.subscriptionPage
+          : "/homeScreen");
     } else {
       // Send them back to the first unanswered step rather than into an app
       // that has no idea who they are. Their answers survived (they are
