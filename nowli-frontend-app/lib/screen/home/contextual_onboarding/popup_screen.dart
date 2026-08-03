@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:nowlii/core/gen/assets.gen.dart';
 
 // Add to HomeScreen's initState or build method:
 // OnboardingOverlay.show(context);
@@ -266,7 +267,9 @@ class TextBubble extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Image.asset(
-                    "assets/svg_icons/Ready to make today count?.png",
+                    // The old path had a "?" in the filename, which cannot exist on
+                    // Windows — the file is gone and this rendered as a broken image.
+                    Assets.svgIcons.avatar.path,
                     height: 80,
                     width: 80,
                     fit: BoxFit.cover,

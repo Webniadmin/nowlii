@@ -46,7 +46,7 @@ class DeleteAccountDialog extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Image.asset(
-                Assets.svgIcons.deleteYourAccount.path,
+                Assets.svgIcons.deleteMyAccount.path,
                 width: 40,
                 height: 40,
               ),

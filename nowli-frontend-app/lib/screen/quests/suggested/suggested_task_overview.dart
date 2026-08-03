@@ -261,7 +261,7 @@ class _SuggestedTaskOverviewState extends State<SuggestedTaskOverview> {
               child: Padding(
                 padding: EdgeInsets.all(8 * s),
                 child: Image.asset(
-                  Assets.svgIcons.clearAllAIMemoryPng.path,
+                  Assets.svgIcons.clearAllAIMemory.path,
                   fit: BoxFit.contain,
                 ),
               ),

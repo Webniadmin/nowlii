@@ -398,7 +398,7 @@ class _TestFileState extends State<TestFile> {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Image.asset(
-              Assets.svgIcons.readyToMakeTodayCount.path,
+              Assets.svgIcons.avatar.path,
               height: 44,
               width: 44,
             ),

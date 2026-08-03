@@ -146,7 +146,7 @@
 //                   const SizedBox(height: 12),
 //                   _buildMenuItem(
 //                     iconWidget: Image.asset(
-//                       Assets.svgIcons.clearAllAIMemoryPng.path,
+//                       Assets.svgIcons.clearAllAIMemory.path,
 //                       width: 40,
 //                       height: 40,
 //                     ),
@@ -428,7 +428,7 @@ class _AIPersonalizationScreenState extends State<AIPersonalizationScreen> {
                   const SizedBox(height: 12),
                   _buildMenuItem(
                     iconWidget: Image.asset(
-                      Assets.svgIcons.clearAllAIMemoryPng.path,
+                      Assets.svgIcons.clearAllAIMemory.path,
                       width: 40,
                       height: 40,
                     ),

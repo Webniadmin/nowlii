@@ -237,7 +237,7 @@ class _AiCallRemienderState extends State<AiCallRemiender> {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Image.asset(
-              Assets.svgIcons.readyToMakeTodayCount.path,
+              Assets.svgIcons.avatar.path,
               height: 44,
               width: 44,
             ),

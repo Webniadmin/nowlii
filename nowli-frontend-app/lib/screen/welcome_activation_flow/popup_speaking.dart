@@ -423,6 +423,20 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
     );
   }
 
+  /// Closing the voice check is a **skip**, not an exit.
+  ///
+  /// This is the last onboarding screen and it is reached with `go`, so there is nothing
+  /// underneath it: a bare `Navigator.pop` popped the only page off the stack, go_router
+  /// asserted, and the user was left on a black screen with no way out. Skipping has to
+  /// land where finishing lands.
+  void _dismissVoiceCheck() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/noticeLoaderScreen');
+    }
+  }
+
   Widget _buildInitialScreen() {
     return SingleChildScrollView(
       child: ConstrainedBox(
@@ -439,7 +453,7 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                 child: Row(
                   children: [
                     GestureDetector(
-                      onTap: () => Navigator.pop(context),
+                      onTap: _dismissVoiceCheck,
                       child: Container(
                         width: 32,
                         height: 32,
@@ -971,7 +985,7 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                 child: Row(
                   children: [
                     GestureDetector(
-                      onTap: () => Navigator.pop(context),
+                      onTap: _dismissVoiceCheck,
                       child: Container(
                         width: 32,
                         height: 32,
