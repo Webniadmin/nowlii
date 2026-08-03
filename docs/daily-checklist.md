@@ -42,10 +42,13 @@ Then rebuild both and `up -d`. Tag rollback images first. Backend `entrypoint.sh
 **production RDS** on boot — watch the log, and confirm with `showmigrations` rather than the
 boot output, which truncates.
 
-- [ ] Rollback tags created (`:backup-20260803`)
-- [ ] Backend deployed, `voice_calls.0006`, `0007`, `0008` all show `[X]`
-- [ ] `nowli-ai` deployed
-- [ ] Smoke: `https://api.nowlii.com/api/quests/` → 401, `https://ai.nowlii.com/health` → 200
+- [x] Rollback tags created (`:backup-20260803`)
+- [x] Backend deployed, `voice_calls.0006`, `0007`, `0008` all show `[X]`
+- [x] `nowli-ai` deployed
+- [x] Smoke: `/api/quests/` → 401, `/api/docs/` → 200, `ai.nowlii.com/health` → ok,
+      note route → 401 not 404 (proof it shipped). Both containers healthy.
+
+**Done 2026-08-03** — see the deploy log in `deploy-aws.md`.
 
 ### 2. Build the APK
 

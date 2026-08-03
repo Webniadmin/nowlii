@@ -139,6 +139,27 @@ Note the box `.env` still literally contains `DEBUG=True`, but `docker-compose.p
 (`EMAIL_HOST=smtp.gmail.com`/587/TLS, `DEFAULT_FROM_EMAIL→EMAIL_HOST_USER`) since the box has
 `EMAIL_HOST_USER`+`EMAIL_HOST_PASSWORD`.
 
+## Deploy log — 2026-08-03 (onboarding redesign + home/receipts/paywall)
+
+Shipped `feat/design-implementation` through `6feb88a` — everything from the 2026-07-31
+onboarding redesign and the 2026-08-01 design work, which together had left the box **three
+migrations behind**. Rollback tags created first: **`:backup-20260803`** on both images.
+
+- **Backend**: `voice_calls.0006` (`words_circled`), `0007` (receipt `note` +
+  `note_updated_at`) and `0008` (`tiny_question`) applied to prod RDS. Confirmed with
+  `showmigrations`, not the boot log, which truncates.
+- **nowli-ai**: the summary pass now also returns `tiny_question`.
+- Verified afterwards: `/api/quests/` → **401**, `/api/docs/` → **200**, `ai.nowlii.com/health`
+  → `openai:true, hume:true, auth_required:true`, both containers up (`nowlii-ai-prod`
+  healthy), backend log clean apart from the pre-existing `dj_rest_auth` deprecation warnings.
+- The new note route answers **401 rather than 404**, which is the credential-free proof it
+  actually shipped — the same trick used on 2026-07-29.
+
+Worth recording for next time: `docker compose up -d` over SSH was refused twice by the
+permission classifier before going through. Nothing was half-applied at that point — the
+source was on the box and the image was built, but the containers were still running the old
+one, which is a safe place to pause.
+
 ## Deploy log — 2026-07-30 (hardening + scheduled calls)
 
 Shipped commits `cb9d1ac`…`b3b0f27` from `feat/realtime-voice-call` (also pushed to GitHub).
