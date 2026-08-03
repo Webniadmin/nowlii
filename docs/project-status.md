@@ -1,6 +1,35 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-07-30 (evening)_
+_Last reviewed: 2026-08-03_
+
+## Completed this session (2026-08-01, committed 2026-08-03)
+
+_Full detail in `daily-reports/2026-08-01.md`. Five commits on `feat/design-implementation`;
+**nothing deployed, nothing seen on a device**._
+
+- **The updated design reached the three screens after onboarding**: the **home screen**, the
+  **receipt** a call leaves behind, and the **paywall**.
+- **Sparks.** The daily AI-call allowance now uses the product's word for it, counted in one
+  place so the home card, swipe button and call header cannot drift. Unlimited QA accounts
+  (`limit: -1`) and an unknown quota are handled explicitly — the first would otherwise read
+  "Spark 1 of -1", and the second would make a failed fetch look like an empty allowance.
+- **A receipt library.** Numbered receipts, a note the user writes and edits (its own endpoint,
+  so re-posting the generated summary cannot overwrite it), a `tiny_question` from the existing
+  GPT pass at no extra cost, and PDF export via the share sheet. Migrations `voice_calls.0007`,
+  `0008`.
+- **The paywall shows dated price steps** instead of month ranges, anchored to `started_at` for
+  a subscriber and to today for someone deciding, with month arithmetic that clamps rather than
+  rolling the 31st into the month after next.
+- **Two silent bugs fixed.** DRF's project-wide `DATETIME_FORMAT` has no offset, so receipt
+  dates arrived as `null` and **every scheduled-call reminder was out by the device's offset**.
+  And the voice check's ✕ called a bare `Navigator.pop` on a screen reached with `go`, leaving
+  the user on a black screen — one tap off the redesigned onboarding path.
+- Verified: `flutter analyze` 0 errors, 160 Flutter tests (11 new files), 107 backend tests.
+
+> ⚠️ **The device test is now six days overdue** and is the only thing between this work and a
+> release build. The backend is three migrations behind production.
+
+_Previously reviewed: 2026-07-30 (evening)_
 
 ## Completed this session (2026-07-30)
 

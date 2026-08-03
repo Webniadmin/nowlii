@@ -8,7 +8,30 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
-## ▶ START HERE (2026-08-01)
+## ▶ START HERE (2026-08-03)
+
+**Everything below still holds; one more day of work is now stacked behind the same device
+test.** On 2026-08-01 the updated design reached the three screens after onboarding — the
+**home screen** (with the daily allowance renamed to **sparks**), the **receipt library**
+(numbered receipts, a user-written note, PDF export), and the **paywall** (the decreasing
+price shown as dated steps). Five commits, all verified, none deployed and none seen on
+hardware. Full detail: `daily-reports/2026-08-01.md`.
+
+Two fixes in there change what a device test would find, so they matter before the next one:
+
+- **Reminders were firing at the wrong time.** `ScheduledCall.scheduled_for` is UTC, but the
+  project-wide DRF `DATETIME_FORMAT` carries no offset, so the app read it as local — every
+  reminder was out by the device's offset. Receipt dates were arriving as `null` for the same
+  reason. Both serializers now say `iso-8601`.
+- **The voice check's ✕ dropped the user on a black screen.** A bare `Navigator.pop` on the
+  last onboarding screen, which is reached with `go`, popped the only page off the stack.
+
+The backend is now **three migrations** behind production (`voice_calls.0006`, `0007`,
+`0008`), and the app sends those fields regardless. Deploy is step 1, as below.
+
+---
+
+## ▶ (2026-08-01)
 
 **The release blocker is gone.** HTTPS is live on `https://api.nowlii.com` and
 `https://ai.nowlii.com` (nginx + Let's Encrypt on EC2, cert to 2026-10-29, auto-renewing).
