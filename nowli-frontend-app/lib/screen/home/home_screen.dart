@@ -18,8 +18,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/services/profile_service.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:intl/intl.dart';
+import 'package:nowlii/models/call_summary_history.dart';
+import 'package:nowlii/services/home_format.dart';
 import 'package:nowlii/services/scheduled_call_state.dart';
+import 'package:nowlii/services/spark_state.dart';
+import 'package:nowlii/services/spark_state_store.dart';
 import 'package:nowlii/services/voice_call_service.dart';
+import 'package:nowlii/screen/home/sparks/out_of_sparks_card.dart';
 import 'dart:math';
 
 class HomeScreen extends StatefulWidget {
@@ -38,9 +43,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isLoadingStreak = true;
   List<Quest> _quests = [];
   bool _isLoadingQuests = true;
-  Map<String, int> _questCountByDate = {}; // Date-wise quest count
-  DateTime _selectedDate = DateTime.now(); // Currently selected date
-  List<DateTime> _availableDates = []; // Dates that have quests
+  /// Home now shows today only — the other days live in the Quests tab.
+  final DateTime _selectedDate = DateTime.now();
+
+  /// The most recent call that named a next step, quoted back on the hero card.
+  CallSummaryHistoryItem? _lastSaid;
+
+  /// The user's companion, for copy that addresses them by name. "Fuzzy" was written into
+  /// these notifications from the mock, so every user was congratulated by a companion
+  /// they had not chosen.
+  String get _companionName {
+    final name = _profileData?.companionName.trim() ?? '';
+    return name.isEmpty ? 'Nowlii' : name;
+  }
 
   @override
   void initState() {
@@ -52,8 +67,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _loadProfile();
     _loadStreak();
     _loadQuests();
-    _loadAllQuestsForDates();
+    _loadLastSaid();
     _checkAndShowOnboarding();
+    // How many sparks are left decides whether this screen offers a call at all.
+    SparkStateStore.instance.refresh();
   }
 
   @override
@@ -69,6 +86,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       // Reload profile when app comes to foreground
       _loadProfile();
+      // The allowance resets at midnight, so an app left open overnight would otherwise
+      // still be showing yesterday's "that's enough for today".
+      SparkStateStore.instance.refresh();
     }
   }
 
@@ -112,62 +132,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _loadQuestsForDate(DateTime date) async {
-    if (mounted) {
-      setState(() {
-        _selectedDate = date;
-        _isLoadingQuests = true;
-      });
-    }
-    
-    final questService = QuestService();
-    final quests = await questService.fetchQuestsByDate(date);
-    
-    if (mounted) {
-      setState(() {
-        _quests = quests;
-        _isLoadingQuests = false;
-      });
-    }
-  }
-
-  Future<void> _loadAllQuestsForDates() async {
-    final questService = QuestService();
-    final allQuests = await questService.fetchAllQuests();
-    
-    if (mounted) {
-      // Group quests by date
-      Map<String, int> countByDate = {};
-      Set<DateTime> uniqueDates = {};
-      
-      for (var quest in allQuests) {
-        final dateStr = quest.selectADate;
-        countByDate[dateStr] = (countByDate[dateStr] ?? 0) + 1;
-        
-        // Parse date and add to unique dates
-        try {
-          final date = DateTime.parse(dateStr);
-          uniqueDates.add(DateTime(date.year, date.month, date.day));
-        } catch (e) {
-          print('Error parsing date: $dateStr');
-        }
+  /// The newest saved call that actually named a next step, for the hero quote.
+  ///
+  /// Skips calls that produced no next step rather than quoting an empty string — a short
+  /// call legitimately leaves nothing to say back.
+  Future<void> _loadLastSaid() async {
+    final summaries = await VoiceCallService().getSummaries();
+    if (!mounted) return;
+    CallSummaryHistoryItem? found;
+    for (final s in summaries) {
+      if (s.nextStep.trim().isNotEmpty) {
+        found = s;
+        break;
       }
-      
-      // Sort dates
-      final sortedDates = uniqueDates.toList()..sort();
-      
-      // Always include today if not already there
-      final today = DateTime.now();
-      final todayDate = DateTime(today.year, today.month, today.day);
-      if (!sortedDates.contains(todayDate)) {
-        sortedDates.insert(0, todayDate);
-      }
-      
-      setState(() {
-        _questCountByDate = countByDate;
-        _availableDates = sortedDates;
-      });
     }
+    setState(() => _lastSaid = found);
   }
 
   Future<void> _checkAndShowOnboarding() async {
@@ -218,7 +197,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           context,
           NotificationData(
             type: NotificationType.success,
-            title: 'Fuzzy\'s proud of you',
+            title: '$_companionName\'s proud of you',
             subtitle: 'One chat at a time, you\'re getting stronger',
             buttonText: 'See progress',
             displayDuration: const Duration(seconds: 5),
@@ -309,9 +288,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: const Color(0xFFFFFEF8),
       body: Stack(
         children: [
+          // Decorative bloom bleeding off the top-left corner, behind everything.
+          Positioned(
+            left: -214,
+            top: -364,
+            child: IgnorePointer(
+              child: Transform.rotate(
+                angle: 80.73 * pi / 180,
+                child: Assets.svgIcons.homeFlower.svg(width: 431, height: 431),
+              ),
+            ),
+          ),
+
           // ── Main scrollable content with RefreshIndicator ──
           RefreshIndicator(
             onRefresh: () async {
@@ -320,7 +311,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 _loadProfile(),
                 _loadStreak(),
                 _loadQuests(),
-                _loadAllQuestsForDates(),
+                _loadLastSaid(),
+                SparkStateStore.instance.refresh(),
               ]);
             },
             color: const Color(0xFF4542EB),
@@ -328,37 +320,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             child: SingleChildScrollView(
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(), // Enable pull-to-refresh even when content is short
-              child: Container(
-                decoration: const BoxDecoration(
-                  image: DecorationImage(
-                    image: AssetImage(
-                      'assets/svg_images/upscalemedia-transformed.png',
-                    ),
-                    fit: BoxFit.cover,
-                    alignment: Alignment.center,
-                  ),
-                ),
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.all(22.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 20),
-                        _buildHeader(),
-                        const SizedBox(height: 24),
-                        _buildProgressCard(),
-                        const SizedBox(height: 24),
-                        _buildDateSection(),
-                        const SizedBox(height: 24),
-                        _buildTodaysPlanHeader(),
-                        const SizedBox(height: 16),
-                        _buildTaskList(),
-                        const SizedBox(height: 24),
-                        _buildSwipeButton(),
-                        const SizedBox(height: 40),
-                      ],
-                    ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 20),
+                      _buildHeader(),
+                      const SizedBox(height: 16),
+                      _buildSparksBar(),
+                      const SizedBox(height: 16),
+                      _buildLastSaidCard(),
+                      const SizedBox(height: 16),
+                      _buildTodaysPlanHeader(),
+                      const SizedBox(height: 16),
+                      _buildTodaysQuestCard(),
+                      const SizedBox(height: 24),
+                      _buildSwipeButton(),
+                      const SizedBox(height: 40),
+                    ],
                   ),
                 ),
               ),
@@ -447,7 +428,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
         const SizedBox(width: 12),
         Text(
-          'HI ${(_profileData?.name ?? 'JULIE').toUpperCase()}!',
+          // Greet by name once we have one. The old fallback was the mock's "JULIE",
+          // so every user was greeted as someone else until their profile loaded.
+          (_profileData?.name.trim().isNotEmpty ?? false)
+              ? 'HI ${_profileData!.name.trim().toUpperCase()}!'
+              : 'HI THERE!',
           style: TextStyle(
             color: const Color(0xFF011F54),
             fontSize: 32,
@@ -458,32 +443,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
         const Spacer(),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
+          padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
+          decoration: ShapeDecoration(
             color: const Color(0xFFDFEFFF),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(99),
+              side: const BorderSide(color: Color(0xFFC3DBFF)),
+            ),
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Image.asset(Assets.svgIcons.fire.path, height: 22, width: 22),
-              const SizedBox(width: 6),
+              Assets.svgIcons.homeFire.svg(width: 32, height: 32),
+              const SizedBox(width: 4),
               _isLoadingStreak
                   ? const SizedBox(
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5B7EFF)),
+                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4542EB)),
                       ),
                     )
-                  : Text('$_streakCount', style: AppsTextStyles.fullNameAndEmail),
+                  : Text(
+                      '$_streakCount',
+                      style: GoogleFonts.workSans(
+                        color: const Color(0xFF4542EB),
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                        height: 0.9,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
             ],
           ),
         ),
@@ -491,326 +482,150 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildProgressCard() {
-    final totalTasks = _quests.length;
-    final completedTasks = _quests.where((quest) => quest.taskDone).length;
-    final progress = totalTasks > 0 ? completedTasks / totalTasks : 0.0;
+  /// How many of today's sparks are still available, as pills plus a plain count.
+  ///
+  /// Replaces the old "Ready to make today count?" progress card. It reads from the same
+  /// shared store as the call screen and the swipe button, so the three cannot disagree.
+  Widget _buildSparksBar() {
+    return ValueListenableBuilder<SparkState>(
+      valueListenable: SparkStateStore.instance.state,
+      builder: (context, sparks, _) {
+        // Unlimited accounts have no meaningful number of slots to draw; unknown has no
+        // honest one. Both get the label without the pills.
+        final slots = (sparks.known && !sparks.unlimited) ? sparks.limit : 0;
 
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFD4E3FF), Color(0xFFE8F0FF)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF5B7EFF).withValues(alpha: 0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          decoration: BoxDecoration(
+            color: const Color(0xFFDFEFFF),
+            borderRadius: BorderRadius.circular(12),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
+          child: Row(
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 178,
-                      child: Text(
-                        'Ready to make \n today count?',
-                        style: GoogleFonts.workSans(
-                          color: const Color(0xFF011F54),
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          height: 1.2,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Tiny wins make big shifts.',
-                      style: AppsTextStyles.workSansRegular14,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
+              for (int i = 0; i < slots; i++) ...[
+                Container(
+                  width: 40,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    // Spent slots stay visible so the row keeps its shape and you can see
+                    // what you started the day with.
+                    color: i < sparks.remaining
+                        ? const Color(0xFF4542EB)
+                        : const Color(0x334542EB),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 20),
-              Container(
-                width: 100,
-                height: 100,
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4542EB),
-                  borderRadius: BorderRadius.circular(20),
+                const SizedBox(width: 8),
+              ],
+              Padding(
+                padding: EdgeInsets.only(left: slots > 0 ? 4 : 0),
+                child: Text(
+                  sparksAvailableLabel(
+                    remaining: sparks.remaining,
+                    unlimited: sparks.unlimited,
+                    known: sparks.known,
+                  ),
+                  style: GoogleFonts.workSans(
+                    color: const Color(0xFF011F54),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    height: 1.0,
+                  ),
                 ),
-                child: _profileData?.avatarLogo.isNotEmpty == true
-                    ? Image.network(
-                        _profileData!.avatarLogo,
-                        width: 100,
-                        height: 100,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Image.asset(
-                            Assets.svgIcons.avatar.path,
-                            width: 100,
-                            height: 100,
-                            fit: BoxFit.cover,
-                          );
-                        },
-                      )
-                    : Image.asset(
-                        Assets.svgIcons.avatar.path,
-                        width: 100,
-                        height: 100,
-                        fit: BoxFit.cover,
-                      ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            'Todays progress',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.workSans(
-              color: const Color(0xFF011F54),
-              fontSize: 16.sp,
-              fontWeight: FontWeight.w600,
-              height: 1,
-              letterSpacing: -0.50,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            height: 24,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: const Color(0xFFC3DBFF),
-              borderRadius: BorderRadius.circular(25),
-            ),
-            child: Stack(
-              children: [
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 500),
-                      width: constraints.maxWidth * progress,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                          colors: [Color(0xFFDFEFFF), Color(0xFF4542EB)],
-                        ),
-                        borderRadius: BorderRadius.circular(25),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildDateSection() {
-    final now = DateTime.now();
-    
-    // Get day names
-    final List<String> dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    
-    String getDayName(DateTime date) {
-      return dayNames[date.weekday - 1];
-    }
-    
-    String getDateLabel(DateTime date) {
-      final today = DateTime(now.year, now.month, now.day);
-      final tomorrow = today.add(const Duration(days: 1));
-      final dateOnly = DateTime(date.year, date.month, date.day);
-      
-      if (dateOnly == today) {
-        return 'Today';
-      } else if (dateOnly == tomorrow) {
-        return 'Tomorrow';
-      } else {
-        return getDayName(date);
-      }
-    }
-    
-    // Check if date is selected
-    bool isDateSelected(DateTime date) {
-      return DateFormat('yyyy-MM-dd').format(date) == 
-             DateFormat('yyyy-MM-dd').format(_selectedDate);
-    }
-    
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          // Show all available dates
-          for (int i = 0; i < _availableDates.length; i++) ...[
-            GestureDetector(
-              onTap: () => _loadQuestsForDate(_availableDates[i]),
-              child: _buildDateCard(
-                label: getDateLabel(_availableDates[i]),
-                day: _availableDates[i].day,
-                isToday: isDateSelected(_availableDates[i]),
-                hasIndicator: (_questCountByDate[DateFormat('yyyy-MM-dd').format(_availableDates[i])] ?? 0) > 0,
-                indicatorColor: i == 0 ? const Color(0xFF4542EB) : 
-                               i == 1 ? const Color(0xFFFF8F26) : 
-                               const Color(0xFF4542EB),
+  /// The last thing the user told their companion, quoted back.
+  ///
+  /// Once the day's sparks are spent this slot carries the closing card instead — at that
+  /// point "here's what you said last time" is the wrong thing to lead with.
+  Widget _buildLastSaidCard() {
+    return ValueListenableBuilder<SparkState>(
+      valueListenable: SparkStateStore.instance.state,
+      builder: (context, sparks, _) {
+        if (sparks.isSpent) return OutOfSparksCard(sparks: sparks);
+
+        final said = _lastSaid;
+        // Nothing to quote yet — a new account has no calls behind it, and an empty
+        // bordered card would just be a hole in the layout.
+        if (said == null) return const SizedBox.shrink();
+
+        final when = said.startedAt ?? said.createdAt;
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFEF8),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: const Color(0xFFC3DBFF)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                (when == null ? 'You said' : saidWhenLabel(when)).toUpperCase(),
+                style: GoogleFonts.martianMono(
+                  color: const Color(0xFF4C586E),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 1.32,
+                  height: 1.0,
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-          ],
-          
-          // Plan button
-          GestureDetector(
-            onTap: () async {
-              final result = await context.push(AppRoutespath.createQuestPage);
-              // If quest was created successfully, reload data
-              if (result == true && mounted) {
-                _loadQuests();
-                _loadAllQuestsForDates();
-              }
-            },
-            child: Container(
-              width: 78,
-              height: 84,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF4542EB),
-                borderRadius: BorderRadius.circular(16),
+              const SizedBox(height: 14),
+              Text(
+                '“${said.nextStep.trim()}”',
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF011F54),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w400,
+                  height: 1.35,
+                  letterSpacing: -0.5,
+                ),
               ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
+              const SizedBox(height: 24),
+              Row(
                 children: [
-                  const Icon(
-                    Icons.add_circle_outline,
-                    color: Color(0xFFFFFDF7),
-                    size: 22,
-                  ),
-                  const SizedBox(height: 6),
+                  Assets.svgIcons.homeCheck.svg(width: 22, height: 22),
+                  const SizedBox(width: 9),
                   Text(
-                    'Plan',
-                    textAlign: TextAlign.center,
+                    'Did it',
                     style: GoogleFonts.workSans(
-                      color: const Color(0xFFFFFDF7),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      height: 1,
+                      color: const Color(0xFF4C586E),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      height: 1.0,
                     ),
                   ),
                 ],
               ),
-            ),
+            ],
           ),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildDateCard({
-    required String label,
-    required int day,
-    required bool isToday,
-    required bool hasIndicator,
-    Color? indicatorColor,
-  }) {
-    return Container(
-      height: 84,
-      width: 78,
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-      decoration: BoxDecoration(
-        color: isToday ? const Color(0xFFDFEFFF) : const Color(0xFFFFFDF7),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isToday ? const Color(0xFF4542EB) : const Color(0xFFC3DBFF),
-          width: isToday ? 2.5 : 1.5,
-        ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.workSans(
-              color: const Color(0xFF011F54),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              height: 1,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '$day',
-            style: GoogleFonts.workSans(
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
-              height: 1,
-              color: const Color(0xFF011F54),
-            ),
-          ),
-          if (hasIndicator) ...[
-            const SizedBox(height: 2),
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: indicatorColor,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ] else ...[
-            const SizedBox(height: 8),
-          ],
-        ],
-      ),
+        );
+      },
     );
   }
 
+  /// "Todays plan" and the way to add to it.
+  ///
+  /// Always today: the day strip is gone from home, and the other days live in the Quests
+  /// tab, so there is no longer another date this could be describing.
   Widget _buildTodaysPlanHeader() {
-    final now = DateTime.now();
-    final isToday = DateFormat('yyyy-MM-dd').format(_selectedDate) == 
-                    DateFormat('yyyy-MM-dd').format(now);
-    final isTomorrow = DateFormat('yyyy-MM-dd').format(_selectedDate) == 
-                       DateFormat('yyyy-MM-dd').format(now.add(const Duration(days: 1)));
-    
-    String headerText;
-    if (isToday) {
-      headerText = 'Todays plan';
-    } else if (isTomorrow) {
-      headerText = 'Tomorrows plan';
-    } else {
-      headerText = '${DateFormat('MMM d').format(_selectedDate)}\'s plan';
-    }
-    
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Flexible(
           child: FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
-              headerText,
-              textAlign: TextAlign.center,
+              'Todays plan',
               style: GoogleFonts.workSans(
                 color: const Color(0xFF011F54),
                 fontSize: 32,
@@ -821,39 +636,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
         ),
-        const SizedBox(width: 8),
-        Material(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(24),
+        const SizedBox(width: 16),
+        Expanded(
+          child: GestureDetector(
             onTap: () async {
               final result = await context.push(AppRoutespath.createQuestPage);
               // If quest was created successfully, reload data
               if (result == true && mounted) {
                 _loadQuests();
-                _loadAllQuestsForDates();
               }
             },
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFF5B7EFF), width: 2),
-                borderRadius: BorderRadius.circular(24),
+              height: 44,
+              alignment: Alignment.center,
+              decoration: ShapeDecoration(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                  side: const BorderSide(color: Color(0xFF6A68EF), width: 2),
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add, color: const Color(0xFF5B7EFF), size: 20.sp),
-                  SizedBox(width: 2.sp),
+                  Assets.svgIcons.homePlus.svg(width: 18, height: 18),
+                  const SizedBox(width: 8),
                   Text(
                     'Add quest',
-                    textAlign: TextAlign.center,
                     style: GoogleFonts.workSans(
                       color: const Color(0xFF4542EB),
                       fontSize: 18,
                       fontWeight: FontWeight.w900,
-                      height: 0.80,
+                      height: 0.8,
                     ),
                   ),
                 ],
@@ -865,144 +678,137 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildTaskList() {
+  /// Today's quest, as one card.
+  ///
+  /// Home deliberately shows a single thing to do; the full list, with its toggles and
+  /// swipe actions, is the Quests tab. Which one it shows is the first still-unfinished
+  /// quest, because that is the one the user is being asked about.
+  Widget _buildTodaysQuestCard() {
     if (_isLoadingQuests) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32.0),
-          child: CircularProgressIndicator(),
-        ),
+      return _questCardShell(
+        title: 'Loading…',
+        subtitle: '',
+        showArt: false,
       );
     }
 
     if (_quests.isEmpty) {
-      final now = DateTime.now();
-      final isToday = DateFormat('yyyy-MM-dd').format(_selectedDate) == 
-                      DateFormat('yyyy-MM-dd').format(now);
-      
-      return Container(
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFFDF7),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFC3DBFF)),
-        ),
-        child: Column(
-          children: [
-            const Icon(
-              Icons.calendar_today_outlined,
-              size: 48,
-              color: Color(0xFF5B7EFF),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              isToday ? 'No quests for today' : 'No quests for this date',
-              style: GoogleFonts.workSans(
-                color: const Color(0xFF011F54),
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Tap "Add quest" to create your first task',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.workSans(
-                color: const Color(0xFF6B7280),
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
+      return _questCardShell(
+        title: 'Nothing planned',
+        subtitle: 'Add a quest to give today a shape.',
+        showArt: true,
       );
     }
 
-    final items = _quests.asMap().entries.map((entry) {
-      final index = entry.key;
-      final quest = entry.value;
-      
-      // Format time for display (convert 24-hour to 12-hour format)
-      String displayTime = quest.zone; // Default to zone if no time
-      if (quest.selectATime != null && quest.selectATime!.isNotEmpty) {
-        try {
-          // Parse time (format: "06:11:00" or "06:11")
-          final timeParts = quest.selectATime!.split(':');
-          if (timeParts.length >= 2) {
-            int hour = int.parse(timeParts[0]);
-            int minute = int.parse(timeParts[1]);
-            
-            // Convert to 12-hour format
-            String period = hour >= 12 ? 'PM' : 'AM';
-            int displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
-            
-            displayTime = '${displayHour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $period';
-          }
-        } catch (e) {
-          print('Error parsing time: $e');
-          displayTime = quest.zone; // Fallback to zone
-        }
-      }
-      
-      return AnimatedTaskItem(
-        key: ValueKey('quest_${quest.id}'),
-        task: TaskItem(
-          quest.task,
-          displayTime, // Show time instead of zone
-          quest.taskDone,
-          questId: quest.id,
-        ),
-        onEdit: () async {
-          final result = await context.push(
-            AppRoutespath.editQuestPage,
-            extra: {
-              'taskId': quest.id,
-              'taskData': {
-                'title': quest.task,
-                'zone': quest.zone,
-                'selectADate': quest.selectADate,
-                'time': quest.selectATime, // Pass time for editing
-                'enableCall': quest.enableCall,
-                'repeatQuest': quest.repeatQuest,
-                'setAlarm': quest.setAlarm,
-                'taskDone': quest.taskDone,
-                'subtasks': quest.subtasks.map((s) => {
-                  'id': s.id,
-                  'title': s.title,
-                  'task_done': s.taskDone,
-                }).toList(),
-              },
-            },
-          );
-          // If quest was updated successfully, reload data
-          if (result == true && mounted) {
-            _loadQuests();
-            _loadAllQuestsForDates();
-          }
-        },
-        onDelete: () => _deleteQuest(index, quest.id),
-        onTomorrow: () => _moveToTomorrow(index, quest.id),
-        onToggle: () => _toggleQuest(index, quest.id),
-      );
-    }).toList();
+    final next = _quests.firstWhere(
+      (q) => !q.taskDone,
+      orElse: () => _quests.first,
+    );
+    final allDone = _quests.every((q) => q.taskDone);
+    final stepsLeft = next.subtasks.where((s) => !s.taskDone).length;
 
-    return Column(
-      children: [
-        for (int i = 0; i < items.length; i++) ...[
-          items[i],
-          if (i != items.length - 1) const SizedBox(height: 8),
+    return _questCardShell(
+      title: next.task,
+      subtitle: allDone
+          ? 'All done for today'
+          : stepsLeftLabel(
+              // A quest with no subtasks is one step in itself.
+              next.subtasks.isEmpty ? (next.taskDone ? 0 : 1) : stepsLeft,
+            ),
+      showArt: true,
+    );
+  }
+
+  Widget _questCardShell({
+    required String title,
+    required String subtitle,
+    required bool showArt,
+  }) {
+    return Container(
+      width: double.infinity,
+      height: 170,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAE3CE),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Stack(
+        children: [
+          if (showArt)
+            Positioned(
+              right: 24,
+              bottom: 13,
+              child: Opacity(
+                opacity: 0.9,
+                child: Image.asset(
+                  Assets.svgIcons.homeQuestBlob.path,
+                  width: 96,
+                  height: 144,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+            child: SizedBox(
+              // Keeps the copy clear of the illustration rather than running under it.
+              width: 190,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    "TODAY'S QUEST",
+                    style: GoogleFonts.workSans(
+                      color: const Color(0xFF6B3C10),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.72,
+                      height: 1.0,
+                    ),
+                  ),
+                  const SizedBox(height: 13),
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.archivoBlack(
+                      color: const Color(0xFF011F54),
+                      fontSize: 26,
+                      height: 0.9,
+                    ),
+                  ),
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 13),
+                    Text(
+                      subtitle,
+                      style: GoogleFonts.workSans(
+                        color: const Color(0xFF4C586E),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w400,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
         ],
-      ],
+      ),
     );
   }
 
   Widget _buildSwipeButton() {
-    return SwipeButtonWidget(
-      // Fixed name by design — the swipe-to-talk label always says "Fuzzy" (no longer the
-      // user's dynamic companion name).
-      companionName: 'Fuzzy',
-      // Go straight to the 5-min AI voice call (emotion-share detour removed).
-      onSwipe: _startSpontaneousCall,
+    return ValueListenableBuilder<SparkState>(
+      valueListenable: SparkStateStore.instance.state,
+      builder: (context, sparks, _) => SwipeButtonWidget(
+        // Out of sparks: becomes "See you tomorrow" instead of a swipe that would only
+        // reach the backend's refusal.
+        spent: sparks.isSpent,
+        // Go straight to the 5-min AI voice call (emotion-share detour removed).
+        onSwipe: _startSpontaneousCall,
+      ),
     );
   }
 
@@ -1015,6 +821,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final voiceCalls = VoiceCallService();
     final quota = await voiceCalls.getQuota();
     if (!mounted) return;
+
+    // This read is the freshest thing we have; share it rather than letting the card and
+    // the button keep an older one.
+    if (quota != null) {
+      SparkStateStore.instance
+          .adopt(limit: quota.limit, remaining: quota.remaining);
+    }
 
     // Only fetch the schedule when it could actually matter.
     if (quota != null && quota.remaining == 1) {
@@ -1119,7 +932,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               context,
               NotificationData(
                 type: NotificationType.success,
-                title: 'Fuzzy\'s proud of you',
+                title: '$_companionName\'s proud of you',
                 subtitle: 'One chat at a time, you\'re getting stronger',
                 buttonText: 'See progress',
                 onButtonPressed: () {
@@ -1174,8 +987,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return;
       }
       
-      // Reload date counts after successful delete
-      _loadAllQuestsForDates();
+      // The day strip is gone; just refresh today.
+      _loadQuests();
       
       if (mounted) {
         NotificationManager().show(
@@ -1223,8 +1036,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       );
     } else {
-      // Reload date counts after successful move
-      _loadAllQuestsForDates();
+      // The day strip is gone; just refresh today.
+      _loadQuests();
     }
   }
 

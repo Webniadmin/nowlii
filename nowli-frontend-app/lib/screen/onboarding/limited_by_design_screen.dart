@@ -3,6 +3,9 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/api/onboarding_data.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
+import 'package:nowlii/services/call_duration.dart';
+import 'package:nowlii/services/number_words.dart';
+import 'package:nowlii/services/voice_call_service.dart';
 import 'package:nowlii/widget/animated_onboarding_topbar.dart';
 import 'package:nowlii/widget/onboarding_continue_button.dart';
 
@@ -12,8 +15,34 @@ import 'package:nowlii/widget/onboarding_continue_button.dart';
 /// The mock draws no progress bar on this screen (it was authored later, with
 /// different chrome), but it was decided this belongs inside the numbered flow,
 /// so it carries the same topbar as every other step.
-class LimitedByDesignScreen extends StatelessWidget {
+class LimitedByDesignScreen extends StatefulWidget {
   const LimitedByDesignScreen({super.key});
+
+  @override
+  State<LimitedByDesignScreen> createState() => _LimitedByDesignScreenState();
+}
+
+class _LimitedByDesignScreenState extends State<LimitedByDesignScreen> {
+  /// The allowance the backend actually enforces. `VOICE_CALL_DAILY_LIMIT` is an env var,
+  /// and the home and call screens already read it — writing "two" into this screen's copy
+  /// meant onboarding could contradict the rest of the app after a config change.
+  ///
+  /// Starts at the published figure so the screen reads correctly before the call lands
+  /// (and if it fails), rather than flashing a spinner over a sentence.
+  int _callsPerDay = 2;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLimit();
+  }
+
+  Future<void> _loadLimit() async {
+    final quota = await VoiceCallService().getQuota();
+    if (!mounted || quota == null) return;
+    // Unlimited test accounts report -1, which is not a number of rows to draw.
+    if (quota.limit > 0) setState(() => _callsPerDay = quota.limit);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +86,8 @@ class LimitedByDesignScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'TWO SHORT\nCALLS A DAY.',
+                        '${numberWord(_callsPerDay).toUpperCase()} SHORT\n'
+                        'CALL${_callsPerDay == 1 ? '' : 'S'} A DAY.',
                         style: TextStyle(
                           color: const Color(0xFF011F54),
                           fontSize: isSmallDevice ? 38 : 46,
@@ -78,7 +108,7 @@ class LimitedByDesignScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 22),
-                      const _SparksCard(),
+                      _SparksCard(count: _callsPerDay),
                       const SizedBox(height: 18),
                       Text(
                         'No wrong time to use them — morning, midnight, or both.',
@@ -107,7 +137,10 @@ class LimitedByDesignScreen extends StatelessWidget {
 }
 
 class _SparksCard extends StatelessWidget {
-  const _SparksCard();
+  /// How many sparks a day the backend actually grants.
+  final int count;
+
+  const _SparksCard({required this.count});
 
   @override
   Widget build(BuildContext context) {
@@ -132,7 +165,8 @@ class _SparksCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'YOUR TWO SPARKS',
+                'YOUR ${numberWord(count).toUpperCase()} '
+                'SPARK${count == 1 ? '' : 'S'}',
                 style: GoogleFonts.workSans(
                   color: const Color(0xFF4C586E),
                   fontSize: 12,
@@ -141,9 +175,11 @@ class _SparksCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              const _SparkRow(number: '1', title: 'First spark'),
-              const Divider(color: Color(0x334C586E), height: 24),
-              const _SparkRow(number: '2', title: 'Second spark'),
+              // One row per spark the user actually gets, rather than two written out.
+              for (int i = 1; i <= count; i++) ...[
+                if (i > 1) const Divider(color: Color(0x334C586E), height: 24),
+                _SparkRow(number: '$i', title: '${ordinalWord(i)} spark'),
+              ],
               const SizedBox(height: 8),
             ],
           ),
@@ -152,20 +188,27 @@ class _SparksCard extends StatelessWidget {
           Positioned(
             top: -26,
             right: -6,
-            child: SizedBox(
-              width: 76,
-              height: 76,
-              child: avatar.startsWith('http')
-                  ? Image.network(
-                      avatar,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                    )
-                  : Image.asset(
-                      avatar,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                    ),
+            // The companion assets are square and carry their own coloured
+            // background, so an unclipped one reads as a stray rectangle sitting on
+            // the card's corner. Rounding it makes it a deliberate tile, matching how
+            // the same art is framed in the picker two screens back.
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: SizedBox(
+                width: 76,
+                height: 76,
+                child: avatar.startsWith('http')
+                    ? Image.network(
+                        avatar,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      )
+                    : Image.asset(
+                        avatar,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+              ),
             ),
           ),
       ],
@@ -216,7 +259,7 @@ class _SparkRow extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                '5 min · +2.5 if you need it',
+                callLengthCopy,
                 style: GoogleFonts.workSans(
                   color: const Color(0xFF4C586E),
                   fontSize: 14,

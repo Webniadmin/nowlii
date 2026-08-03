@@ -5,14 +5,15 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 class SwipeButtonWidget extends StatefulWidget {
   final VoidCallback onSwipe;
 
-  /// The user's companion (Nowlii) display name, shown in the label.
-  /// Defaults to 'Fuzzy' when the profile hasn't loaded / has no name yet.
-  final String companionName;
+  /// True once today's sparks are spent. The button becomes a closing statement rather
+  /// than a disabled control: there is nothing to swipe toward until tomorrow, and a greyed
+  /// -out slider invites people to keep trying it.
+  final bool spent;
 
   const SwipeButtonWidget({
     super.key,
     required this.onSwipe,
-    this.companionName = 'Fuzzy',
+    this.spent = false,
   });
 
   @override
@@ -25,8 +26,49 @@ class _SwipeButtonWidgetState extends State<SwipeButtonWidget> {
   final double _knobSize = 60.0;
   final double _padding = 8.0;
 
+  /// Out of sparks: no knob, no drag target, nothing to press.
+  Widget _buildSpentButton() {
+    return Container(
+      height: 72,
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(8, 8, 24, 8),
+      decoration: ShapeDecoration(
+        color: const Color(0xFFC3DBFF),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: Color(0xFFFFFEF8),
+              shape: BoxShape.circle,
+            ),
+            child: Assets.svgIcons.sparkSun.svg(width: 28, height: 28),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'See you tomorrow',
+            style: GoogleFonts.workSans(
+              color: const Color(0xFF011F54),
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              height: 1.0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.spent) return _buildSpentButton();
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final totalWidth = constraints.maxWidth;
@@ -58,7 +100,9 @@ class _SwipeButtonWidgetState extends State<SwipeButtonWidget> {
                 child: Padding(
                   padding: EdgeInsets.only(left: _knobSize),
                   child: Text(
-                    'Swipe to talk to ${widget.companionName}',
+                    // The product calls a call a "spark"; the label follows the same word
+                    // as the counter on the call screen and the home bar.
+                    'Swipe to start a spark',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.workSans(
                       color: const Color(0xFF011F54),
