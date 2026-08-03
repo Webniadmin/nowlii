@@ -8,7 +8,25 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
-## ▶ START HERE (2026-08-03)
+## ▶ START HERE (2026-08-04)
+
+**Two things, in order: deploy yesterday's backend, then decide how payments are taken.**
+The day-by-day list is `daily-checklist.md`; what happened yesterday is
+`daily-reports/2026-08-03.md`.
+
+The backend deploy is not optional for correctness — the app already sends restricted topics
+and calls the clear-AI-memory route, and against production both silently do nothing.
+
+The payments decision is a **business** question, not a technical one: **which markets launch
+first.** Everything else in payments waits on it, and both paths are already researched in
+`subscriptions-iap.md` — do not re-research them. The short version: neither store can express
+the four-step price ladder (Play allows two pricing phases, Apple one), so the store path
+needs a plan change that only a device can perform, while Stripe expresses the ladder natively
+and is less work.
+
+---
+
+## ▶ (2026-08-03)
 
 **Everything below still holds; one more day of work is now stacked behind the same device
 test.** On 2026-08-01 the updated design reached the three screens after onboarding — the

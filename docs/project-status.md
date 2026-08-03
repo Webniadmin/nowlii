@@ -1,6 +1,41 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-08-03_
+_Last reviewed: 2026-08-03 (evening)_
+
+## Completed this session (2026-08-03)
+
+_Full detail in `daily-reports/2026-08-03.md`. 18 commits on `feat/design-implementation`;
+the 08-01 batch is deployed, **today's backend work is not**._
+
+- **The money flow was finally exercised**, against production with a real account rather
+  than mocks. Expired trial → 402 on every feature endpoint while subscriptions and profile
+  stay open; the paywall holds (✕ inert, back exits the app, relaunch returns to it);
+  subscribing restores access; every price stage turns green in turn and past the year
+  **Graduated is the current plan at $0.00**.
+- **Neither store can sell this plan.** A Google Play offer allows **two** pricing phases and
+  an Apple introductory offer **one**, so the four-step ladder needs four products per store
+  plus a plan change **only a device can perform** — no store has a server-side plan change.
+  The backend now notices when a subscriber falls behind and the admin can find them, but the
+  hazard is inherent to that path.
+- **Stripe is the alternative and is less work**, not more: subscription schedules express the
+  phased price natively. Linking out from the app is now permitted in the US, EU, South Korea
+  and Japan — and nowhere else. Recorded in `subscriptions-iap.md`; the decision is gated on
+  which markets launch first.
+- **AI Personalization was three-quarters theatre.** Restricted Topics saved nowhere, the
+  privacy switch wrote to a preference nothing read, and "Clear All AI Memory" reported
+  success while deleting nothing. All three are real now, stored on the account, and the
+  topics are folded into the call persona — the first per-user change to what the AI says.
+- **Female is the default voice**, existing accounts included. Español and "Rate Nowlii" are
+  blurred and inert rather than hidden. Four screens were pointing at an asset whose filename
+  contains a `?` and had been rendering broken on every platform.
+- **The Pro screen shows a subscriber where they are** rather than what they would pay — the
+  opening stage had been missing from its own timeline. Also fixed: Settings → "Nowlii Pro"
+  opened the free-trial pitch, so a paying subscriber was offered a trial.
+
+> ⚠️ **Still no real money**, still no upload keystore, still no Terms of Service. The
+> payments decision (Stripe vs store IAP) now gates the rest of that work.
+
+_Previously reviewed: 2026-08-03 (morning)_
 
 ## Completed this session (2026-08-01, committed 2026-08-03)
 

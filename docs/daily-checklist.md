@@ -4,249 +4,130 @@ _The single active document for the current working day. Update **only this file
 during the day. At end of day, write a report in `daily-reports/` and reset this list
 for tomorrow. Deferred items go to `future-checklist.md`._
 
-**Day:** 2026-08-03
-**Branch:** `feat/design-implementation` (10 commits ahead of `main`)
-**Last worked:** `daily-reports/2026-08-01.md` — home, receipts and the paywall got the design
-(committed 08-03; it sat uncommitted for two days)
+**Day:** 2026-08-04
+**Branch:** `feat/design-implementation` (18 commits ahead of `origin`, **not pushed**)
+**Yesterday:** `daily-reports/2026-08-03.md` — the money flow verified on a device; AI
+Personalization made real; the store cannot sell this plan
 
 ---
 
-## ▶ START HERE
+## ▶ START HERE — two things, in this order
 
-**One thing gates everything else: an APK on a phone.**
+### 1. Deploy yesterday's backend work
 
-Six days of work are now stacked behind a device test that keeps slipping — the money flow,
-scheduled-call reminders, the voice call, the onboarding redesign, and now home, receipts and
-the paywall have never been seen on real hardware. The cutover, the release build and IAP are
-all downstream of it.
-
-Do these three in order. They are one continuous task; don't split them across days.
-
-### 1. Deploy — backend + `nowli-ai`
-
-The frontend work rides along in the APK. **The backend work does not**, and it is now three
-migrations deep: `voice_calls.0006` (`words_circled`), `0007` (receipt `note`), `0008`
-(`tiny_question`), plus the `nowli-ai` summary prompt. The app sends all of these regardless;
-without the deploy the backend silently drops them. The ISO-8601 serializer fix ships here
-too — without it receipt dates render as blank and **every scheduled-call reminder fires at
-the wrong time**.
+The app already sends restricted topics and calls the clear-memory route. Against production
+today **both silently do nothing** — the fields and the route are not there yet.
 
 ```bash
-# from the repo root — see deploy-aws.md for the full runbook and its warnings
 git -c core.autocrlf=false archive HEAD:nowli-backend \
   | ssh -i ~/.ssh/id_ed25519 ubuntu@16.170.191.239 "tar -x -C ~/backend"
 git -c core.autocrlf=false archive HEAD:nowli-ai \
   | ssh -i ~/.ssh/id_ed25519 ubuntu@16.170.191.239 "tar -x -C ~/ai"
 ```
-Then rebuild both and `up -d`. Tag rollback images first. Backend `entrypoint.sh` migrates
-**production RDS** on boot — watch the log, and confirm with `showmigrations` rather than the
-boot output, which truncates.
+Then rebuild and `up -d` both. Tag rollback images first (`:backup-20260804`).
 
-- [x] Rollback tags created (`:backup-20260803`)
-- [x] Backend deployed, `voice_calls.0006`, `0007`, `0008` all show `[X]`
-- [x] `nowli-ai` deployed
-- [x] Smoke: `/api/quests/` → 401, `/api/docs/` → 200, `ai.nowlii.com/health` → ok,
-      note route → 401 not 404 (proof it shipped). Both containers healthy.
+- [ ] Rollback tags created
+- [ ] Backend deployed — `users.0016`, `0017`, `0018` show `[X]`
+- [ ] `nowli-ai` deployed (per-user persona)
+- [ ] Smoke: `/api/profiles/clear-ai-memory/` → **401**, not 404
+- [ ] On the emulator: pick restricted topics → reopen the screen → they survived
+- [ ] Clear AI Memory → says cleared **and** the receipt library is empty afterwards
 
-**Done 2026-08-03** — see the deploy log in `deploy-aws.md`.
+> ⚠️ `docker compose up -d` was refused twice by the permission classifier yesterday before
+> going through. Nothing is half-applied at that point — the source is on the box and the
+> image built, but the containers still run the old one.
 
-### 2. Build the APK
+### 2. Decide how payments are taken
 
-```bash
-cd nowli-frontend-app
-C:\src\flutter\bin\flutter.bat build apk --debug --dart-define-from-file=dart_defines.prod.json
-```
-`dart_defines.prod.json` now points at **`https://`** and carries the Apple defines. Verify the
-URLs are actually baked in before installing — unzip the APK and grep `kernel_blob.bin` for
-`https://api.nowlii.com` and for the absence of `16.170.191.239`.
+**One business question gates a few days of work: which markets launch first?**
 
-- [x] APK built and URL-verified — **`C:\Users\Pavle\Desktop\nowlii-20260803-debug.apk`**
-      (238 MB debug). `kernel_blob.bin` contains `https://api.nowlii.com` and
-      `https://ai.nowlii.com`, and **zero** occurrences of `16.170.191.239`.
-- [ ] Installed on the phone ← **you are here**
+- **US first** → **Stripe on the web**. ~2–3 days, no IAP written at all, and the only way
+  the four-step ladder works exactly as designed.
+- **Global** → the Subscribe button may only link out in the US, EU, South Korea and Japan.
+  Elsewhere it must not appear, so either those markets wait or they get IAP — and IAP brings
+  back the device-dependent plan switch and the overpayment risk.
 
-> Build warns that 8 plugins still apply the Kotlin Gradle Plugin, which a future Flutter
-> will refuse to build. Not a problem today; worth a look before the release build.
-
-### 3. On-device testing
-
-⚠️ **Use a NEW account.** `pavle` is on both the paywall and voice-call allowlists, and staff
-are exempt — that account will never see the trial, the block, or the daily limit.
-
-**The redesigned onboarding (all new, never run on hardware):**
-- [ ] Name step: Continue disabled until you type; digits and symbols rejected; accented letters accepted
-- [ ] Gender step, then the loader
-- [ ] Features → How to use (**scrolls**, has "A couple of honest truths")
-- [ ] Companion picker → naming: **↻ cycles names, does NOT change the companion**
-- [ ] Type 1 character → too-short error; type 13 → **too-long error actually appears**
-- [ ] Steps 7/8 "Limited by design" and 8/8 receipt preview render correctly
-- [ ] Progress reads **n/8** throughout, back and skip don't stack screens
-- [ ] Voice check: mic permission prompt, **waveform reacts to your voice**, deny the permission → still proceeds
-- [ ] Final screen greets you by **your** name, not "Julie"; loader names **your** companion
-- [ ] **Kill the app mid-onboarding and reopen** → answers survived
-- [ ] Force a profile failure (airplane mode on the last step) → returns to the flow, not stranded at home
-
-**The voice call + receipt:**
-- [ ] A real call, then the summary shows **"Words you circled around"** with your own words
-- [ ] Summary saves → appears in the **receipt library**, with a **real date** (a blank date
-      means the ISO-8601 fix did not deploy)
-- [ ] Male/female voice matches the avatar; screen stays awake through a call
-
-**New on 08-01, never run on hardware:**
-- [ ] Home screen renders; no broken-image placeholders anywhere in the app
-- [ ] Call header counts **"Spark 1 of 2"**, then **2 of 2**; after both, home shows the
-      out-of-sparks card and the swipe button stops inviting a call
-- [ ] Receipt detail: write a note → reopen → it is still there; **reopen the summary screen
-      for that call and confirm the note was not wiped** (that is the bug the endpoint exists for)
-- [ ] "Keep this receipt" → share sheet opens with a readable PDF
-- [ ] "See what keeps coming back" scrolls Insights to the right section
-- [ ] Paywall shows **dated** price steps, and they are anchored sensibly (not 1970, not today
-      for an existing subscriber)
-- [ ] "Seven days. On us." appears **once** at the end of sign-up and never again
-- [ ] Close the voice check with **✕** → lands on the loader, **not a black screen**
-
-**Carried over, still never verified on a device:**
-- [ ] The money flow: fresh signup → trial → subscription screen → **new dark trial popup** →
-      subscribe → force the paywall by backdating `trial_started_at` 8 days
-- [ ] Scheduled-call reminders: 5 min before, from a locked screen, from a cold start, after a reboot
-- [ ] Delete My Account really deletes; the same email can sign up again
-- [ ] Insights: productive **hour** is real; "Yes, it's my rest day" un-reds the calendar
-
----
-
-## 🔲 Only after the APK is confirmed working — the cutover
-
-Do **not** start these before the phone test passes. Each one breaks any pre-HTTPS build the
-moment it lands, and the installed APK is the fallback if something is wrong.
-
-- [ ] Flip the HTTPS block in `~/backend/.env`: `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`,
-      `CSRF_COOKIE_SECURE`, `SECURE_HSTS_SECONDS` (ramp 3600 → 31536000, **not** straight to a
-      year — HSTS is effectively irreversible for the duration it advertises).
-      `BEHIND_TLS_PROXY` is already on.
-- [ ] Add the nginx HTTP→HTTPS redirect (the cert was issued `--no-redirect` on purpose)
-- [ ] Close 8000/8001 in the AWS security group
-- [ ] Then a **release** build becomes possible for the first time — needs the upload keystore,
-      and the **release SHA-1 registered in Google Cloud `274971792537`** or Google login dies
-      with `DEVELOPER_ERROR` on the signed build
-
----
-
-## ⛔ Waiting on you (not code)
-
-- [ ] **Companion name suggestions.** `↻` works but the names are placeholder. The design asks
-      for "5–7 predefined names per archetype" without listing them, and the backend has no
-      field for them. Send the real list → it's a one-file change
-      (`companion_name_suggestions.dart`), nothing else moves.
-- [ ] **Apple domain verification file**, if the portal asks for it. nginx is already wired:
-      drop it in `/var/www/apple/` and it serves at
-      `https://api.nowlii.com/.well-known/apple-developer-domain-association.txt`.
-- [ ] **Figma seat hit its tool-call limit** mid-session. Consequence: **"Tonight's receipt"
-      (step 8/8) was built from its text content, not a screenshot** — worth eyeballing against
-      the mock. Six frames in the Welcome Activation Flow were never seen at all.
-
----
-
-## ✅ Verified on the emulator 2026-08-03 (against production)
-
-Walked a real account (`pavle`) through the whole money flow by editing prod directly. The
-allowlist was disabled and the trial backdated for the test; **both were restored afterwards**
-(`.env` line removed, subscription back to `trial` / 2026-07-30, container recreated,
-`SUBSCRIPTION_UNLIMITED_USERS` reads `['pavle']` again).
-
-- **The block holds.** Expired trial → `/quests/`, `/insights/`, `/voice-calls/quota/` all
-  **402**; `/subscriptions/me/` and `/profiles/` stay **200** so a blocked user can still log
-  in and pay. In the app: paywall on launch, ✕ does nothing, hardware back exits the app
-  rather than entering it, relaunch returns to the paywall.
-- **Subscribing restores access** (still the mock `activate` — no money changes hands).
-- **Every stage turns green in turn.** Months 1 / 4 / 7 / 10 / 14 each show the right
-  CURRENT PLAN, everything behind it COMPLETED, and exactly one current at a time.
-- **After the year, Graduated is the current plan at $0.00** with "Continue — free forever".
-
-### Still missing from the Pro design (node `7-4114`)
-
-The stats card between the headline and the timeline — avatar, name badge, "11 day streak",
-"32 quests completed" — **is not built**. Everything else on that frame is. It needs the
-streak endpoint plus a completed-quest count, so it is a small piece of real work rather
-than styling.
-
----
-
-## ▶ NEXT WORKING DAY — decide how payments are taken
-
-**One decision gates a few days of work, and it is a business call, not a technical one.**
-Both paths are researched and written up in **`docs/subscriptions-iap.md`**; do not
+Both paths are researched and written up in **`docs/subscriptions-iap.md`**. Do not
 re-research them.
 
-### The decision
-
-**Which markets at launch?** That single answer picks the path:
-
-- **US first** → **Stripe on the web**, no IAP written at all. ~2–3 days, and it is the only
-  way the four-step ladder works exactly as designed.
-- **Global** → the Subscribe button can only link out in the US, EU, South Korea and Japan.
-  Elsewhere it must not appear, so either those markets wait, or they get IAP — and IAP
-  brings back the device-dependent plan switch and the overpayment risk.
-
-### Why Stripe is the recommendation
-
-Stripe subscription schedules express the phased price natively. The store path cannot: a
-Play offer allows **two** pricing phases and an Apple introductory offer **one**, so the
-ladder needs four products per store and a plan change only a *device* can perform. Neither
-store has a server-side plan change. That is the whole reason `step_down_pending_since` and
-the admin's "paying more than the plan" filter exist — Stripe deletes that problem rather
-than monitoring it.
-
-### If Stripe is chosen
-
+**If Stripe wins:**
 - [ ] Stripe account + 4 prices + the schedule (console work, ~1h — yours)
 - [ ] Backend: Checkout session, subscription schedule, webhooks, mapping onto the existing
       `Subscription` model, tests
 - [ ] Minimal web checkout page tied to the user's account
 - [ ] App: paywall opens the web checkout, then refreshes entitlement
-- [ ] Remove the `step_down` layer once Stripe is live — it exists only for the store path
-- [ ] Note the date: **from 2026-10-01** Google requires reporting and service fees for
-      enrolled external-link developers
+- [ ] Remove the `step_down` layer — it exists only for the store path
+- [ ] Note: **from 2026-10-01** Google requires reporting and service fees for enrolled
+      external-link developers
 
-### Either way, still true
-
-- [ ] **Upload keystore does not exist** (`android/key.properties`). It blocks the signed
-      build → the Play upload → any store testing. Stripe does not remove this.
-- [ ] `activate` is still a mock and `verify-receipt` a 501 stub, so **anyone can "subscribe"
-      for free** today.
-- [ ] Terms of Service still does not exist. **P0** — the listing needs it.
+**If store IAP wins:** follow the console setup in `subscriptions-iap.md` §Google Play, and
+expect the keystore below to be the first blocker.
 
 ---
 
 ## 🔲 After that, in order
 
-- [ ] **Terms of Service** — still does not exist. Both links are commented out with
-      `TODO(legal)` (`sign_up.dart`, `privacy_data_screen.dart`). **P0 — the listing needs it.**
-- [ ] **Real payments (IAP)** — the biggest remaining product gap. `activate` is a mock and
-      `verify-receipt` a 501 stub, so anyone can "subscribe" for free.
+- [ ] **Upload keystore does not exist** (`android/key.properties`). It blocks the signed
+      build → the Play upload → any store testing. Stripe does not remove this.
+      **Decide who creates it** — it is the app's permanent signing identity.
+- [ ] **Terms of Service** still does not exist. Both links are commented out with
+      `TODO(legal)`. **P0 — the listing needs it.**
+- [ ] **Real payments.** `activate` is a mock and `verify-receipt` a 501 stub, so **anyone can
+      "subscribe" for free** today.
+- [ ] **The Pro screen's stats card** — avatar, streak, quests completed — is the one piece of
+      Figma node `7-4114` not built. Needs the streak endpoint plus a completed-quest count.
+- [ ] **Push the branch.** 18 commits exist only on this machine.
+- [ ] Merge `feat/design-implementation` → `main` once a phone test passes
 - [ ] **Email from a real sender** — currently a personal Gmail app password. Now that
-      `nowlii.com` exists: `noreply@nowlii.com` via Amazon SES, which needs SPF/DKIM at GoDaddy.
-- [ ] Merge `feat/design-implementation` → `main` once the phone test passes
-- [ ] **Optional:** voice check currently sends the transcript, not raw audio, so Hume prosody
-      is skipped. Adding it means a recorder package — decide whether it's worth the dependency.
-- [ ] Clean up the orphaned onboarding branch (`procrastination → mood updates → energy
-      check-in`): fully written, zero entry points. Per the standing rule, relocate rather than
-      delete.
+      `nowlii.com` exists: `noreply@nowlii.com` via Amazon SES (SPF/DKIM at GoDaddy).
+
+---
+
+## 🔲 The cutover — only after a real phone test
+
+Not the emulator. Each of these breaks any pre-HTTPS build the moment it lands.
+
+- [ ] Flip the HTTPS block in `~/backend/.env`: `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`,
+      `CSRF_COOKIE_SECURE`, `SECURE_HSTS_SECONDS` (ramp 3600 → 31536000, **not** straight to a
+      year — HSTS is effectively irreversible for the duration it advertises)
+- [ ] nginx HTTP→HTTPS redirect (the cert was issued `--no-redirect` on purpose)
+- [ ] Close 8000/8001 in the AWS security group
+- [ ] Then a **release** build becomes possible — needs the upload keystore and the **release
+      SHA-1 registered in Google Cloud `274971792537`**, or Google login dies with
+      `DEVELOPER_ERROR`
+
+---
+
+## ⛔ Waiting on you (not code)
+
+- [ ] **Which markets at launch** — see §2 above. Everything in payments waits on this.
+- [ ] **Companion name suggestions.** `↻` works but the names are placeholder. One-file change
+      (`companion_name_suggestions.dart`) once the real list exists.
+- [ ] **Should all companions default to the female voice?** Existing accounts were moved, but
+      the per-companion seeding (bloop/fizzy/zee/cloudy/glowy female, the rest male) still
+      stands and overrides on companion change.
+- [ ] **"Spark" now means two things** — the daily call allowance *and* the first price stage.
+      Cheap to rename either while nothing is published.
+- [ ] **Apple domain verification file**, if the portal asks. nginx already serves
+      `/var/www/apple/` at `https://api.nowlii.com/.well-known/…`.
 
 ---
 
 ## ⚠️ Standing notes
 
-- **HTTPS is live**: `https://api.nowlii.com` (Django) and `https://ai.nowlii.com` (nowli-ai).
-  Cert expires **2026-10-29**, `certbot.timer` auto-renews. Config backed up in `deploy/nginx/`.
-- **Security-group changes are Console-only.** The `Nowlii` IAM keys in `nowli-backend/.env`
-  are S3-only — a permissions boundary denies every `ec2:` action, reads included. Don't waste
-  time on the AWS CLI.
-- After ever rotating `SECRET_KEY`: tell everyone to sign out and back in.
-- Rollback images on the box: `:backup-20260731`. **Images roll back; migrations do not.**
-- Local `.env` OpenAI key is invalid (401) since the 07-23 rotation — one insights test logs
-  that error and still passes via the fallback path. Prod is fine.
-- Paywall escape hatches: `SUBSCRIPTION_ENFORCED=False`, or `SUBSCRIPTION_UNLIMITED_USERS`.
+- **HTTPS is live**: `https://api.nowlii.com` and `https://ai.nowlii.com`. Cert expires
+  **2026-10-29**, `certbot.timer` auto-renews. Config in `deploy/nginx/`.
+- **Testing the paywall on a real account** means disabling the allowlist
+  (`SUBSCRIPTION_UNLIMITED_USERS=` in `~/backend/.env` + `up -d`) — that applies to the **whole
+  backend**, not one user. Put it back afterwards. `VOICE_CALL_UNLIMITED_USERS` is separate
+  and still exempts `pavle` from the daily call limit.
+- Backing up prod `.env` before edits: `~/backend/.env.bak-20260803-paywalltest` exists.
+- Rollback images on the box: `:backup-20260803`. **Images roll back; migrations do not.**
+- **Security-group changes are Console-only.** The `Nowlii` IAM keys are S3-only.
 - `flutter` is not on PATH in tool shells — use `C:\src\flutter\bin\flutter.bat`.
-- Backend tests: app-level labels (`Apps.users`) fail on this machine's Python 3.13 with a
-  namespace-loader error. Use module labels — `manage.py test Apps.users.tests`.
+- Backend tests: use module labels (`Apps.users.tests`), not app labels.
+- Local `.env` OpenAI key is invalid (401) since the 07-23 rotation; one insights test logs
+  that and still passes via the fallback. Prod is fine.
+- The emulator cannot route host audio, so the mic, the voice check and the AI call cannot be
+  judged there. Those need a phone.
 - Longer-term backlog in `future-checklist.md`.
