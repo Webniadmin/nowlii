@@ -103,6 +103,7 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
       dominantEmotion: summary.dominantEmotion,
       topEmotions: summary.topEmotions,
       wordsCircled: summary.wordsCircled,
+      tinyQuestion: summary.tinyQuestion,
       language: summary.language,
       totalTurns: summary.totalTurns,
     );

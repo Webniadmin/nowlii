@@ -18,7 +18,9 @@ import 'package:nowlii/screen/onboarding/onboarding_features/onboarding_features
 import 'package:nowlii/screen/onboarding/onboarding_flow_file/onboarding_flow.dart';
 import 'package:nowlii/screen/ai_call/ai_voice.dart';
 import 'package:nowlii/screen/ai_call/call_summary_screen.dart';
-import 'package:nowlii/screen/ai_call/call_history_screen.dart';
+import 'package:nowlii/models/call_summary_history.dart';
+import 'package:nowlii/screen/receipts/receipt_detail_screen.dart';
+import 'package:nowlii/screen/receipts/receipts_screen.dart';
 import 'package:nowlii/screen/ai_call/pop_po_sahre.dart';
 import 'package:nowlii/screen/auth/enter_new_password.dart';
 import 'package:nowlii/screen/auth/password_updated_popup_screen.dart';
@@ -328,8 +330,26 @@ class AppPages {
         },
       ),
       GoRoute(
-        path: AppRoutespath.callHistory,
-        builder: (context, state) => const CallHistoryScreen(),
+        path: AppRoutespath.receipts,
+        builder: (context, state) => const ReceiptsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutespath.receiptDetail,
+        builder: (context, state) {
+          // The list hands over the receipt it already loaded, plus the serial number it
+          // worked out from the position — deep-linking straight here would have neither,
+          // so a missing payload falls back to the library rather than a blank screen.
+          final extra = state.extra;
+          if (extra is Map &&
+              extra['receipt'] is CallSummaryHistoryItem &&
+              extra['number'] is int) {
+            return ReceiptDetailScreen(
+              receipt: extra['receipt'] as CallSummaryHistoryItem,
+              number: extra['number'] as int,
+            );
+          }
+          return const ReceiptsScreen();
+        },
       ),
       GoRoute(
         path: AppRoutespath.popPoSahre,

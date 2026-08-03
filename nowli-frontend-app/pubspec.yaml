@@ -37,6 +37,11 @@ dependencies:
   # evry dependencies must be added below this line
   google_fonts: ^6.3.2
   flutter_svg: ^2.2.2
+  # "Keep this receipt" renders a receipt to PDF (pdf) and hands it to the system share
+  # sheet (printing). Sharing rather than writing to Downloads keeps this off Android's
+  # storage permissions, which behave differently on every OS version.
+  pdf: ^3.11.1
+  printing: ^5.13.4
   device_preview: ^1.3.1
   go_router: ^17.0.0
   get: ^4.7.2

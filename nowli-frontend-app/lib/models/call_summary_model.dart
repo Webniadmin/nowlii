@@ -19,6 +19,11 @@ class CallSummaryResponse {
   /// valid answer — a short call has no pattern — and the UI hides the section
   /// rather than showing a placeholder.
   final List<String> wordsCircled;
+
+  /// One short question the user could ask themselves about their own next step,
+  /// printed on the receipt. Empty when the model had nothing concrete to ask about,
+  /// in which case the card hides rather than showing an invented question.
+  final String tinyQuestion;
   final double processingMs;
 
   CallSummaryResponse({
@@ -37,6 +42,7 @@ class CallSummaryResponse {
     required this.emotionTimeline,
     this.topEmotions = const {},
     this.wordsCircled = const [],
+    this.tinyQuestion = '',
     required this.processingMs,
   });
 
@@ -67,6 +73,7 @@ class CallSummaryResponse {
               .where((w) => w.trim().isNotEmpty)
               .toList() ??
           const [],
+      tinyQuestion: json['tiny_question'] ?? '',
       processingMs: (json['processing_ms'] ?? 0).toDouble(),
     );
   }
