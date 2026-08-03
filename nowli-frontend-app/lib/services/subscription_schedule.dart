@@ -19,7 +19,7 @@ import 'package:nowlii/models/subscription_model.dart';
 const List<String> kPriceStepNames = ['Rhythm', 'Independence', 'Release'];
 
 /// The name for the final, free-forever stage.
-const String kGraduatedStageName = 'Graduate';
+const String kGraduatedStageName = 'Graduated';
 
 /// How many upcoming steps are presented as settled rather than indicative.
 const int kConfirmedSteps = 2;

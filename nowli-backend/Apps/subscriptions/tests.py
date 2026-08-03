@@ -462,10 +462,10 @@ class StageNameTests(APITestCase):
         body = self.client.get("/api/subscriptions/plan/").data
         self.assertEqual([p["stage"] for p in body["phases"]],
                          ["Spark", "Rhythm", "Independence", "Release"])
-        self.assertEqual(body["graduated_stage"], "Graduate")
+        self.assertEqual(body["graduated_stage"], "Graduated")
 
-    def test_the_free_stage_is_graduate(self):
-        self.assertEqual(services.phase_for_month(13)["stage"], "Graduate")
+    def test_the_free_stage_is_graduated(self):
+        self.assertEqual(services.phase_for_month(13)["stage"], "Graduated")
 
     def test_every_paid_phase_has_a_product_on_both_stores(self):
         """A phase with no product is a phase nobody can be billed for."""

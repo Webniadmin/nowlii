@@ -23,7 +23,7 @@ TRIAL_DAYS = 7
 # **at most two pricing phases**, and an Apple introductory offer is a single phase. So each
 # step is its own store product and the subscriber is moved down the ladder by a plan change
 # at renewal. See ``services.step_down_due`` and docs/subscriptions-iap.md.
-# The five named stages of the plan: Spark → Rhythm → Independence → Release → Graduate.
+# The five named stages of the plan: Spark → Rhythm → Independence → Release → Graduated.
 # The first four are what the user pays; the fifth is free and is not a store product.
 PHASES = [
     {"from_month": 1,  "to_month": 3,  "price": 19.99, "stage": "Spark",
@@ -39,7 +39,7 @@ PHASES = [
 # The final, free-forever stage. Deliberately not a store product: neither store sells a $0
 # renewing plan, so reaching it means the subscription is cancelled and access comes from
 # our own records.
-GRADUATED_STAGE = "Graduate"
+GRADUATED_STAGE = "Graduated"
 
 # The Play subscription every base plan above belongs to. Play models one product with many
 # base plans; Apple models a subscription *group* with one product per price.
