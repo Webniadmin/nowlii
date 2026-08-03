@@ -128,6 +128,28 @@ def _clean_words_circled(raw):
     return cleaned
 
 
+_TINY_QUESTION_MAX_CHARS = 120
+
+
+def _clean_tiny_question(raw):
+    """Normalise the client's ``tiny_question``. Never trusts it blindly.
+
+    Same reasoning as ``_clean_words_circled``: nowli-ai already sanitises this, but the
+    value reaches us through the app, so a caller could send anything. A receipt line
+    that is not a short question is dropped — the card hides rather than printing a
+    paragraph, or a statement the model slipped in where a question was asked for.
+    """
+    if not isinstance(raw, str):
+        return ''
+
+    question = raw.strip().strip('"').strip("'").strip()
+    if not question or len(question) > _TINY_QUESTION_MAX_CHARS:
+        return ''
+    if '?' not in question:
+        return ''
+    return question
+
+
 def _persist_call_summary(call, data):
     """Store the conversational summary for a call if the app sent one.
 
@@ -169,6 +191,7 @@ def _persist_call_summary(call, data):
             'dominant_emotion': str(data.get('dominant_emotion') or '')[:20],
             'top_emotions': top_emotions,
             'words_circled': _clean_words_circled(data.get('words_circled')),
+            'tiny_question': _clean_tiny_question(data.get('tiny_question')),
             'language': str(data.get('language') or '')[:8],
             'total_turns': total_turns,
         },
@@ -400,6 +423,15 @@ class VoiceCallSummaryView(APIView):
                     type=openapi.TYPE_OBJECT,
                     description='5-category split: happy/motivated/angry/tired/sad.',
                 ),
+                'words_circled': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_STRING),
+                    description="The user's own repeated words, verbatim.",
+                ),
+                'tiny_question': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='One short question printed on the receipt.',
+                ),
                 'language': openapi.Schema(type=openapi.TYPE_STRING),
                 'total_turns': openapi.Schema(type=openapi.TYPE_INTEGER),
             },
@@ -418,6 +450,70 @@ class VoiceCallSummaryView(APIView):
             )
         code = status.HTTP_200_OK if existed else status.HTTP_201_CREATED
         return Response(CallSummarySerializer(summary).data, status=code)
+
+
+class VoiceCallSummaryNoteView(APIView):
+    """`PATCH /api/voice-calls/<id>/summary/note/` — the user's own note on a receipt.
+
+    Separate from the summary upsert above because the two have opposite owners: that one
+    is written by the app from generated content at call end, this one is written by the
+    user, later, and must never be clobbered by a re-post of the summary.
+
+    An empty string is a valid value — it is how a note gets deleted.
+    """
+
+    permission_classes = [IsAuthenticated, HasProAccess]
+
+    #: Long enough for a real reflection, short enough that the column is not an open door.
+    MAX_NOTE_LENGTH = 2000
+
+    @swagger_auto_schema(
+        operation_summary="Add, edit or clear the note on a call receipt",
+        tags=['Voice calls'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={'note': openapi.Schema(type=openapi.TYPE_STRING)},
+            required=['note'],
+        ),
+        responses={200: CallSummarySerializer, 404: 'No summary for this call'},
+    )
+    def patch(self, request, pk):
+        # Filtering on the user here is what makes another account's receipt a 404 rather
+        # than something this endpoint will happily annotate.
+        summary = get_object_or_404(CallSummary, call_id=pk, user=request.user)
+
+        if 'note' not in request.data:
+            return Response(
+                {'detail': "Field 'note' is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        note = request.data.get('note')
+        if note is None:
+            note = ''
+        if not isinstance(note, str):
+            return Response(
+                {'detail': "Field 'note' must be a string."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        note = note.strip()
+        if len(note) > self.MAX_NOTE_LENGTH:
+            return Response(
+                {
+                    'detail': f'Note is too long (max {self.MAX_NOTE_LENGTH} characters).',
+                    'max_length': self.MAX_NOTE_LENGTH,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        summary.note = note
+        # Cleared notes carry no timestamp — "edited just now" under an empty note reads
+        # as though something was saved.
+        summary.note_updated_at = timezone.now() if note else None
+        summary.save(update_fields=['note', 'note_updated_at'])
+
+        return Response(CallSummarySerializer(summary).data)
 
 
 class VoiceCallSummaryListView(APIView):

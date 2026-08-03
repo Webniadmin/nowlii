@@ -209,6 +209,16 @@ class CallSummary(models.Model):
     # summary as "Words you circled around". Empty is a valid, honest answer: a short call
     # has no pattern, and the UI hides the section rather than inventing one.
     words_circled = models.JSONField(default=list, blank=True)
+    # One short question the user could ask themselves about their own next step, printed
+    # on the receipt. Written by the same GPT pass as the sentences above, so it costs
+    # nothing extra. Empty is valid and the card hides — better than a question the model
+    # reached for because it was asked to fill a field.
+    tiny_question = models.CharField(max_length=140, blank=True)
+    # The user's own note about this call, written on the receipt screen. Everything else
+    # here is generated; this is the one field they author. Stored server-side rather than
+    # on the device because a receipt the app offers to "keep" must survive a reinstall.
+    note         = models.TextField(blank=True)
+    note_updated_at = models.DateTimeField(null=True, blank=True)
     language     = models.CharField(max_length=8, blank=True)
     total_turns  = models.PositiveIntegerField(default=0)
     created_at   = models.DateTimeField(auto_now_add=True)

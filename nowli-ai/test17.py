@@ -362,6 +362,29 @@ def _clean_words_circled(raw: Any) -> List[str]:
     return cleaned
 
 
+_TINY_QUESTION_MAX_CHARS = 120
+
+
+def _clean_tiny_question(raw: Any) -> str:
+    """Sanitise the model's `tiny_question` before it reaches the user.
+
+    This is printed on the receipt as a single short question, so the failure modes
+    worth catching are the model returning a paragraph instead of a question, or
+    returning a statement. Anything that is not a short question is dropped — the
+    card hides rather than showing the model thinking out loud.
+    """
+    if not isinstance(raw, str):
+        return ""
+
+    question = raw.strip().strip('"').strip("'").strip()
+    if not question or len(question) > _TINY_QUESTION_MAX_CHARS:
+        return ""
+    # A receipt line without a question mark is a statement the model slipped in.
+    if "?" not in question:
+        return ""
+    return question
+
+
 def _build_summary_prompt(session: "Session") -> str:
     lang      = session.language
     timeline  = session.emotion_timeline()
@@ -376,14 +399,15 @@ def _build_summary_prompt(session: "Session") -> str:
     return (
         f"Here is the full turn-by-turn log:\n{turns_text}\n\n"
         f"First emotion: {first_emotion}\nLast emotion: {last_emotion}\nFrequency: {counts}\n\n"
-        "Return ONLY a JSON object with exactly these 6 keys:\n"
+        "Return ONLY a JSON object with exactly these 7 keys:\n"
         "{\n"
         f'  "mood_detected": "<{keys["mood_detected"]}>",\n'
         f'  "focus_topic":   "<{keys["focus_topic"]}>",\n'
         f'  "energy_shift":  "<{keys["energy_shift"]}>",\n'
         f'  "next_step":     "<{keys["next_step"]}>",\n'
         '  "top_emotions":  {"happy": <n>, "motivated": <n>, "angry": <n>, "tired": <n>, "sad": <n>},\n'
-        '  "words_circled": ["<word>", "<word>", "<word>"]\n'
+        '  "words_circled": ["<word>", "<word>", "<word>"],\n'
+        '  "tiny_question": "<one short question>"\n'
         "}\n"
         "The five top_emotions numbers estimate the user's overall emotional split across the "
         "whole chat and MUST sum to 100.\n"
@@ -393,6 +417,12 @@ def _build_summary_prompt(session: "Session") -> str:
         "or invent. Skip filler like 'yeah', 'okay', 'like', 'um' and pick words that carry "
         "weight. If the conversation was too short or had no such pattern, return an empty list "
         "rather than reaching for something.\n"
+        "tiny_question: ONE short, concrete, gentle question the user could ask themselves "
+        "about the next step above — at most 12 words, in the same language as the "
+        "conversation, and it MUST end with a question mark. Make it small and answerable "
+        "(\"What's the first click?\"), never therapy-speak, never a question about how they "
+        "feel, and never advice phrased as a question. If the conversation gives you nothing "
+        "concrete to ask about, return an empty string rather than inventing one.\n"
         "No markdown. No extra keys. No text outside the JSON."
     )
 
@@ -550,6 +580,10 @@ class MoodSummaryResponse(BaseModel):
     # failed or the conversation was too short to have a pattern; an empty list is a
     # truthful answer and the UI hides the section rather than inventing one.
     words_circled: List[str] = []
+    # One short question the user could ask themselves about their own next step, printed
+    # on the receipt. Empty when the model gave nothing concrete to ask about, or wrote a
+    # statement instead of a question — the card hides rather than inventing one.
+    tiny_question: str = ""
 
 
 class EmotionBreakdownResponse(BaseModel):
@@ -1425,6 +1459,7 @@ async def chat_summary(request: SummaryRequest):
                     if _te_total > 0 else {**{c: 0.0 for c in _TOP_EMOTIONS}, "happy": 100.0})
     dominant = max(top_emotions, key=top_emotions.get)
     words_circled = _clean_words_circled(gpt_data.get("words_circled"))
+    tiny_question = _clean_tiny_question(gpt_data.get("tiny_question"))
 
     return MoodSummaryResponse(
         session_id=request.session_id, user_name=session.user_name,
@@ -1436,7 +1471,7 @@ async def chat_summary(request: SummaryRequest):
         #   dominant_emotion=session.overall_dominant(),
         dominant_emotion=dominant, emotion_counts=session.dominant_emotion_counts(),
         emotion_timeline=session.emotion_timeline(), top_emotions=top_emotions,
-        words_circled=words_circled,
+        words_circled=words_circled, tiny_question=tiny_question,
         processing_ms=round(elapsed_ms, 1),
     )
 

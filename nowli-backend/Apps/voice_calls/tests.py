@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 from Apps.quests.models import Quests
 
 from .models import CallSummary, ScheduledCall, VoiceCall
-from .views import _clean_words_circled
+from .views import VoiceCallSummaryNoteView, _clean_tiny_question, _clean_words_circled
 
 User = get_user_model()
 
@@ -459,3 +459,192 @@ class CallSummaryWordsPersistenceTests(TestCase):
             'words_circled': 'should, later',
         })
         self.assertEqual(CallSummary.objects.get(call=self.call).words_circled, [])
+
+
+class CallReceiptNoteTests(TestCase):
+    """The note is the one field on a receipt the user writes themselves.
+
+    Everything else is generated at call end, which is exactly what makes this risky: the
+    app re-posts the summary whenever the summary screen is shown, and that must not take
+    the user's own words with it.
+    """
+
+    def setUp(self):
+        self.user = _make_user('noteuser')
+        self.other = _make_user('notestranger')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.call = VoiceCall.objects.create(user=self.user)
+        self.summary = CallSummary.objects.create(
+            call=self.call,
+            user=self.user,
+            mood_detected='You sounded tired.',
+            focus_topic='Work came up a lot.',
+            energy_shift='You started out flat.',
+            next_step='Rest tonight!',
+        )
+
+    def _url(self, call_id=None):
+        return reverse(
+            'voice_calls:voice-call-summary-note', args=[call_id or self.call.pk],
+        )
+
+    def _patch(self, payload, url=None):
+        return self.client.patch(url or self._url(), payload, format='json')
+
+    def test_a_note_is_saved_and_returned(self):
+        response = self._patch({'note': 'Felt better after this one.'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['note'], 'Felt better after this one.')
+
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, 'Felt better after this one.')
+        self.assertIsNotNone(self.summary.note_updated_at)
+
+    def test_editing_replaces_the_note(self):
+        self._patch({'note': 'First thought.'})
+        self._patch({'note': 'Actually, second thought.'})
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, 'Actually, second thought.')
+
+    def test_an_empty_note_clears_it_and_its_timestamp(self):
+        self._patch({'note': 'Something.'})
+        response = self._patch({'note': ''})
+        self.assertEqual(response.status_code, 200)
+
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, '')
+        # "edited just now" under an empty note would read as though something was saved.
+        self.assertIsNone(self.summary.note_updated_at)
+
+    def test_whitespace_only_counts_as_clearing(self):
+        self._patch({'note': 'Something.'})
+        self._patch({'note': '   \n  '})
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, '')
+
+    def test_resaving_the_summary_keeps_the_note(self):
+        """The whole reason the note has its own endpoint."""
+        self._patch({'note': 'Do not lose me.'})
+
+        self.client.post(
+            reverse('voice_calls:voice-call-summary', args=[self.call.pk]),
+            {
+                'mood_detected': 'You sounded tired.',
+                'focus_topic': 'Work came up a lot.',
+                'energy_shift': 'You started out flat.',
+                'next_step': 'Rest tonight!',
+            },
+            format='json',
+        )
+
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, 'Do not lose me.')
+
+    def test_another_users_receipt_is_not_found(self):
+        self.client.force_authenticate(user=self.other)
+        self.assertEqual(self._patch({'note': 'mine now'}).status_code, 404)
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, '')
+
+    def test_a_call_with_no_summary_is_not_found(self):
+        bare_call = VoiceCall.objects.create(user=self.user)
+        self.assertEqual(
+            self._patch({'note': 'hello'}, url=self._url(bare_call.pk)).status_code, 404,
+        )
+
+    def test_a_missing_note_field_is_rejected(self):
+        # Distinct from an empty string, which deliberately means "delete it".
+        self.assertEqual(self._patch({}).status_code, 400)
+
+    def test_a_non_string_note_is_rejected(self):
+        self.assertEqual(self._patch({'note': {'text': 'nope'}}).status_code, 400)
+
+    def test_an_over_long_note_is_rejected(self):
+        too_long = 'x' * (VoiceCallSummaryNoteView.MAX_NOTE_LENGTH + 1)
+        self.assertEqual(self._patch({'note': too_long}).status_code, 400)
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, '')
+
+    def test_a_note_at_the_limit_is_accepted(self):
+        at_limit = 'x' * VoiceCallSummaryNoteView.MAX_NOTE_LENGTH
+        self.assertEqual(self._patch({'note': at_limit}).status_code, 200)
+
+    def test_the_note_appears_in_the_receipts_list(self):
+        self._patch({'note': 'Shows up in the list.'})
+        response = self.client.get(reverse('voice_calls:voice-call-summaries'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]['note'], 'Shows up in the list.')
+
+
+class TinyQuestionTests(TestCase):
+    """The receipt prints this verbatim, so a non-question must never reach the card."""
+
+    def test_a_short_question_is_kept(self):
+        self.assertEqual(
+            _clean_tiny_question("What's the first click?"), "What's the first click?",
+        )
+
+    def test_surrounding_quotes_are_stripped(self):
+        self.assertEqual(_clean_tiny_question('"What is next?"'), 'What is next?')
+
+    def test_a_statement_is_dropped(self):
+        # The model was asked for a question; a sentence means it did something else.
+        self.assertEqual(_clean_tiny_question('You should open the file.'), '')
+
+    def test_a_paragraph_is_dropped(self):
+        rambling = 'What is the first click? ' + ('and then what happens ' * 20)
+        self.assertEqual(_clean_tiny_question(rambling), '')
+
+    def test_junk_types_are_dropped(self):
+        for junk in (None, 42, ['What?'], {'q': 'What?'}):
+            self.assertEqual(_clean_tiny_question(junk), '')
+
+    def test_empty_stays_empty(self):
+        # An honest "nothing to ask here" — the card hides.
+        self.assertEqual(_clean_tiny_question('   '), '')
+
+
+class TinyQuestionPersistenceTests(TestCase):
+    """It has to survive the round trip, since nowli-ai forgets the session."""
+
+    def setUp(self):
+        self.user = _make_user('tinyq')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.call = VoiceCall.objects.create(user=self.user)
+
+    def _save(self, extra):
+        payload = {
+            'mood_detected': 'You sounded tired.',
+            'focus_topic': 'Work came up a lot.',
+            'energy_shift': 'You started out flat.',
+            'next_step': 'Open the file.',
+        }
+        payload.update(extra)
+        return self.client.post(
+            reverse('voice_calls:voice-call-summary', args=[self.call.pk]),
+            payload, format='json',
+        )
+
+    def test_it_is_stored_and_returned(self):
+        response = self._save({'tiny_question': "What's the first click?"})
+        self.assertIn(response.status_code, (200, 201))
+        self.assertEqual(
+            CallSummary.objects.get(call=self.call).tiny_question,
+            "What's the first click?",
+        )
+
+    def test_a_summary_without_one_is_still_saved(self):
+        response = self._save({})
+        self.assertIn(response.status_code, (200, 201))
+        self.assertEqual(CallSummary.objects.get(call=self.call).tiny_question, '')
+
+    def test_a_statement_from_the_model_is_not_persisted(self):
+        self._save({'tiny_question': 'Just open the file.'})
+        self.assertEqual(CallSummary.objects.get(call=self.call).tiny_question, '')
+
+    def test_it_appears_in_the_receipts_list(self):
+        self._save({'tiny_question': 'What is the first click?'})
+        response = self.client.get(reverse('voice_calls:voice-call-summaries'))
+        self.assertEqual(response.data[0]['tiny_question'], 'What is the first click?')

@@ -200,10 +200,15 @@ def get_monthly_analytics(user, ref: date = None) -> dict:
     preferred_quest_types = {
         "soft_steps_pct":  soft_pct,
         "power_moves_pct": power_pct,
+        # Whole numbers in the sentence: "100.0% vs 0.0%" reads like a measurement when it
+        # is a count of two kinds of quest. The raw values above keep their precision for
+        # the bar the app draws from them.
         "summary": (
-            f"You complete more Soft Moves than Power Moves ({soft_pct}% vs {power_pct}%)."
+            f"You complete more Soft Moves than Power Moves "
+            f"({round(soft_pct)}% vs {round(power_pct)}%)."
             if soft_pct >= power_pct
-            else f"You complete more Power Moves than Soft Moves ({power_pct}% vs {soft_pct}%)."
+            else f"You complete more Power Moves than Soft Moves "
+                 f"({round(power_pct)}% vs {round(soft_pct)}%)."
         ),
     }
 
