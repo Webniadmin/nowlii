@@ -146,6 +146,31 @@ moment it lands, and the installed APK is the fallback if something is wrong.
 
 ---
 
+## ✅ Verified on the emulator 2026-08-03 (against production)
+
+Walked a real account (`pavle`) through the whole money flow by editing prod directly. The
+allowlist was disabled and the trial backdated for the test; **both were restored afterwards**
+(`.env` line removed, subscription back to `trial` / 2026-07-30, container recreated,
+`SUBSCRIPTION_UNLIMITED_USERS` reads `['pavle']` again).
+
+- **The block holds.** Expired trial → `/quests/`, `/insights/`, `/voice-calls/quota/` all
+  **402**; `/subscriptions/me/` and `/profiles/` stay **200** so a blocked user can still log
+  in and pay. In the app: paywall on launch, ✕ does nothing, hardware back exits the app
+  rather than entering it, relaunch returns to the paywall.
+- **Subscribing restores access** (still the mock `activate` — no money changes hands).
+- **Every stage turns green in turn.** Months 1 / 4 / 7 / 10 / 14 each show the right
+  CURRENT PLAN, everything behind it COMPLETED, and exactly one current at a time.
+- **After the year, Graduated is the current plan at $0.00** with "Continue — free forever".
+
+### Still missing from the Pro design (node `7-4114`)
+
+The stats card between the headline and the timeline — avatar, name badge, "11 day streak",
+"32 quests completed" — **is not built**. Everything else on that frame is. It needs the
+streak endpoint plus a completed-quest count, so it is a small piece of real work rather
+than styling.
+
+---
+
 ## ▶ NEXT WORKING DAY — decide how payments are taken
 
 **One decision gates a few days of work, and it is a business call, not a technical one.**
