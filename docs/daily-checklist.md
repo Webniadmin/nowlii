@@ -146,6 +146,52 @@ moment it lands, and the installed APK is the fallback if something is wrong.
 
 ---
 
+## ▶ NEXT WORKING DAY — decide how payments are taken
+
+**One decision gates a few days of work, and it is a business call, not a technical one.**
+Both paths are researched and written up in **`docs/subscriptions-iap.md`**; do not
+re-research them.
+
+### The decision
+
+**Which markets at launch?** That single answer picks the path:
+
+- **US first** → **Stripe on the web**, no IAP written at all. ~2–3 days, and it is the only
+  way the four-step ladder works exactly as designed.
+- **Global** → the Subscribe button can only link out in the US, EU, South Korea and Japan.
+  Elsewhere it must not appear, so either those markets wait, or they get IAP — and IAP
+  brings back the device-dependent plan switch and the overpayment risk.
+
+### Why Stripe is the recommendation
+
+Stripe subscription schedules express the phased price natively. The store path cannot: a
+Play offer allows **two** pricing phases and an Apple introductory offer **one**, so the
+ladder needs four products per store and a plan change only a *device* can perform. Neither
+store has a server-side plan change. That is the whole reason `step_down_pending_since` and
+the admin's "paying more than the plan" filter exist — Stripe deletes that problem rather
+than monitoring it.
+
+### If Stripe is chosen
+
+- [ ] Stripe account + 4 prices + the schedule (console work, ~1h — yours)
+- [ ] Backend: Checkout session, subscription schedule, webhooks, mapping onto the existing
+      `Subscription` model, tests
+- [ ] Minimal web checkout page tied to the user's account
+- [ ] App: paywall opens the web checkout, then refreshes entitlement
+- [ ] Remove the `step_down` layer once Stripe is live — it exists only for the store path
+- [ ] Note the date: **from 2026-10-01** Google requires reporting and service fees for
+      enrolled external-link developers
+
+### Either way, still true
+
+- [ ] **Upload keystore does not exist** (`android/key.properties`). It blocks the signed
+      build → the Play upload → any store testing. Stripe does not remove this.
+- [ ] `activate` is still a mock and `verify-receipt` a 501 stub, so **anyone can "subscribe"
+      for free** today.
+- [ ] Terms of Service still does not exist. **P0** — the listing needs it.
+
+---
+
 ## 🔲 After that, in order
 
 - [ ] **Terms of Service** — still does not exist. Both links are commented out with

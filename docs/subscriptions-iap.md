@@ -147,6 +147,85 @@ Server API, and set up **App Store Server Notifications V2**.
 - The backend side of the ladder is done: `GET /me/` carries a `step_down` block and
   `POST /confirm-switch/` records what the store actually did.
 
+---
+
+# The other way — sell on the web with Stripe
+
+_Researched 2026-08-03. **An option, not a decision.** Recorded so the choice can be made
+with the facts rather than re-researched._
+
+## Why it is worth considering
+
+Stripe **subscription schedules** express phased pricing natively: a sequence of phases with
+their own price and duration, and a defined end. Our ladder is exactly that shape — 3 months
+at $19.99, then 14.99, then 9.99, then 4.99, then the schedule ends and the backend flips to
+`lifetime_free`.
+
+That removes, entirely:
+
+- four products in each store, and keeping them in step with `config.PHASES`
+- the device-initiated plan change
+- **the overpayment hazard** — `step_down_pending_since`, the admin filter, and the ongoing
+  duty to check it. The whole reason that code exists is that stores have no server-side plan
+  change. Stripe does.
+
+It is **less** work than the store path, not more.
+
+## What the stores now allow
+
+This was forbidden for years and changed recently — verify before relying on it.
+
+- **Google Play, US:** external links allowed since 2025-12-09. Requires enrolment in the
+  **External content links program**. From **2026-10-01** enrolled developers must report
+  transactions and pay service fees. The policy is written for "developers serving US users".
+- **Apple, US:** allowed since 2025-05, no entitlement and no commission, following the Epic
+  injunction.
+- **Apple, EU:** allowed under its own terms and fees; Apple moved to a single EU business
+  model on 2026-01-01.
+- **Apple, South Korea / Japan:** separate regimes.
+- **Everywhere else:** still not allowed. Anti-steering stands, and the button must not appear.
+
+Apple's entitlements carry `allowed-regions` keys, so a region-conditional button is the
+expected shape, not a workaround.
+
+## The catch
+
+A "Subscribe" button that opens the web checkout has to be **conditional on the user's
+storefront**. Where it is not allowed the options are: show nothing (legal, poor conversion),
+use IAP there, or do not open that market yet.
+
+Choosing IAP for the remainder **brings the whole ladder problem back** for exactly those
+users — four products and a device-dependent switch. The fragile path would be running in the
+markets we understand least.
+
+## Effort
+
+| Scenario | Estimate |
+|---|---|
+| **US only** | ~2–3 days. Stripe alone; no IAP written at all. |
+| **Global, button where permitted** | ~3 days. Adds region gating; no purchase elsewhere. |
+| **Global + IAP for the rest** | ~2 days more, plus the standing overpayment risk. |
+
+Breakdown for the Stripe part: backend (Checkout, schedule, webhooks, mapping to
+`Subscription`, tests) 1–2 days; a minimal web checkout page tied to the user's account
+0.5–1 day; app-side paywall + entitlement refresh 0.5 day. Stripe account and prices are
+console work, ~1 hour.
+
+## What it costs
+
+- Apple US 0%; Google 9–20% when linking out; 0% if the app never mentions it. Stripe's own
+  fee on top.
+- Refunds and chargebacks become ours rather than the stores'.
+- **The upload keystore is still required.** Stripe moves the payment out of the store, not
+  the app.
+
+## Open question before any of this starts
+
+**Which markets at launch?** "US first, the rest later" makes this the smallest job on the
+table. A global launch reopens the IAP question for the regions that cannot be linked.
+
+---
+
 ## Order to do it in
 
 1. Upload keystore → signed AAB → internal testing track _(unblocks everything on Android)_
