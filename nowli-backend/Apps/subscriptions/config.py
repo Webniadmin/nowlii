@@ -23,16 +23,23 @@ TRIAL_DAYS = 7
 # **at most two pricing phases**, and an Apple introductory offer is a single phase. So each
 # step is its own store product and the subscriber is moved down the ladder by a plan change
 # at renewal. See ``services.step_down_due`` and docs/subscriptions-iap.md.
+# The names come from the paywall design, which calls the steps Rhythm → Independence →
+# Release and the free stage Graduated. The design never names the opening price: its
+# timeline shows only the changes still ahead, so month 1-3 is simply what you pay now.
+# ``start`` is our own name for it, and the only one here not taken from the design.
 PHASES = [
-    {"from_month": 1,  "to_month": 3,  "price": 19.99,
-     "google_base_plan": "tier1", "apple_product": "com.nowlii.pro.tier1"},
-    {"from_month": 4,  "to_month": 6,  "price": 14.99,
-     "google_base_plan": "tier2", "apple_product": "com.nowlii.pro.tier2"},
-    {"from_month": 7,  "to_month": 9,  "price": 9.99,
-     "google_base_plan": "tier3", "apple_product": "com.nowlii.pro.tier3"},
-    {"from_month": 10, "to_month": 12, "price": 4.99,
-     "google_base_plan": "tier4", "apple_product": "com.nowlii.pro.tier4"},
+    {"from_month": 1,  "to_month": 3,  "price": 19.99, "stage": "Start",
+     "google_base_plan": "start", "apple_product": "com.nowlii.pro.start"},
+    {"from_month": 4,  "to_month": 6,  "price": 14.99, "stage": "Rhythm",
+     "google_base_plan": "rhythm", "apple_product": "com.nowlii.pro.rhythm"},
+    {"from_month": 7,  "to_month": 9,  "price": 9.99, "stage": "Independence",
+     "google_base_plan": "independence", "apple_product": "com.nowlii.pro.independence"},
+    {"from_month": 10, "to_month": 12, "price": 4.99, "stage": "Release",
+     "google_base_plan": "release", "apple_product": "com.nowlii.pro.release"},
 ]
+
+# What the free-forever stage is called on the paywall. Not a store product.
+GRADUATED_STAGE = "Graduated"
 
 # The Play subscription every base plan above belongs to. Play models one product with many
 # base plans; Apple models a subscription *group* with one product per price.

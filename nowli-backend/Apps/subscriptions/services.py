@@ -34,6 +34,7 @@ def phase_for_month(month_index: int) -> dict:
     """
     if month_index > config.FREE_AFTER_MONTH:
         return {"phase": "free", "price": 0.0, "is_free": True,
+                "stage": config.GRADUATED_STAGE,
                 "google_base_plan": "", "apple_product": ""}
     for p in config.PHASES:
         if p["from_month"] <= month_index <= p["to_month"]:
@@ -41,11 +42,13 @@ def phase_for_month(month_index: int) -> dict:
                 "phase": f"{p['from_month']}-{p['to_month']}",
                 "price": float(p["price"]),
                 "is_free": False,
+                "stage": p.get("stage", ""),
                 "google_base_plan": p.get("google_base_plan", ""),
                 "apple_product": p.get("apple_product", ""),
             }
     # Outside the defined ranges → treat as free (defensive; shouldn't normally happen).
     return {"phase": "free", "price": 0.0, "is_free": True,
+            "stage": config.GRADUATED_STAGE,
             "google_base_plan": "", "apple_product": ""}
 
 
@@ -119,11 +122,15 @@ def phase_schedule() -> dict:
     return {
         "currency": config.CURRENCY,
         "free_after_month": config.FREE_AFTER_MONTH,
+        "graduated_stage": config.GRADUATED_STAGE,
         "phases": [
             {
                 "from_month": p["from_month"],
                 "to_month": p["to_month"],
                 "price": float(p["price"]),
+                # The paywall labels each step; serving the names keeps the app from
+                # keeping its own copy that can drift from the schedule.
+                "stage": p.get("stage", ""),
             }
             for p in config.PHASES
         ],

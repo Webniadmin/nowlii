@@ -5,11 +5,13 @@ class PhaseSerializer(serializers.Serializer):
     from_month = serializers.IntegerField()
     to_month   = serializers.IntegerField()
     price      = serializers.FloatField()
+    stage      = serializers.CharField(required=False, allow_blank=True)
 
 
 class PlanScheduleSerializer(serializers.Serializer):
     currency         = serializers.CharField()
     free_after_month = serializers.IntegerField()
+    graduated_stage  = serializers.CharField(required=False, allow_blank=True)
     phases           = PhaseSerializer(many=True)
 
 
