@@ -12,6 +12,7 @@ import 'package:nowlii/screen/settings/notification_screen/notification_screen.d
 import 'package:nowlii/screen/settings/privacy_data/privacy_data_screen.dart';
 import 'package:nowlii/screen/settings/rate_nowli/rate_nowli.dart';
 import 'package:nowlii/themes/text_styles.dart';
+import 'package:nowlii/widget/coming_soon.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -183,20 +184,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onTap: () => _navigateTo('Help'),
                   ),
                   const SizedBox(height: 12),
-                  _buildSettingsItem(
-                    iconWidget: Image.asset(
-                      Assets.svgIcons.rateNowliw.path,
-                      width: 40,
-                      height: 40,
+                  // Blurred until the app is actually listed. A rating prompt with nowhere
+                  // to send the rating spends the one moment a happy user is willing to
+                  // leave one, and store review prompts only work against a real listing.
+                  ComingSoon(
+                    child: _buildSettingsItem(
+                      iconWidget: Image.asset(
+                        Assets.svgIcons.rateNowliw.path,
+                        width: 40,
+                        height: 40,
+                      ),
+                      title: 'Rate Nowlii',
+                      onTap: () {
+                        showModalBottomSheet(
+                          context: context,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => const RatingPopup(),
+                        );
+                      },
                     ),
-                    title: 'Rate Nowtli',
-                    onTap: () {
-                      showModalBottomSheet(
-                        context: context,
-                        backgroundColor: Colors.transparent,
-                        builder: (_) => const RatingPopup(),
-                      );
-                    },
                   ),
                   const SizedBox(height: 12),
                   _buildSettingsItem(

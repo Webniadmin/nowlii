@@ -160,8 +160,9 @@ class NowliiPredefinedOption(models.Model):
     name = models.CharField(max_length=50, unique=True, help_text="The unique name of the Nowlii character (e.g., 'Sparky')")
     avatar_logo = models.ImageField(upload_to='nowlii_logos/', null=True, blank=True, help_text="The avatar image/logo for this Nowlii character")
     # Voice/gender for this companion — drives the AI voice-call voice when the user picks it.
-    # There is no per-avatar gender concept beyond this; default is Male.
-    voice = models.CharField(max_length=10, choices=VOICE_CHOICES, default='Male',
+    # There is no per-avatar gender concept beyond this. Female is the product default, so a
+    # companion added without a deliberate choice speaks in the voice the app leads with.
+    voice = models.CharField(max_length=10, choices=VOICE_CHOICES, default='Female',
                              help_text="Voice used for this companion's AI call (Male/Female).")
 
     def __str__(self):
@@ -201,7 +202,10 @@ class Profile(models.Model):
     custom_nowlii_name = models.CharField(max_length=50, blank=True, null=True)
     
     language = models.CharField(max_length=50, choices=LANGUAGE_CHOICES, default='English', blank=True, null=True)
-    voice = models.CharField(max_length=50, choices=VOICE_CHOOSE, default='Male', blank=True, null=True)
+    # Female by default: it is the voice the app presents first, and the one a user who
+    # never opens the selector will hear. Overridden when a companion carries its own voice
+    # (see save()) or when the user picks one in AI Personalization.
+    voice = models.CharField(max_length=50, choices=VOICE_CHOOSE, default='Female', blank=True, null=True)
     # Weekday names (e.g. ["Sunday"]) the user marked as intentional rest days. These are
     # excluded from Insights "skipped days" so a deliberate day off isn't nagged as a miss.
     rest_days = models.JSONField(default=list, blank=True)

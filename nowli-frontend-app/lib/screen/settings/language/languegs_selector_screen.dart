@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:nowlii/widget/coming_soon.dart';
 
 class LanguageSelector extends StatelessWidget {
   final String currentLanguage;
   final List<String> languages;
 
+  /// Languages the design promises but the app cannot yet deliver. Shown blurred and
+  /// unselectable rather than hidden — nothing behind them is translated, and the AI
+  /// persona is English-only, so offering one would break the call rather than change it.
+  final List<String> unavailableLanguages;
+
   const LanguageSelector({
     super.key,
     required this.currentLanguage,
     this.languages = const ['English'],
+    this.unavailableLanguages = const ['Español'],
   });
 
   @override
@@ -41,6 +48,15 @@ class LanguageSelector extends StatelessWidget {
                 context,
                 language,
                 isSelected: language == currentLanguage,
+              ),
+            ),
+            ...unavailableLanguages.map(
+              (language) => ComingSoon(
+                child: _buildLanguageOption(
+                  context,
+                  language,
+                  isSelected: false,
+                ),
               ),
             ),
           ],
