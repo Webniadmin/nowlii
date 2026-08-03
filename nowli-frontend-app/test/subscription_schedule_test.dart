@@ -35,7 +35,7 @@ void main() {
 
     test('names the stages as the design does', () {
       expect(steps.map((s) => s.stage),
-          ['Rhythm', 'Independence', 'Release', 'Graduated']);
+          ['Rhythm', 'Independence', 'Release', 'Graduate']);
     });
 
     test('dates the free stage by month, not by day', () {

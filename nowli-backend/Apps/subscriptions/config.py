@@ -23,13 +23,11 @@ TRIAL_DAYS = 7
 # **at most two pricing phases**, and an Apple introductory offer is a single phase. So each
 # step is its own store product and the subscriber is moved down the ladder by a plan change
 # at renewal. See ``services.step_down_due`` and docs/subscriptions-iap.md.
-# The names come from the paywall design, which calls the steps Rhythm → Independence →
-# Release and the free stage Graduated. The design never names the opening price: its
-# timeline shows only the changes still ahead, so month 1-3 is simply what you pay now.
-# ``start`` is our own name for it, and the only one here not taken from the design.
+# The five named stages of the plan: Spark → Rhythm → Independence → Release → Graduate.
+# The first four are what the user pays; the fifth is free and is not a store product.
 PHASES = [
-    {"from_month": 1,  "to_month": 3,  "price": 19.99, "stage": "Start",
-     "google_base_plan": "start", "apple_product": "com.nowlii.pro.start"},
+    {"from_month": 1,  "to_month": 3,  "price": 19.99, "stage": "Spark",
+     "google_base_plan": "spark", "apple_product": "com.nowlii.pro.spark"},
     {"from_month": 4,  "to_month": 6,  "price": 14.99, "stage": "Rhythm",
      "google_base_plan": "rhythm", "apple_product": "com.nowlii.pro.rhythm"},
     {"from_month": 7,  "to_month": 9,  "price": 9.99, "stage": "Independence",
@@ -38,8 +36,10 @@ PHASES = [
      "google_base_plan": "release", "apple_product": "com.nowlii.pro.release"},
 ]
 
-# What the free-forever stage is called on the paywall. Not a store product.
-GRADUATED_STAGE = "Graduated"
+# The final, free-forever stage. Deliberately not a store product: neither store sells a $0
+# renewing plan, so reaching it means the subscription is cancelled and access comes from
+# our own records.
+GRADUATED_STAGE = "Graduate"
 
 # The Play subscription every base plan above belongs to. Play models one product with many
 # base plans; Apple models a subscription *group* with one product per price.

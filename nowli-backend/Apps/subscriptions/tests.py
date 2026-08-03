@@ -314,7 +314,7 @@ class StepDownTests(APITestCase):
         )
 
     def test_product_matches_the_schedule(self):
-        self.assertEqual(services.store_product_for_month(1, "google"), "start")
+        self.assertEqual(services.store_product_for_month(1, "google"), "spark")
         self.assertEqual(services.store_product_for_month(4, "google"), "rhythm")
         self.assertEqual(services.store_product_for_month(7, "google"), "independence")
         self.assertEqual(services.store_product_for_month(12, "google"), "release")
@@ -323,22 +323,22 @@ class StepDownTests(APITestCase):
         self.assertEqual(services.store_product_for_month(13, "google"), "")
 
     def test_no_step_while_on_the_right_rung(self):
-        sub = self._sub(0, "start")
+        sub = self._sub(0, "spark")
         due = services.step_down_due(sub, date(2026, 2, 1))   # still month 1
         self.assertFalse(due["due"])
 
     def test_a_step_is_due_once_the_month_moves_on(self):
-        sub = self._sub(0, "start")
+        sub = self._sub(0, "spark")
         due = services.step_down_due(sub, date(2026, 4, 10))  # month 4 → tier2
         self.assertTrue(due["due"])
-        self.assertEqual(due["from_product"], "start")
+        self.assertEqual(due["from_product"], "spark")
         self.assertEqual(due["to_product"], "rhythm")
         self.assertEqual(due["to_price"], 14.99)
 
     def test_a_skipped_rung_goes_straight_to_the_right_one(self):
         """Someone who did not open the app for six months should not be walked down one
         rung at a time — they should land on what they should be paying now."""
-        sub = self._sub(0, "start")
+        sub = self._sub(0, "spark")
         due = services.step_down_due(sub, date(2026, 10, 10))  # month 10 → tier4
         self.assertEqual(due["to_product"], "release")
 
@@ -365,11 +365,11 @@ class StepDownTests(APITestCase):
 
     def test_mock_subscriptions_are_left_alone(self):
         """Mock is the test-only platform; there is no store product to move."""
-        sub = self._sub(0, "start", platform="mock")
+        sub = self._sub(0, "spark", platform="mock")
         self.assertFalse(services.step_down_due(sub, date(2026, 6, 1))["due"])
 
     def test_the_gap_is_recorded_and_then_cleared(self):
-        sub = self._sub(0, "start")
+        sub = self._sub(0, "spark")
         services.sync_step_down_state(sub, date(2026, 4, 10))
         sub.refresh_from_db()
         self.assertEqual(sub.step_down_pending_since, date(2026, 4, 10))
@@ -400,7 +400,7 @@ class ConfirmSwitchEndpointTests(APITestCase):
             started_at=date.today() - timedelta(days=100),   # ~month 4 → tier2 is due
             status=Subscription.Status.ACTIVE,
             platform=Subscription.Platform.GOOGLE,
-            store_product_id="start",
+            store_product_id="spark",
         )
 
     def test_me_reports_the_step_as_due(self):
@@ -430,7 +430,7 @@ class ConfirmSwitchEndpointTests(APITestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.sub.refresh_from_db()
-        self.assertEqual(self.sub.store_product_id, "start")
+        self.assertEqual(self.sub.store_product_id, "spark")
 
     def test_a_missing_product_is_rejected(self):
         self.assertEqual(
@@ -440,7 +440,7 @@ class ConfirmSwitchEndpointTests(APITestCase):
 
     def test_apple_products_are_accepted_too(self):
         self.sub.platform = Subscription.Platform.APPLE
-        self.sub.store_product_id = "com.nowlii.pro.start"
+        self.sub.store_product_id = "com.nowlii.pro.spark"
         self.sub.save()
         response = self.client.post(
             "/api/subscriptions/confirm-switch/",
@@ -461,11 +461,11 @@ class StageNameTests(APITestCase):
     def test_the_plan_carries_the_design_names(self):
         body = self.client.get("/api/subscriptions/plan/").data
         self.assertEqual([p["stage"] for p in body["phases"]],
-                         ["Start", "Rhythm", "Independence", "Release"])
-        self.assertEqual(body["graduated_stage"], "Graduated")
+                         ["Spark", "Rhythm", "Independence", "Release"])
+        self.assertEqual(body["graduated_stage"], "Graduate")
 
-    def test_the_free_stage_is_graduated(self):
-        self.assertEqual(services.phase_for_month(13)["stage"], "Graduated")
+    def test_the_free_stage_is_graduate(self):
+        self.assertEqual(services.phase_for_month(13)["stage"], "Graduate")
 
     def test_every_paid_phase_has_a_product_on_both_stores(self):
         """A phase with no product is a phase nobody can be billed for."""
