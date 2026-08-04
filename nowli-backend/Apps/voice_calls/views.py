@@ -8,7 +8,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
-from Apps.subscriptions.permissions import HasProAccess
+from Apps.subscriptions.permissions import HasProAccess, HasProAccessOrReadOnly
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -519,10 +519,14 @@ class VoiceCallSummaryNoteView(APIView):
 class VoiceCallSummaryListView(APIView):
     """`GET /api/voice-calls/summaries/` — the current user's saved call summaries.
 
+    Readable after a lapse: these receipts are the record of conversations the user already
+    had and paid for. Making a new call is what stops (VoiceCallStartView), and so is
+    editing a receipt's note (VoiceCallSummaryNoteView) — that is still a write.
+
     Newest first, for the user's call history and to review progress over time.
     """
 
-    permission_classes = [IsAuthenticated, HasProAccess]
+    permission_classes = [IsAuthenticated, HasProAccessOrReadOnly]
 
     @swagger_auto_schema(
         operation_summary="My saved AI voice-call summaries",

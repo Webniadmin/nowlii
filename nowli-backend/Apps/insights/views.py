@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
-from Apps.subscriptions.permissions import HasProAccess
+from Apps.subscriptions.permissions import HasProAccessOrReadOnly, user_is_entitled
 
 from .services import (
     build_analytics_summary,
@@ -41,7 +41,7 @@ class AIInsightView(APIView):
     Query params:
       ?refresh=true   → bypass cache and regenerate AI reflections
     """
-    permission_classes = [IsAuthenticated, HasProAccess]
+    permission_classes = [IsAuthenticated, HasProAccessOrReadOnly]
 
     @staticmethod
     def _call_ai(label: str, fn, *args):
@@ -65,6 +65,12 @@ class AIInsightView(APIView):
         user    = request.user
         ref     = date.today()
         refresh = request.query_params.get("refresh", "false").lower() == "true"
+
+        # A lapsed user still sees their own numbers — that is what this screen mostly is —
+        # but the AI paragraphs written over them are a paid feature and cost us a request
+        # each. So they are skipped rather than refused, and the data-derived fallback copy
+        # (built from the very same weekly numbers) stands in for them.
+        entitled = user_is_entitled(user)
 
         # ── 1. Compute analytics from DB ─────────────────────────────────
         try:
@@ -120,14 +126,14 @@ class AIInsightView(APIView):
             if not reflections_ok:
                 result, reflections_ok = self._call_ai(
                     "weekly reflections", generate_weekly_reflections, weekly_data
-                )
+                ) if entitled else (None, False)
                 ai_reflections = result if reflections_ok else build_fallback_reflections(weekly_data)
 
             if not suggestions_ok:
                 result, suggestions_ok = self._call_ai(
                     "quest suggestions", generate_quest_suggestions,
                     weekly_data, current_time, day_of_week,
-                )
+                ) if entitled else (None, False)
                 quest_suggestions = result if suggestions_ok else build_fallback_quest_suggestions(
                     weekly_data, current_time, day_of_week
                 )
@@ -139,7 +145,7 @@ class AIInsightView(APIView):
         # voice-call data. Best-effort: on ANY failure we keep the static placeholder copy
         # already in weekly_data (services.py) rather than failing the whole response.
         has_emotion_data = bool(weekly_data.get("top_emotions")) or bool(weekly_data.get("low_mood_phrases"))
-        if has_emotion_data and not emotion_meaning:
+        if has_emotion_data and not emotion_meaning and entitled:
             try:
                 emotion_meaning = generate_emotion_meaning(
                     weekly_data.get("top_emotions", []),
@@ -205,7 +211,7 @@ class RestDaysView(APIView):
     POST body: {"days": ["Sunday", ...], "action": "add" | "remove" | "set"} (default "add").
     Weekday names are validated + normalized (case-insensitive). Returns the updated list.
     """
-    permission_classes = [IsAuthenticated, HasProAccess]
+    permission_classes = [IsAuthenticated, HasProAccessOrReadOnly]
 
     def get(self, request):
         profile, _ = Profile.objects.get_or_create(user=request.user)

@@ -10,7 +10,7 @@ still be able to log in, see who they are, buy a subscription and reach support.
 from django.conf import settings
 from rest_framework import status
 from rest_framework.exceptions import APIException
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 from . import services
 
@@ -39,6 +39,27 @@ def _is_exempt(user) -> bool:
     return bool(username and username in allowlist) or bool(email and email in allowlist)
 
 
+def _passes(user) -> bool:
+    """Shared entitlement test: kill switch, allowlist, then real access."""
+    if not getattr(settings, "SUBSCRIPTION_ENFORCED", True):
+        return True                           # kill switch — gate off, app fully open
+    if _is_exempt(user):
+        return True
+    return services.user_has_pro(user)        # also starts the trial on first contact
+
+
+def user_is_entitled(user) -> bool:
+    """The same test the gate applies, for views that degrade instead of refusing.
+
+    Insights is the case this exists for: the numbers on that screen are the user's own
+    records and stay visible after a lapse, but the AI paragraphs over them cost money per
+    request. The view serves the data and skips the generation rather than returning 402.
+    """
+    if user is None or not user.is_authenticated:
+        return False
+    return _passes(user)
+
+
 class HasProAccess(BasePermission):
     """Allow only users with an active trial, paid subscription, or lifetime-free access.
 
@@ -50,10 +71,30 @@ class HasProAccess(BasePermission):
         user = getattr(request, "user", None)
         if user is None or not user.is_authenticated:
             return False                      # let IsAuthenticated raise the 401
-        if not getattr(settings, "SUBSCRIPTION_ENFORCED", True):
-            return True                       # kill switch — gate off, app fully open
-        if _is_exempt(user):
+        if _passes(user):
             return True
-        if services.user_has_pro(user):       # also starts the trial on first contact
+        raise SubscriptionRequired()
+
+
+class HasProAccessOrReadOnly(BasePermission):
+    """Full access for entitled users; everyone else may still read.
+
+    A lapsed subscriber keeps the record of what they already did — their quests, their
+    streak, their progress — and loses the ability to add to it. Locking someone out of
+    their own history would make the account feel confiscated rather than paused, and it
+    also removes the very thing that argues for renewing.
+
+    Writes still raise 402, so this is not a softer gate: it is the same gate applied to
+    the actions that create value rather than to the ones that recall it. Endpoints that
+    cost us money per call (AI generation, voice calls) keep the strict [HasProAccess].
+    """
+
+    def has_permission(self, request, view):
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated:
+            return False                      # let IsAuthenticated raise the 401
+        if _passes(user):
+            return True
+        if request.method in SAFE_METHODS:
             return True
         raise SubscriptionRequired()

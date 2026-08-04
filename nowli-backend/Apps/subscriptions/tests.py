@@ -215,7 +215,17 @@ class AccessGateTests(APITestCase):
     """The paywall itself: trial → full app, expired trial → 402, purchase → back in."""
 
     # One protected endpoint per gated app.
-    GATED = ["/api/quests/", "/api/insights/", "/api/voice-calls/quota/", "/api/subtasks/"]
+    # Shut on every method once the trial is over: each of these costs us money per call.
+    GATED = ["/api/voice-calls/quota/"]
+
+    # A lapsed user keeps reading their own records and loses the ability to add to them,
+    # so these answer GET and refuse writes. See permissions.HasProAccessOrReadOnly.
+    READ_ONLY = [
+        "/api/quests/",
+        "/api/insights/",
+        "/api/subtasks/",
+        "/api/voice-calls/summaries/",   # receipts of calls already had
+    ]
 
     def setUp(self):
         self.u = User.objects.create_user(username="gate", password="x")
@@ -241,7 +251,7 @@ class AccessGateTests(APITestCase):
         sub.save(update_fields=["trial_started_at", "status", "updated_at"])
 
     def test_new_user_can_use_the_app_during_the_trial(self):
-        for url in self.GATED:
+        for url in self.GATED + self.READ_ONLY:
             with self.subTest(url=url):
                 self.assertNotEqual(self.client.get(url).status_code, 402)
 
@@ -251,6 +261,30 @@ class AccessGateTests(APITestCase):
         for url in self.GATED:
             with self.subTest(url=url):
                 r = self.client.get(url)
+                self.assertEqual(r.status_code, 402)
+                self.assertEqual(r.data["detail"].code, "subscription_required")
+
+    def test_expired_trial_still_lets_the_user_read_their_own_records(self):
+        """Lapsing pauses the account; it does not confiscate what is already in it."""
+        self.client.get("/api/subscriptions/me/")
+        self._expire_trial()
+        for url in self.READ_ONLY + ["/api/quests/streak/"]:
+            with self.subTest(url=url):
+                self.assertNotEqual(self.client.get(url).status_code, 402)
+
+    def test_expired_trial_blocks_writing_to_the_records_it_lets_them_read(self):
+        """The read-only opening must not become a way to keep using the app for free."""
+        self.client.get("/api/subscriptions/me/")
+        self._expire_trial()
+        writes = [
+            ("post", "/api/quests/"),
+            ("post", "/api/subtasks/"),
+            ("delete", "/api/quests/bulk-delete/"),
+            ("post", "/api/insights/rest-days/"),
+        ]
+        for method, url in writes:
+            with self.subTest(url=url, method=method):
+                r = getattr(self.client, method)(url, {}, format="json")
                 self.assertEqual(r.status_code, 402)
                 self.assertEqual(r.data["detail"].code, "subscription_required")
 
@@ -266,11 +300,14 @@ class AccessGateTests(APITestCase):
     def test_subscribing_restores_access(self):
         self.client.get("/api/subscriptions/me/")
         self._expire_trial()
-        self.assertEqual(self.client.get("/api/quests/").status_code, 402)
+        # Probed with a write: reading quests survives a lapse, creating one does not.
+        self.assertEqual(self.client.post("/api/quests/", {}, format="json").status_code, 402)
 
         self.client.post("/api/subscriptions/activate/")
         self._next_request()
-        self.assertNotEqual(self.client.get("/api/quests/").status_code, 402)
+        self.assertNotEqual(
+            self.client.post("/api/quests/", {}, format="json").status_code, 402
+        )
 
     def test_unauthenticated_gets_401_not_402(self):
         """Not-logged-in must read as 'log in', never as 'pay us'."""
@@ -281,20 +318,32 @@ class AccessGateTests(APITestCase):
     def test_kill_switch_opens_the_app(self):
         self.client.get("/api/subscriptions/me/")
         self._expire_trial()
-        self.assertNotEqual(self.client.get("/api/quests/").status_code, 402)
+        # A write, not a read: GET survives a lapse for everyone now, so reading would pass
+        # this assertion even if the bypass were broken.
+        self.assertNotEqual(
+            self.client.post("/api/quests/", {}, format="json").status_code, 402
+        )
 
     @override_settings(SUBSCRIPTION_UNLIMITED_USERS=["gate"])
     def test_allowlisted_test_account_bypasses_the_gate(self):
         self.client.get("/api/subscriptions/me/")
         self._expire_trial()
-        self.assertNotEqual(self.client.get("/api/quests/").status_code, 402)
+        # A write, not a read: GET survives a lapse for everyone now, so reading would pass
+        # this assertion even if the bypass were broken.
+        self.assertNotEqual(
+            self.client.post("/api/quests/", {}, format="json").status_code, 402
+        )
 
     def test_staff_bypasses_the_gate(self):
         self.u.is_staff = True
         self.u.save()
         self.client.get("/api/subscriptions/me/")
         self._expire_trial()
-        self.assertNotEqual(self.client.get("/api/quests/").status_code, 402)
+        # A write, not a read: GET survives a lapse for everyone now, so reading would pass
+        # this assertion even if the bypass were broken.
+        self.assertNotEqual(
+            self.client.post("/api/quests/", {}, format="json").status_code, 402
+        )
 
 
 class StepDownTests(APITestCase):
