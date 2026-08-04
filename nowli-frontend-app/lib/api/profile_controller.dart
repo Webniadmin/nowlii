@@ -23,6 +23,7 @@ class ProfileController extends ChangeNotifier {
     String? customNowliiName,
     required String language,
     required String voice,
+    int? predefinedOption,
     File? avatarLogoFile,
     File? profileImageFile,
     XFile? avatarLogoXFile,
@@ -42,6 +43,7 @@ class ProfileController extends ChangeNotifier {
         customNowliiName: customNowliiName,
         language: language,
         voice: voice,
+        predefinedOption: predefinedOption,
       );
 
       final result = await ProfileService.createProfile(

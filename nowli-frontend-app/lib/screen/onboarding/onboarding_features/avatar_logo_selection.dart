@@ -265,8 +265,10 @@ class _AvatarLogoState extends State<AvatarLogo> {
           selectedIndex = index;
         });
         
-        // Save avatar logo and name to onboarding data
+        // The id is what actually selects the companion; the logo and name are kept only
+        // so onboarding can show the choice back before the profile exists.
         final onboardingData = OnboardingData();
+        onboardingData.setPredefinedOption(option.id);
         onboardingData.setAvatarLogo(option.avatarLogo);
         onboardingData.setNowliiName(option.name);
       },

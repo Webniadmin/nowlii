@@ -16,6 +16,13 @@ class ProfileModel {
   /// Whether this user's conversations may be used to improve the AI.
   final bool useDataToImprove;
 
+  /// Which companion this profile is on, by id.
+  ///
+  /// The only reliable way to know: screens used to infer it by matching the companion's
+  /// *name* against the catalogue, which fails the moment the user renames it — and
+  /// renaming is offered right next to the picture.
+  final int? predefinedOption;
+
   ProfileModel({
     this.id,
     required this.name,
@@ -28,6 +35,7 @@ class ProfileModel {
     required this.voice,
     this.restrictedTopics = const [],
     this.useDataToImprove = true,
+    this.predefinedOption,
   });
 
   // From JSON
@@ -49,6 +57,7 @@ class ProfileModel {
               .toList() ??
           const [],
       useDataToImprove: json['use_data_to_improve'] ?? true,
+      predefinedOption: json['predefined_option'] as int?,
     );
   }
 
@@ -82,6 +91,7 @@ class ProfileModel {
     String? voice,
     List<String>? restrictedTopics,
     bool? useDataToImprove,
+    int? predefinedOption,
   }) {
     return ProfileModel(
       id: id ?? this.id,
@@ -95,6 +105,7 @@ class ProfileModel {
       voice: voice ?? this.voice,
       restrictedTopics: restrictedTopics ?? this.restrictedTopics,
       useDataToImprove: useDataToImprove ?? this.useDataToImprove,
+      predefinedOption: predefinedOption ?? this.predefinedOption,
     );
   }
 }
@@ -110,6 +121,11 @@ class CreateProfileRequest {
   final String language;
   final String voice;
 
+  /// Id of a `NowliiPredefinedOption` — the ONLY field that sets the companion, exactly as
+  /// on [UpdateProfileRequest]. Without it a brand-new account got whatever the backend
+  /// defaults to, no matter which character the user picked during onboarding.
+  final int? predefinedOption;
+
   CreateProfileRequest({
     required this.name,
     required this.gender,
@@ -119,6 +135,7 @@ class CreateProfileRequest {
     this.customNowliiName,
     required this.language,
     required this.voice,
+    this.predefinedOption,
   });
 
   Map<String, dynamic> toJson() {
@@ -159,6 +176,7 @@ class CreateProfileRequest {
         'custom_nowlii_name': customNowliiName,
       'language': language,
       'voice': voice,
+      if (predefinedOption != null) 'predefined_option': predefinedOption,
     };
   }
 }

@@ -53,7 +53,10 @@ class _NoticeLoaderScreenState extends State<NoticeLoaderScreen> {
         language: onboardingData.language!,
         voice: onboardingData.voice!,
         profileImage: onboardingData.profileImage,
-        avatarLogo: onboardingData.avatarLogo,  // ✅ Add avatar logo URL
+        avatarLogo: onboardingData.avatarLogo,
+        // The companion the user actually picked. `avatar_logo`/`nowlii_name` above are
+        // read-only server-side, so without this the choice was discarded at signup.
+        predefinedOption: onboardingData.predefinedOption,
         nowliiName: onboardingData.nowliiName,
         customNowliiName: onboardingData.customNowliiName,
         avatarLogoFile: avatarLogoFile,

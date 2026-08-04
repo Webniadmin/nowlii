@@ -302,18 +302,34 @@ class _NameSelectionPageState extends State<NameSelectionPage>
       if (widget.avatarOptions.isEmpty) return;
       
       if (widget.currentProfile != null) {
-        final existingName = widget.currentProfile!.customNowliiName ?? 
+        final existingName = widget.currentProfile!.customNowliiName ??
                             widget.currentProfile!.nowliiName ?? '';
-        
+
+        // Which picture to show is decided by the companion's ID, never by its name.
+        //
+        // This screen used to find the avatar by matching the name against the catalogue.
+        // The moment a user renames their companion — which this very screen invites them
+        // to do — nothing matches, the index falls back to 0, and the card shows the first
+        // companion in the list no matter which one they actually have. Changing the form
+        // then appeared to do nothing here even though it had saved correctly.
+        final optionId = widget.currentProfile!.predefinedOption;
+        if (optionId != null) {
+          final byId =
+              widget.avatarOptions.indexWhere((avatar) => avatar.id == optionId);
+          if (byId != -1) setState(() => _currentAvatarIndex = byId);
+        }
+
         if (existingName.isNotEmpty) {
-          // Check if it matches any preset avatar from API
+          // A name that matches a catalogue entry is a preset; anything else is the user's
+          // own wording and belongs in the text field. Either way the picture above is
+          // already settled by the id.
           final matchedIndex = widget.avatarOptions.indexWhere(
             (avatar) => avatar.name.toLowerCase() == existingName.toLowerCase()
           );
-          
+
           if (matchedIndex != -1) {
             setState(() {
-              _currentAvatarIndex = matchedIndex;
+              if (optionId == null) _currentAvatarIndex = matchedIndex;
             });
           } else {
             // It's a custom name
@@ -411,9 +427,10 @@ class _NameSelectionPageState extends State<NameSelectionPage>
                 ),
                 child: Center(
                   child: CharacterWidget(
-                    avatarOption: _showTextField
-                        ? widget.avatarOptions[0]
-                        : widget.avatarOptions[_currentAvatarIndex],
+                    // Always the companion they actually have. Typing a custom name used
+                    // to swap the picture to the first one in the catalogue, which made a
+                    // renamed companion look like a different character.
+                    avatarOption: widget.avatarOptions[_currentAvatarIndex],
                     onEditTap: () async {
                       // Navigate to edit form screen and reload when returning
                       final result = await context.push("/editFrom");

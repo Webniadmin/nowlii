@@ -24,6 +24,7 @@ class OnboardingData extends ChangeNotifier {
   String? _language;
   String? _voice;
   String? _avatarLogo;
+  int? _predefinedOption;
   String? _profileImage;
   String? _nowliiName;
   String? _customNowliiName;
@@ -34,6 +35,7 @@ class OnboardingData extends ChangeNotifier {
   String? get language => _language;
   String? get voice => _voice;
   String? get avatarLogo => _avatarLogo;
+  int? get predefinedOption => _predefinedOption;
   String? get profileImage => _profileImage;
   String? get nowliiName => _nowliiName;
   String? get customNowliiName => _customNowliiName;
@@ -77,9 +79,20 @@ class OnboardingData extends ChangeNotifier {
     _changed('Voice set');
   }
 
+  /// The chosen companion's picture, for showing it back during onboarding.
+  ///
+  /// Not what selects the companion — [setPredefinedOption] is. The backend derives
+  /// `avatar_logo` from `predefined_option` and treats the URL as read-only.
   void setAvatarLogo(String value) {
     _avatarLogo = value;
     _changed('Avatar logo set');
+  }
+
+  /// The id of the chosen `NowliiPredefinedOption` — the only field that actually sets
+  /// the companion, and with it the AI voice.
+  void setPredefinedOption(int value) {
+    _predefinedOption = value;
+    _changed('Companion set');
   }
 
   void setProfileImage(String value) {
@@ -134,6 +147,7 @@ class OnboardingData extends ChangeNotifier {
         'language': _language,
         'voice': _voice,
         'avatarLogo': _avatarLogo,
+        'predefinedOption': _predefinedOption,
         'profileImage': _profileImage,
         'nowliiName': _nowliiName,
         'customNowliiName': _customNowliiName,
@@ -163,6 +177,7 @@ class OnboardingData extends ChangeNotifier {
       _language = map['language'] as String?;
       _voice = map['voice'] as String?;
       _avatarLogo = map['avatarLogo'] as String?;
+      _predefinedOption = map['predefinedOption'] as int?;
       _profileImage = map['profileImage'] as String?;
       _nowliiName = map['nowliiName'] as String?;
       _customNowliiName = map['customNowliiName'] as String?;
@@ -222,6 +237,7 @@ class OnboardingData extends ChangeNotifier {
     _language = null;
     _voice = null;
     _avatarLogo = null;
+    _predefinedOption = null;
     _profileImage = null;
     _nowliiName = null;
     _customNowliiName = null;
