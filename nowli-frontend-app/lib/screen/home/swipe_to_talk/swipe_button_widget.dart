@@ -10,10 +10,15 @@ class SwipeButtonWidget extends StatefulWidget {
   /// -out slider invites people to keep trying it.
   final bool spent;
 
+  /// Spent because the plan lapsed rather than because the day is done. Same shape, but
+  /// "See you tomorrow" would be false — tomorrow brings nothing back on its own.
+  final bool paused;
+
   const SwipeButtonWidget({
     super.key,
     required this.onSwipe,
     this.spent = false,
+    this.paused = false,
   });
 
   @override
@@ -52,7 +57,7 @@ class _SwipeButtonWidgetState extends State<SwipeButtonWidget> {
           ),
           const SizedBox(width: 12),
           Text(
-            'See you tomorrow',
+            widget.paused ? 'Renew to talk again' : 'See you tomorrow',
             style: GoogleFonts.workSans(
               color: const Color(0xFF011F54),
               fontSize: 18,

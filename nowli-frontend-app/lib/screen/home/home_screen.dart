@@ -25,6 +25,7 @@ import 'package:nowlii/services/spark_state.dart';
 import 'package:nowlii/services/spark_state_store.dart';
 import 'package:nowlii/services/voice_call_service.dart';
 import 'package:nowlii/screen/home/sparks/out_of_sparks_card.dart';
+import 'package:nowlii/widget/lapsed_reminder.dart';
 import 'dart:math';
 
 class HomeScreen extends StatefulWidget {
@@ -71,6 +72,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _checkAndShowOnboarding();
     // How many sparks are left decides whether this screen offers a call at all.
     SparkStateStore.instance.refresh();
+    // A lapsed plan no longer closes the app, so nothing else here would say it has ended.
+    // Once per launch, on the screen they actually land on.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) maybeShowLapsedReminder(context);
+    });
   }
 
   @override
@@ -329,13 +335,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       const SizedBox(height: 20),
                       _buildHeader(),
                       const SizedBox(height: 16),
+                      // Stays at the top, above the restored hero card.
                       _buildSparksBar(),
                       const SizedBox(height: 16),
-                      _buildLastSaidCard(),
-                      const SizedBox(height: 16),
+                      _buildReadyCard(),
+                      const SizedBox(height: 32),
                       _buildTodaysPlanHeader(),
                       const SizedBox(height: 16),
-                      _buildTodaysQuestCard(),
+                      _buildQuestList(),
                       const SizedBox(height: 24),
                       _buildSwipeButton(),
                       const SizedBox(height: 40),
@@ -525,6 +532,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     remaining: sparks.remaining,
                     unlimited: sparks.unlimited,
                     known: sparks.known,
+                    paused: sparks.paused,
                   ),
                   style: GoogleFonts.workSans(
                     color: const Color(0xFF011F54),
@@ -541,10 +549,134 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// The blue hero card: an invitation plus how far today has got.
+  ///
+  /// Restored from the original design. It gives way to the closing card once the day's
+  /// sparks are spent — at that point "ready to make today count?" is the wrong thing to
+  /// ask, and the green card is the designed ending.
+  Widget _buildReadyCard() {
+    return ValueListenableBuilder<SparkState>(
+      valueListenable: SparkStateStore.instance.state,
+      builder: (context, sparks, _) {
+        if (sparks.isSpent) return OutOfSparksCard(sparks: sparks);
+
+        final total = _quests.length;
+        final done = _quests.where((q) => q.taskDone).length;
+        // An empty day has nothing to be a fraction of. The bar keeps its track and simply
+        // does not fill, rather than dividing by zero or implying progress.
+        final progress = total > 0 ? (done / total).clamp(0.0, 1.0) : 0.0;
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFFDFEFFF),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Ready to make today count?',
+                          style: GoogleFonts.workSans(
+                            color: const Color(0xFF011F54),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            height: 1.2,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Tiny wins make big shifts.',
+                          style: GoogleFonts.workSans(
+                            color: const Color(0xFF4C586E),
+                            fontSize: 14,
+                            height: 1.6,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Container(
+                    width: 100,
+                    height: 100,
+                    padding: const EdgeInsets.all(9.43),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4542EB),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: _profileData?.avatarLogo.isNotEmpty == true
+                        ? Image.network(
+                            _profileData!.avatarLogo,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Todays progress',
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF011F54),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  height: 1.0,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+              LayoutBuilder(
+                builder: (context, constraints) => Stack(
+                  children: [
+                    Container(
+                      height: 24,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFC3DBFF),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    Container(
+                      height: 24,
+                      // Never narrower than its own height, so a day with one quest done
+                      // still reads as a rounded pill rather than a sliver.
+                      width: (constraints.maxWidth * progress).clamp(
+                        24.0,
+                        constraints.maxWidth,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFDFEFFF), Color(0xFF4542EB)],
+                        ),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   /// The last thing the user told their companion, quoted back.
   ///
-  /// Once the day's sparks are spent this slot carries the closing card instead — at that
-  /// point "here's what you said last time" is the wrong thing to lead with.
+  /// Kept for the moment but no longer in the layout: the restored design leads with the
+  /// hero card above instead.
+  // ignore: unused_element
   Widget _buildLastSaidCard() {
     return ValueListenableBuilder<SparkState>(
       valueListenable: SparkStateStore.instance.state,
@@ -678,11 +810,104 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Today's quest, as one card.
+  /// Today's quests, as the list the original design shows.
   ///
-  /// Home deliberately shows a single thing to do; the full list, with its toggles and
-  /// swipe actions, is the Quests tab. Which one it shows is the first still-unfinished
-  /// quest, because that is the one the user is being asked about.
+  /// Restored from single-card back to a list: home is where the day is planned, and one
+  /// card at a time hid the rest of it.
+  Widget _buildQuestList() {
+    if (_isLoadingQuests) {
+      return _questCardShell(title: 'Loading…', subtitle: '', showArt: false);
+    }
+    if (_quests.isEmpty) {
+      return _questCardShell(
+        title: 'Nothing planned',
+        subtitle: 'Add a quest to give today a shape.',
+        showArt: true,
+      );
+    }
+
+    return Column(
+      children: [
+        for (int i = 0; i < _quests.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _buildQuestRow(i, _quests[i]),
+        ],
+      ],
+    );
+  }
+
+  /// One row of the day: a checkbox, the quest, and the time it is set for.
+  Widget _buildQuestRow(int index, Quest quest) {
+    final done = quest.taskDone;
+    return GestureDetector(
+      onTap: () => _toggleQuest(index, quest.id),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFCF1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFFCB9B)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 21.6,
+              height: 21.6,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: done ? const Color(0xFF4542EB) : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF4542EB), width: 2),
+              ),
+              child: done
+                  ? const Icon(Icons.check, size: 14, color: Color(0xFFFFFEF8))
+                  : null,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                quest.task,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF011F54),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  height: 1.4,
+                  letterSpacing: -0.9,
+                  // A finished quest reads as struck through rather than disappearing, so
+                  // the day still shows what was done.
+                  decoration: done ? TextDecoration.lineThrough : null,
+                ),
+              ),
+            ),
+            if ((quest.selectATime ?? '').isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(
+                _shortTime(quest.selectATime!),
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF595754),
+                  fontSize: 18,
+                  height: 1.4,
+                  letterSpacing: -0.5,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// "14:30:00" → "14:30". The backend serialises seconds the design never shows.
+  String _shortTime(String raw) {
+    final parts = raw.split(':');
+    return parts.length >= 2 ? '${parts[0]}:${parts[1]}' : raw;
+  }
+
+  /// Today's quest, as one card. Superseded by [_buildQuestList]; kept for reference.
+  // ignore: unused_element
   Widget _buildTodaysQuestCard() {
     if (_isLoadingQuests) {
       return _questCardShell(
@@ -803,9 +1028,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return ValueListenableBuilder<SparkState>(
       valueListenable: SparkStateStore.instance.state,
       builder: (context, sparks, _) => SwipeButtonWidget(
-        // Out of sparks: becomes "See you tomorrow" instead of a swipe that would only
-        // reach the backend's refusal.
+        // Out of sparks: becomes a closing line instead of a swipe that would only reach
+        // the backend's refusal. Which line depends on why — see [SparkState.paused].
         spent: sparks.isSpent,
+        paused: sparks.paused,
         // Go straight to the 5-min AI voice call (emotion-share detour removed).
         onSwipe: _startSpontaneousCall,
       ),

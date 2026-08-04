@@ -71,10 +71,10 @@ class _SplashState extends State<Splash> with SingleTickerProviderStateMixin {
         return;
       }
 
-      if (status != null && !status.hasAccess) {
-        context.go(AppRoutespath.nowliProSubscription); // trial over, nothing bought
-        return;
-      }
+      // A lapsed plan no longer opens onto the paywall. The account is half open — profile,
+      // progress and history still read — so launching straight into a sales screen would
+      // contradict that and hide the app the user still has. Home tells them instead, via
+      // the reminder dialog there, and the paywall is one tap from it.
 
       // Show the "7 days free" explainer once, the first time a trial is running.
       // Normally the end of onboarding gets there first; this catches an existing install
@@ -85,6 +85,7 @@ class _SplashState extends State<Splash> with SingleTickerProviderStateMixin {
         return;
       }
 
+      if (!mounted) return;
       context.go('/homeScreen');
 
       // Lay down this week's call reminders now that we know who is logged in. Also

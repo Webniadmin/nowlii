@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nowlii/services/home_format.dart';
 import 'package:nowlii/services/spark_state.dart';
 
 /// The spark counter and the out-of-sparks states are driven entirely by two numbers from
@@ -59,5 +60,45 @@ void main() {
     expect(const SparkState(limit: 2, remaining: 2).used, 0);
     expect(const SparkState(limit: 2, remaining: 1).used, 1);
     expect(const SparkState(limit: 2, remaining: 0).used, 2);
+  });
+
+  group('a paused allowance', () {
+    test('stops the button offering a call', () {
+      // Unlike unknown, which stays silent and keeps the normal button: the quota endpoint
+      // answers 402 and will keep doing so, so there is a definite answer here.
+      expect(const SparkState.paused().isSpent, isTrue);
+      expect(const SparkState.unknown().isSpent, isFalse);
+    });
+
+    test('is not mistaken for an unlimited account', () {
+      expect(const SparkState.paused().unlimited, isFalse);
+    });
+
+    test('does not claim the user spent sparks they never had', () {
+      expect(const SparkState.paused().spentEyebrow, 'Plan ended');
+      expect(const SparkState.paused().used, 0);
+    });
+
+    test('is a distinct value from a genuinely spent day', () {
+      // Both render the out-of-sparks card; they must not compare equal, or the notifier
+      // would skip the rebuild when one replaces the other.
+      expect(const SparkState.paused() == const SparkState(limit: 0, remaining: 0), isFalse);
+    });
+  });
+
+  group('the label beside the pills', () {
+    test('a paused plan gets an answer, not a spinner', () {
+      expect(
+        sparksAvailableLabel(remaining: 0, unlimited: false, known: true, paused: true),
+        'Calls paused',
+      );
+    });
+
+    test('an unread quota still says it is checking', () {
+      expect(
+        sparksAvailableLabel(remaining: 0, unlimited: false, known: false),
+        'Checking your sparks…',
+      );
+    });
   });
 }

@@ -43,7 +43,11 @@ String sparksAvailableLabel({
   required int remaining,
   required bool unlimited,
   required bool known,
+  bool paused = false,
 }) {
+  // Checked before [known]: a lapsed user has a definite answer, and leaving them on
+  // "Checking…" would be waiting for one that never arrives.
+  if (paused) return 'Calls paused';
   if (!known) return 'Checking your sparks…';
   if (unlimited) return 'Unlimited sparks';
   if (remaining <= 0) return 'No sparks left today';

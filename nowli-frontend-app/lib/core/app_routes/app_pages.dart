@@ -60,14 +60,23 @@ import '../../screen/onboarding/onboarding_features/avatar_logo_name_selection.d
 import '../../screen/onboarding/onboarding_features/avatar_logo_selection.dart';
 
 class AppPages {
-  /// Screens a paywalled user may still reach. Everything else redirects to the Pro screen
-  /// once the free trial is over — they must be able to pay, get help, or sign out.
-  static const List<String> _allowedWhenBlocked = [
-    AppRoutespath.nowliProSubscription, // the paywall itself
-    AppRoutespath.subscriptionPage, // the 7-days-free / billing explainer
-    AppRoutespath.settingsScreen,
-    AppRoutespath.supportScreen,
-    AppRoutespath.supportChatScreen,
+  /// Screens a lapsed user may NOT reach — everything else stays open.
+  ///
+  /// This used to be the other way round: an allowlist of four screens, with the rest of
+  /// the app shut. That treated a lapse as an eviction. A paused account should still show
+  /// the person their own profile, progress and history — those are their records, and they
+  /// are also the best argument for renewing. What closes is what the subscription buys:
+  /// making new quests and talking to the companion.
+  ///
+  /// The backend is the real gate ([HasProAccessOrReadOnly] answers 402 on writes); this
+  /// list only spares the user a screen that would fail the moment they used it.
+  static const List<String> _blockedWhenLapsed = [
+    AppRoutespath.createQuestPage,
+    AppRoutespath.editQuestPage,
+    AppRoutespath.suggestedTaskOverview,
+    AppRoutespath.aiVoice,
+    AppRoutespath.swipeToTalkLoading,
+    AppRoutespath.callSummary,
   ];
 
   static final GoRouter router = GoRouter(
@@ -125,13 +134,12 @@ class AppPages {
           return AppRoutespath.homeScreen;
         }
 
-        // Paywall: once the free trial is over and nothing was bought, the app is closed
-        // until they subscribe. Reads the cached entitlement (refreshed on splash / after
-        // purchase) because a guard cannot wait on the network. The backend enforces this
-        // for real by answering 402 on every gated endpoint.
+        // Paywall: once the free trial is over and nothing was bought, the parts of the app
+        // the subscription pays for close. Reads the cached entitlement (refreshed on
+        // splash / after purchase) because a guard cannot wait on the network. The backend
+        // enforces this for real — see [_blockedWhenLapsed].
         final hasAccess = await SubscriptionService.cachedHasAccess();
-        if (!hasAccess &&
-            !_allowedWhenBlocked.contains(state.matchedLocation)) {
+        if (!hasAccess && _blockedWhenLapsed.contains(state.matchedLocation)) {
           return AppRoutespath.nowliProSubscription;
         }
         return null; // Allow access to requested route

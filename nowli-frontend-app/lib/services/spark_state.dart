@@ -28,17 +28,37 @@ class SparkState {
   /// "don't claim anything" in that case.
   final bool known;
 
-  const SparkState({required this.limit, required this.remaining}) : known = true;
+  /// The allowance is not unknown — it is withheld, because the plan has lapsed.
+  ///
+  /// Worth its own flag rather than reusing [unknown]: unknown is deliberately silent and
+  /// keeps the normal button, which is right for a dropped request and wrong here. A lapsed
+  /// user left on "Checking your sparks…" waits for an answer that is never coming, and is
+  /// still invited to start a call the backend will refuse.
+  final bool paused;
+
+  const SparkState({required this.limit, required this.remaining})
+      : known = true,
+        paused = false;
 
   const SparkState.unknown()
       : limit = 0,
         remaining = 0,
-        known = false;
+        known = false,
+        paused = false;
+
+  const SparkState.paused()
+      : limit = 0,
+        remaining = 0,
+        known = true,
+        paused = true;
 
   /// The user bypasses the daily limit entirely.
-  bool get unlimited => known && (limit < 0 || remaining < 0);
+  bool get unlimited => known && !paused && (limit < 0 || remaining < 0);
 
   /// True only when we *know* the allowance is gone. Unknown is never spent.
+  ///
+  /// A paused allowance counts: there is no call to be had, and the button must stop
+  /// offering one. What differs is the wording — see [spentEyebrow].
   bool get isSpent => known && !unlimited && remaining <= 0;
 
   /// Sparks already started today.
@@ -64,20 +84,29 @@ class SparkState {
   /// Eyebrow copy for the out-of-sparks card. The design says "Both sparks used", which
   /// only reads correctly while the limit is 2 — it is a settings-driven value
   /// (`VOICE_CALL_DAILY_LIMIT`), so anything else falls back to a wording that survives.
-  String get spentEyebrow => limit == 2 ? 'Both sparks used' : 'All sparks used';
+  String get spentEyebrow {
+    // Nothing was used — the plan ended. Saying "both sparks used" to someone who has not
+    // had a call today would be a small lie about their own day.
+    if (paused) return 'Plan ended';
+    return limit == 2 ? 'Both sparks used' : 'All sparks used';
+  }
 
   @override
-  String toString() => known
-      ? 'SparkState(limit: $limit, remaining: $remaining)'
-      : 'SparkState.unknown()';
+  String toString() {
+    if (paused) return 'SparkState.paused()';
+    return known
+        ? 'SparkState(limit: $limit, remaining: $remaining)'
+        : 'SparkState.unknown()';
+  }
 
   @override
   bool operator ==(Object other) =>
       other is SparkState &&
       other.known == known &&
+      other.paused == paused &&
       other.limit == limit &&
       other.remaining == remaining;
 
   @override
-  int get hashCode => Object.hash(known, limit, remaining);
+  int get hashCode => Object.hash(known, paused, limit, remaining);
 }

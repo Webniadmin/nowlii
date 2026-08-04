@@ -76,9 +76,14 @@ class OutOfSparksCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14.8),
-                const Text(
-                  'THAT\'S\nENOUGH\nFOR TODAY.',
-                  style: TextStyle(
+                Text(
+                  // A spent day ends by design and says so warmly. A paused plan is not an
+                  // ending, and promising Nowlii "will be back tomorrow" would be untrue —
+                  // nothing comes back on its own.
+                  sparks.paused
+                      ? 'CALLS\nARE\nPAUSED.'
+                      : 'THAT\'S\nENOUGH\nFOR TODAY.',
+                  style: const TextStyle(
                     fontFamily: 'Wosker',
                     color: Color(0xFF011F54),
                     fontSize: 32,
@@ -88,7 +93,10 @@ class OutOfSparksCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 14.8),
                 Text(
-                  'You said it. You picked the next step. Nowlii will be back tomorrow.',
+                  sparks.paused
+                      ? 'Everything you have already done is still here. Renew to talk '
+                          'to Fuzzy again.'
+                      : 'You said it. You picked the next step. Nowlii will be back tomorrow.',
                   style: GoogleFonts.workSans(
                     color: const Color(0xB8011F54),
                     fontSize: 16,
