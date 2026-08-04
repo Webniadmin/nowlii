@@ -5,7 +5,7 @@ during the day. At end of day, write a report in `daily-reports/` and reset this
 for tomorrow. Deferred items go to `future-checklist.md`._
 
 **Day:** 2026-08-05
-**Branch:** `feat/design-implementation` — **25 commits ahead of `origin`, not pushed**
+**Branch:** `feat/design-implementation` — **34 commits ahead of `origin/main`, not pushed**
 **Yesterday:** `daily-reports/2026-08-04.md` — partial lock after a lapse; four screens that
 reported success they had not achieved; home restored to the original design
 
@@ -18,7 +18,7 @@ the running container was verified byte-identical to `HEAD` — so a
 `git archive HEAD:nowli-backend` deploy is now safe and would be a no-op for the entitlement
 gate. That risk is closed.
 
-What is still true: **25 commits exist on this machine and nowhere else.**
+What is still true: **34 commits exist on this machine and nowhere else.**
 
 - [ ] **`git push -u origin feat/design-implementation`**
 - [ ] Merge → `main` once a phone test passes
