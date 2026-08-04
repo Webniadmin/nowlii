@@ -8,7 +8,23 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
-## ▶ START HERE (2026-08-04)
+## ▶ START HERE (2026-08-05)
+
+**Commit first — before any deploy.** A full day of work (2026-08-04) exists only on one
+machine, and the backend running in production was shipped **from the working tree**, not from
+a commit. A routine `git archive HEAD:nowli-backend` deploy would silently overwrite the live
+read-only entitlement gate with older code.
+
+What changed yesterday, in one line: a lapsed plan now half-opens the app instead of closing
+it, and four screens stopped reporting success they had not achieved — including the companion
+picker, which discarded the user's choice at signup for every new account. Detail:
+`daily-reports/2026-08-04.md`; the day's list is `daily-checklist.md`.
+
+The payments decision below is unchanged and still gates everything in payments.
+
+---
+
+## ▶ (2026-08-04)
 
 **Two things, in order: deploy yesterday's backend, then decide how payments are taken.**
 The day-by-day list is `daily-checklist.md`; what happened yesterday is

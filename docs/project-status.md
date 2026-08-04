@@ -1,6 +1,47 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-08-03 (evening)_
+_Last reviewed: 2026-08-04 (evening)_
+
+## Completed this session (2026-08-04)
+
+_Full detail in `daily-reports/2026-08-04.md`. **Nothing is committed** — the whole day is on
+one machine, and production is running backend code shipped from the working tree._
+
+- **Yesterday's backend reached production** (`users.0016/0017/0018` + the nowli-ai
+  personalization changes), verified inside the running container rather than from the deploy
+  log. Restricted Topics then survived a cold restart on the emulator.
+- **The paywall could not take money from anyone on a trial.** `/subscriptions/me/` reports
+  `subscribed: true` for anyone with a Subscription row — including every trial user — and the
+  Pro screen read that as "already paying", rendering a permanently disabled CTA. The screen
+  quoted a price with a dead button underneath it.
+- **A lapsed plan no longer closes the app** (client decision, mid-session). Reads survive,
+  writes answer 402, and a once-per-launch dialog says so. Insights still serves the user's
+  own numbers but skips the AI generation — the statistics are theirs, the paragraphs are the
+  paid part. Three defects surfaced only on the device: splash still hard-redirected to the
+  paywall, the quota 402 was mistaken for "quota unknown" (leaving the home card on
+  "Checking your sparks…" forever), and the copy promised a tomorrow that brings nothing back.
+- **Four screens reported success they had not achieved.** Changing the companion sent a
+  read-only URL instead of `predefined_option` and announced "Avatar updated successfully!";
+  the same defect at signup meant **every new account got the default companion and its
+  voice**; the naming screen picked the character by matching its *name*, so renaming it —
+  which that screen invites — showed a different character; and the Power-moves ring drew full
+  for any single completion.
+- **"Your moves" was dynamic but unreadable** — it showed only completions, so "0" was
+  indistinguishable from having no quests. Each ring now carries its denominator.
+- **Design:** Spark is now the opening row of the paywall timeline (badged NEXT); the profile
+  card names the actual plan and stage instead of a flat "Nowlii Pro"; home is restored to the
+  original design with the hero card, "Todays progress" and the orange quest list, with the
+  green closing card taking the hero slot once the day's sparks are spent.
+- Verified: 169 backend tests, 180 Flutter tests, `flutter analyze` 0 errors. Twelve existing
+  tests asserted the old behaviour and were rewritten — three of them had been proving the
+  entitlement bypass with a **GET** that is now open to everyone, so they would have passed
+  against a broken gate.
+
+> ⚠️ **Both QA allowlists are empty on production** at the user's request, so the test account
+> now hits the real trial, the real paywall and the real 2-calls-a-day limit — and real calls
+> cost real money.
+
+_Previously reviewed: 2026-08-03 (evening)_
 
 ## Completed this session (2026-08-03)
 
