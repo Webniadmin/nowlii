@@ -75,7 +75,15 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
   }
 
   bool get _isFreeForever => _status?.lifetimeFree ?? false;
-  bool get _isSubscribed => _status?.subscribed == true && _status?.hasAccess == true;
+
+  /// Someone who is actually paying — not merely someone the backend has a row for.
+  ///
+  /// `subscribed` is true for anyone with a `Subscription` record, which includes every
+  /// user still inside the free trial. Reading it as "is a customer" disabled the CTA for
+  /// exactly the people the screen exists to convert: the rest of the screen quoted them a
+  /// price while the button underneath it was dead. `month_index` is 0 until the paid
+  /// schedule starts, which is the same signal the timeline and the headline already use.
+  bool get _isSubscribed => _currentMonth != null && _status?.hasAccess == true;
 
   /// The day the paid schedule counts from: when they actually subscribed, or today for
   /// someone still deciding — in which case the dates read as "if you subscribe now"
@@ -337,10 +345,12 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
   }
 
   Widget _buildScheduleCard(List<PriceStep> schedule) {
-    // Fading orange for a prospect, who is reading a quote and has no position in it.
+    // Fading orange for a prospect: the stage on offer is solid, the rest recede. Five
+    // entries because the opening stage is now a row of its own.
     const quotedDots = [
       Color(0xFFFF8F26),
       Color(0xFFFFA551),
+      Color(0xFFFFC17A),
       Color(0xFFFFCB9B),
       Color(0xFFC3DBFF),
     ];
@@ -355,6 +365,7 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
           return const Color(0xFFFF8F26);
         case PriceStepStatus.next:
           return const Color(0xFFFFA551);
+        case PriceStepStatus.starting:
         case PriceStepStatus.confirmed:
         case PriceStepStatus.provisional:
           return _currentMonth == null
@@ -594,6 +605,12 @@ class _StatusBadge extends StatelessWidget {
       case PriceStepStatus.provisional:
         background = const Color(0xFFF3F4F6);
         ink = _NowliProSubscriptionState._cardMuted;
+        break;
+      case PriceStepStatus.starting:
+        // The stage on offer. Green like the settled ones, because its price is settled —
+        // it is the one thing on this screen the user is being asked to agree to.
+        background = _greenBg;
+        ink = _green;
         break;
     }
 
