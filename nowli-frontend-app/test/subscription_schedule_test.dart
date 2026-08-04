@@ -21,21 +21,22 @@ void main() {
       anchor: DateTime(2026, 7, 27),
     );
 
-    test('starts at the first change, not the price being quoted', () {
-      // $19.99 is the big number at the top of the screen; repeating it as an upcoming
-      // "change" would be wrong.
-      expect(steps.map((s) => s.price), [14.99, 9.99, 4.99, 0]);
+    test('opens on the stage being sold, then every change after it', () {
+      // The opening stage is a row of its own even though its price is also the headline:
+      // without it the ladder reads as though the plan begins at the second step.
+      expect(steps.map((s) => s.price), [19.99, 14.99, 9.99, 4.99, 0]);
     });
 
     test('dates each change from the day the plan starts', () {
-      expect(steps[0].dateLabel, '27 Oct'); // month 4 = +3
-      expect(steps[1].dateLabel, '27 Jan'); // month 7 = +6
-      expect(steps[2].dateLabel, '27 Apr'); // month 10 = +9
+      expect(steps[0].dateLabel, '27 Jul'); // month 1 = the day they subscribe
+      expect(steps[1].dateLabel, '27 Oct'); // month 4 = +3
+      expect(steps[2].dateLabel, '27 Jan'); // month 7 = +6
+      expect(steps[3].dateLabel, '27 Apr'); // month 10 = +9
     });
 
     test('names the stages as the design does', () {
       expect(steps.map((s) => s.stage),
-          ['Rhythm', 'Independence', 'Release', 'Graduated']);
+          ['Spark', 'Rhythm', 'Independence', 'Release', 'Graduated']);
     });
 
     test('dates the free stage by month, not by day', () {
@@ -45,8 +46,22 @@ void main() {
       expect(steps.last.priceLabel, '\$0.00');
     });
 
+    test('the opening stage is what is on offer', () {
+      expect(steps.first.status, PriceStepStatus.starting);
+      expect(steps.first.badgeLabel, 'NEXT');
+    });
+
     test('marks the first two changes confirmed and the rest provisional', () {
-      expect(steps.map((s) => s.confirmed), [true, true, false, false]);
+      // Counted from the row after the opening one — adding that row must not demote a
+      // stage that used to read as settled.
+      expect(steps.map((s) => s.status), [
+        PriceStepStatus.starting,
+        PriceStepStatus.confirmed,
+        PriceStepStatus.confirmed,
+        PriceStepStatus.provisional,
+        PriceStepStatus.provisional,
+      ]);
+      expect(steps.map((s) => s.confirmed), [true, true, true, false, false]);
     });
 
     test('is empty when the plan has not loaded', () {
@@ -103,9 +118,12 @@ void main() {
       expect(at(1), hasLength(5));
     });
 
-    test('someone still deciding is not shown a stage they are not on', () {
+    test('someone still deciding is shown the stage on offer, but is not on it', () {
       final steps = buildPriceSchedule(plan: plan, anchor: anchor);
-      expect(steps.first.stage, 'Rhythm');   // the opening price is the headline above
+      expect(steps.first.stage, 'Spark');
+      expect(steps.first.status, PriceStepStatus.starting);
+      // Being offered a stage is not standing on one — nothing may read as CURRENT PLAN
+      // until they have actually paid.
       expect(steps.any((s) => s.current), isFalse);
     });
 

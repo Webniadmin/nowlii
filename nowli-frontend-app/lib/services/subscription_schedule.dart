@@ -29,7 +29,20 @@ const int kConfirmedSteps = 2;
 /// A prospective subscriber only ever sees [confirmed] and [provisional] — they are being
 /// quoted a schedule. A subscriber sees the whole journey, including the stages behind them,
 /// because the question changes from "what will this cost" to "where am I".
-enum PriceStepStatus { completed, current, next, confirmed, provisional }
+enum PriceStepStatus {
+  completed,
+  current,
+  next,
+  confirmed,
+  provisional,
+
+  /// The stage a prospective subscriber would start on — the first row of their timeline.
+  ///
+  /// Its own value rather than reusing [next]: a subscriber's *next* stage is drawn as an
+  /// outline, because it has not been reached. This one is the thing being offered, and the
+  /// design gives it the green badge.
+  starting,
+}
 
 class PriceStep {
   /// "Rhythm", "Independence", "Release", "Graduated".
@@ -63,7 +76,8 @@ class PriceStep {
       status == PriceStepStatus.completed ||
       status == PriceStepStatus.current ||
       status == PriceStepStatus.next ||
-      status == PriceStepStatus.confirmed;
+      status == PriceStepStatus.confirmed ||
+      status == PriceStepStatus.starting;
 
   /// The badge on the right of the row.
   String get badgeLabel {
@@ -78,6 +92,8 @@ class PriceStep {
         return 'CONFIRMED';
       case PriceStepStatus.provisional:
         return 'PROVISIONAL';
+      case PriceStepStatus.starting:
+        return 'NEXT';
     }
   }
 
@@ -86,6 +102,31 @@ class PriceStep {
   String get dateLabel => isFinalFree
       ? DateFormat('MMM yyyy').format(startsOn)
       : DateFormat('d MMM').format(startsOn);
+}
+
+/// The name of the stage a subscriber is currently in — "Spark", "Rhythm", … or the
+/// graduated stage once the paid year is behind them.
+///
+/// `/me/` reports `phase` as a month *range* ("1-3"), not a name, so the name is looked up
+/// in the plan the backend already serves. Deriving it here rather than shipping a second
+/// list is the same reason [kPriceStepNames] is only a fallback: the backend owns the
+/// schedule, so it owns the labels.
+///
+/// Returns null while the plan is still loading, or for someone whose paid schedule has not
+/// started ([monthIndex] 0) — they are not *in* a stage yet, and naming one would be a
+/// guess about a plan they have not bought.
+String? stageForMonth(SubscriptionPlan? plan, int monthIndex) {
+  if (plan == null || monthIndex <= 0) return null;
+  for (final phase in plan.phases) {
+    if (phase.fromMonth <= monthIndex && monthIndex <= phase.toMonth) {
+      return phase.stage.isNotEmpty ? phase.stage : null;
+    }
+  }
+  // Past the last paid phase: free forever.
+  if (monthIndex > plan.freeAfterMonth) {
+    return plan.graduatedStage.isNotEmpty ? plan.graduatedStage : kGraduatedStageName;
+  }
+  return null;
 }
 
 /// The price changes still ahead of [anchor].
@@ -105,16 +146,18 @@ List<PriceStep> buildPriceSchedule({
 }) {
   if (plan == null || plan.phases.isEmpty) return const [];
 
-  // Two different questions, two different lists.
-  //
-  // Someone still deciding is asking "what will this cost me?" — the opening price is the
-  // headline above the card, so repeating it as the first row would just say it twice.
+  // Both lists now start at the first phase, for different reasons.
   //
   // A subscriber is asking "where am I?" — and the answer has to include the stage they are
-  // on, or the screen shows them everything except the thing they are paying for. That was
-  // the bug: after subscribing, Spark was missing from its own timeline.
+  // on, or the screen shows them everything except the thing they are paying for.
+  //
+  // Someone still deciding used to have the opening stage omitted, on the grounds that the
+  // headline above already quotes its price. Changed 2026-08-04 at the client's request: the
+  // headline is a number, the row is a *named stage with a date*, and leaving Spark out made
+  // the timeline read as though the plan began at Rhythm. It is marked [starting] rather than
+  // repeated as a plain row, so it reads as the thing being offered.
   final subscribed = currentMonth != null;
-  final firstIndex = subscribed ? 0 : 1;
+  const firstIndex = 0;
 
   final steps = <PriceStep>[];
   final lastPaidMonth = plan.phases.last.toMonth;
@@ -210,7 +253,11 @@ PriceStepStatus _statusFor({
   required int confirmedSteps,
 }) {
   if (!subscribed || currentMonth == null) {
-    return position < confirmedSteps
+    // Row 0 is the stage they would start on. The near steps after it stay settled and the
+    // far ones remain a projection, so [confirmedSteps] is counted from row 1 — otherwise
+    // adding the opening row would have quietly demoted one stage to PROVISIONAL.
+    if (position == 0) return PriceStepStatus.starting;
+    return position <= confirmedSteps
         ? PriceStepStatus.confirmed
         : PriceStepStatus.provisional;
   }
