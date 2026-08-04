@@ -803,6 +803,10 @@ class $AssetsSvgIconsGen {
   SvgGenImage get backIconSvg =>
       const SvgGenImage('assets/svg_icons/back_icon.svg');
 
+  /// File path: assets/svg_icons/bell_simple_slash.svg
+  SvgGenImage get bellSimpleSlash =>
+      const SvgGenImage('assets/svg_icons/bell_simple_slash.svg');
+
   /// File path: assets/svg_icons/bk_popup_Choose mood.png
   AssetGenImage get bkPopupChooseMood =>
       const AssetGenImage('assets/svg_icons/bk_popup_Choose mood.png');
@@ -1162,6 +1166,7 @@ class $AssetsSvgIconsGen {
     awosome,
     backIconPng,
     backIconSvg,
+    bellSimpleSlash,
     bkPopupChooseMood,
     blue,
     bottomFirstYourComplate,
