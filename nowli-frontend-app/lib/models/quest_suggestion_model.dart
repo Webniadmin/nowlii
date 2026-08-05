@@ -1,3 +1,5 @@
+import 'package:nowlii/utils/color_palette/zone_colors.dart';
+
 class QuestSuggestionResponse {
   final WeeklySuggestions weekly;
 
@@ -85,20 +87,7 @@ class QuestSuggestion {
   }
   
   // Helper method to get zone color
-  String getZoneColor() {
-    switch (zone.toLowerCase()) {
-      case 'soft steps':
-        return '#A0E871'; // Green
-      case 'stretch zone':
-        return '#FFB84D'; // Orange
-      case 'power move':
-        return '#FF6B6B'; // Red
-      case 'elevated':
-        return '#9B59B6'; // Purple
-      default:
-        return '#A0E871';
-    }
-  }
+  String getZoneColor() => zoneColorHex(zone);
   
   // Helper method to get zone emoji
   String getZoneEmoji() {

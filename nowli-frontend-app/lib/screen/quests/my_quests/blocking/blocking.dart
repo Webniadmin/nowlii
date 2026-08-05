@@ -6,6 +6,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:intl/intl.dart';
 import 'package:nowlii/themes/text_styles.dart';
+import 'package:nowlii/utils/color_palette/zone_colors.dart';
 
 class Blockng extends StatefulWidget {
   const Blockng({super.key});
@@ -173,20 +174,7 @@ class BacklogQuestCard extends StatelessWidget {
     required this.onSkip,
   });
 
-  Color _getLevelColor(String zone) {
-    switch (zone) {
-      case 'Soft steps':
-        return const Color(0xFFA0E871);
-      case 'Elevated':
-        return const Color(0xFFF7A94B);
-      case 'Stretch zone':
-        return const Color(0xFF6AA7FF);
-      case 'Power move':
-        return const Color(0xFFFF5A5A);
-      default:
-        return const Color(0xFFA0E871);
-    }
-  }
+  Color _getLevelColor(String zone) => zoneColor(zone);
 
   Color _getTextColor(Color backgroundColor) {
     final luminance = backgroundColor.computeLuminance();

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/models/quest_suggestion_model.dart';
 import 'package:nowlii/services/quest_suggestion_service.dart';
+import 'package:nowlii/utils/color_palette/zone_colors.dart';
 
 class QuestSuggestionsList extends StatefulWidget {
   const QuestSuggestionsList({super.key});
@@ -342,18 +343,5 @@ class _QuestSuggestionsListState extends State<QuestSuggestionsList> {
     );
   }
 
-  Color _getZoneColor(String zone) {
-    switch (zone.toLowerCase()) {
-      case 'soft steps':
-        return const Color(0xFFA0E871);
-      case 'stretch zone':
-        return const Color(0xFFFFB84D);
-      case 'power move':
-        return const Color(0xFFFF6B6B);
-      case 'elevated':
-        return const Color(0xFF9B59B6);
-      default:
-        return const Color(0xFFA0E871);
-    }
-  }
+  Color _getZoneColor(String zone) => zoneColor(zone);
 }

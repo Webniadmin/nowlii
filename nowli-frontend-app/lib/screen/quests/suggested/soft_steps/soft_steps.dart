@@ -5,6 +5,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 import 'package:nowlii/models/quest_suggestion_model.dart';
 import 'package:nowlii/services/insights_service.dart';
+import 'package:nowlii/utils/color_palette/zone_colors.dart';
 
 class ShuffleScreen extends StatefulWidget {
   final String? filterZone; // Add optional filter parameter
@@ -117,20 +118,7 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
     });
   }
 
-  Color _getZoneColor(String zone) {
-    switch (zone.toLowerCase()) {
-      case 'soft steps':
-        return const Color(0xFFA0E871); // Green
-      case 'stretch zone':
-        return const Color(0xFFFFB46E); // Orange
-      case 'power move':
-        return const Color(0xFFA9A8F6); // Purple
-      case 'elevated':
-        return const Color(0xFFFFCE73); // Yellow
-      default:
-        return const Color(0xFFA0E871); // Default Green
-    }
-  }
+  Color _getZoneColor(String zone) => zoneColor(zone);
 
   String _getEmojiForTask(String task) {
     final taskLower = task.toLowerCase();

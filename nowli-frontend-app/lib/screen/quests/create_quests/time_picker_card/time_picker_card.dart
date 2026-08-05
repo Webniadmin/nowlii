@@ -26,6 +26,12 @@ class _TimePickerCardState extends State<TimePickerCard> {
   bool _isPM = DateTime.now().hour >= 12;
   Timer? _timer;
 
+  /// True once the user has moved one of the controls, or the quest arrived with a time.
+  ///
+  /// Before that the picker is only showing a suggestion, and reporting it as a choice is
+  /// what let a stale "now" reach the save.
+  bool _userAdjusted = false;
+
   @override
   void initState() {
     super.initState();
@@ -35,6 +41,7 @@ class _TimePickerCardState extends State<TimePickerCard> {
     // The API sends "09:58:00" — a Django TimeField, seconds and all — while this only
     // accepted "09:58". Three parts failed the length check, so an existing quest's time
     // was silently replaced by whatever the clock said when the edit screen opened.
+    var parsedInitial = false;
     if (widget.initialTime != null) {
       try {
         final parts = widget.initialTime!.split(':');
@@ -44,17 +51,46 @@ class _TimePickerCardState extends State<TimePickerCard> {
           _selectedHour = hour;
           _selectedMinute = minute;
           _isPM = hour >= 12;
+          parsedInitial = true;
         }
       } catch (e) {
         // If parsing fails, use current time
         debugPrint('Failed to parse initial time: $e');
       }
     }
-    
-    // Notify initial time after build is complete
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _notifyTimeChange();
-    });
+
+    // Report a time on the first frame only when the quest already had one.
+    //
+    // It used to report unconditionally, which meant a untouched picker announced the
+    // clock **at the moment the screen opened** and then never updated — the timer below
+    // is declared and never started. The parent stored that as the chosen time, so a user
+    // who picked "Today", typed a title and chose a zone — anything over a minute — was
+    // told "You can't schedule a quest in the past". They had not picked a time at all;
+    // the picker had picked one for them and let it go stale.
+    //
+    // Staying silent leaves the parent's time null, which it already reads as "now, at the
+    // moment of saving". That is both true and never in the past.
+    if (parsedInitial) {
+      _userAdjusted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _notifyTimeChange();
+      });
+    } else {
+      // Until the user adjusts something, the picker follows the clock. Otherwise it shows
+      // "Selected: 14:30" while the quest would actually be saved for 14:33 — the reading
+      // and the saving disagreeing is what made the past-time error so baffling. This is
+      // what the timer field was always for; it was declared and never started.
+      _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (!mounted || _userAdjusted) return;
+        final now = DateTime.now();
+        if (now.hour == _selectedHour && now.minute == _selectedMinute) return;
+        setState(() {
+          _selectedHour = now.hour;
+          _selectedMinute = now.minute;
+          _isPM = now.hour >= 12;
+        });
+      });
+    }
   }
 
   @override
@@ -77,6 +113,8 @@ class _TimePickerCardState extends State<TimePickerCard> {
       }
       _isPM = _selectedHour >= 12;
     });
+    _userAdjusted = true;
+    _timer?.cancel();
     _notifyTimeChange();
   }
   
@@ -88,6 +126,8 @@ class _TimePickerCardState extends State<TimePickerCard> {
       }
       _isPM = _selectedHour >= 12;
     });
+    _userAdjusted = true;
+    _timer?.cancel();
     _notifyTimeChange();
   }
   
@@ -98,6 +138,8 @@ class _TimePickerCardState extends State<TimePickerCard> {
         _selectedMinute = 0;
       }
     });
+    _userAdjusted = true;
+    _timer?.cancel();
     _notifyTimeChange();
   }
   
@@ -108,6 +150,8 @@ class _TimePickerCardState extends State<TimePickerCard> {
         _selectedMinute = 59;
       }
     });
+    _userAdjusted = true;
+    _timer?.cancel();
     _notifyTimeChange();
   }
 
@@ -342,6 +386,8 @@ class _TimePickerCardState extends State<TimePickerCard> {
                     : _selectedHour;
               }
             });
+            _userAdjusted = true;
+            _timer?.cancel();
             _notifyTimeChange();
           },
           child: Container(

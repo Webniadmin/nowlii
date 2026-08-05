@@ -10,6 +10,7 @@ import 'package:nowlii/services/quest_service.dart';
 import 'package:nowlii/services/scheduled_call_state.dart';
 import 'package:nowlii/services/voice_call_service.dart';
 import 'package:intl/intl.dart';
+import 'package:nowlii/utils/color_palette/zone_colors.dart';
 
 class Today extends StatefulWidget {
   const Today({super.key});
@@ -326,20 +327,7 @@ class QuestCard extends StatelessWidget {
     this.remainingCalls = 1,
   });
 
-  Color _getLevelColor(String zone) {
-    switch (zone) {
-      case 'Soft steps':
-        return const Color(0xFFA0E871);
-      case 'Elevated':
-        return const Color(0xFFFF8F26);
-      case 'Stretch zone':
-        return const Color(0xFF3D87F5);
-      case 'Power move':
-        return const Color(0xFFD53D40);
-      default:
-        return const Color(0xFFA0E871);
-    }
-  }
+  Color _getLevelColor(String zone) => zoneColor(zone);
 
   Color _getTextColor(Color levelColor) {
     if (levelColor == const Color(0xFFA0E871)) {

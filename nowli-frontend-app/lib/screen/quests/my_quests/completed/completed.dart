@@ -7,6 +7,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:intl/intl.dart';
 import 'package:nowlii/themes/text_styles.dart';
+import 'package:nowlii/utils/color_palette/zone_colors.dart';
 
 class Completed extends StatefulWidget {
   const Completed({super.key});
@@ -172,20 +173,7 @@ class CompletedQuestCard extends StatelessWidget {
     required this.quest,
   });
 
-  Color _getLevelColor(String zone) {
-    switch (zone) {
-      case 'Soft steps':
-        return const Color(0xFFA0E871);
-      case 'Elevated':
-        return const Color(0xFFFF8F26);
-      case 'Stretch zone':
-        return const Color(0xFF3D87F5);
-      case 'Power move':
-        return const Color(0xFFD53D40);
-      default:
-        return const Color(0xFFA0E871);
-    }
-  }
+  Color _getLevelColor(String zone) => zoneColor(zone);
 
   Color _getTextColor(Color levelColor) {
     if (levelColor == const Color(0xFFA0E871)) {
