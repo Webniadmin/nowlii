@@ -90,7 +90,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       width: 40,
                       height: 40,
                     ),
-                    title: 'Nowlii Pro',
+                    // "Your membership" per the design (Figma 5:2015). "Nowlii Pro" is the
+                    // product's name for the paid tier, not a thing the user owns; the row
+                    // leads to their own plan.
+                    title: 'Your membership',
                     // The Pro screen, not the trial explainer. This used to open
                     // /subscriptionPage — the "seven days on us" pitch — so a paying
                     // subscriber tapping their own plan was offered a free trial instead of

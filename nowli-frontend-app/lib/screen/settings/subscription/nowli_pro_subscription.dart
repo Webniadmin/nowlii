@@ -6,6 +6,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/models/subscription_model.dart';
 import 'package:nowlii/services/number_words.dart';
 import 'package:nowlii/services/subscription_service.dart';
+import 'package:intl/intl.dart';
 import 'package:nowlii/services/subscription_schedule.dart';
 import 'package:nowlii/widget/paywall_cta.dart';
 
@@ -117,6 +118,56 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
         anchor: _anchor,
         currentMonth: _currentMonth,
       );
+
+  /// The name of the stage the subscriber is in, from the schedule the backend owns.
+  ///
+  /// Falls back to the phase string rather than to a hardcoded "Spark": the stage names
+  /// live in `/plan/`, and the app holding a second list of them is how they drift.
+  String get _currentStageName {
+    for (final step in _schedule) {
+      if (step.current) return step.stage;
+    }
+    final phase = _status?.phase.trim() ?? '';
+    return phase.isEmpty ? 'Your plan' : phase;
+  }
+
+  /// "Month 1 · \$19.99/mo. Rhythm starts 4 Nov at \$14.99."
+  ///
+  /// States where they are and what changes next — the two things a subscriber opens this
+  /// screen to find out. Everything in it comes from the schedule, so a plan change on the
+  /// backend moves the sentence with it.
+  String get _membershipSummary {
+    if (_isFreeForever) {
+      return "You've reached the end of the ladder. Nowlii is free for you from here — "
+          'same $_dailySparks sparks a day, same receipts.';
+    }
+
+    final month = _currentMonth;
+    final where = month == null
+        ? 'Your plan is active'
+        : 'Month $month · \$${_monthlyPrice.toStringAsFixed(2)}/mo';
+
+    // The first step after the current one, which is what "how far along" really asks.
+    PriceStep? next;
+    var seenCurrent = false;
+    for (final step in _schedule) {
+      if (seenCurrent) {
+        next = step;
+        break;
+      }
+      if (step.current) seenCurrent = true;
+    }
+
+    if (next == null) return '$where.';
+
+    final when = next.isFinalFree
+        ? DateFormat('MMMM y').format(next.startsOn)
+        : DateFormat('d MMM').format(next.startsOn);
+    final price = next.price <= 0
+        ? 'free'
+        : '\$${next.price.toStringAsFixed(2)}';
+    return '$where. ${next.stage} starts $when at $price.';
+  }
 
   /// "for the next three months" — how long the price being quoted actually holds.
   String get _firstPhaseDuration {
@@ -286,17 +337,20 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
           ),
           const SizedBox(height: 12),
           // A subscriber is not being quoted a price — they already pay it. The headline
-          // answers their question ("am I still set up?") instead of selling.
+          // answers their question ("which plan am I on, and how far along?") instead of
+          // selling. It used to read "READY TO CONTINUE? / Pick back up where you left
+          // off", which is what you say to somebody who has stopped — under a timeline
+          // that said CURRENT PLAN and above a button offering to sell them the thing
+          // they were already paying for.
           if (_currentMonth != null) ...[
             Text(
-              'READY TO CONTINUE?',
+              _isFreeForever ? 'FREE FOREVER' : _currentStageName.toUpperCase(),
               textAlign: TextAlign.center,
               style: GoogleFonts.archivoBlack(color: _orange, fontSize: 40),
             ),
             const SizedBox(height: 12),
             Text(
-              'Pick back up where you left off. Same $_dailySparks sparks a day, '
-              'same receipts — nothing new to unlock.',
+              _membershipSummary,
               textAlign: TextAlign.center,
               style: GoogleFonts.workSans(
                 color: _ink,
@@ -419,13 +473,15 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
   }
 
   Widget _buildCta() {
-    // Already paying: there is nothing to swipe for. Showing the live state beats an
-    // action that would either do nothing or take their money twice.
+    // Already paying: there is nothing to swipe for. The label used to read "Continue for
+    // $19.99" — a price on a primary button, which is what a purchase looks like, over an
+    // onTap of null. It was inert and nothing said so; a subscriber could only find out by
+    // pressing it. It now states the fact instead of offering the sale.
     if (_isSubscribed) {
       return PaywallTapButton(
-        label: _isFreeForever
-            ? 'Continue — free forever'
-            : 'Continue for \$${_monthlyPrice.toStringAsFixed(2)}',
+        // Short on purpose: the button is one line and clips, and the price is already
+        // stated twice above it — in the summary and in the timeline row.
+        label: _isFreeForever ? 'Free forever' : "You're subscribed",
         knobIcon: Assets.svgIcons.paywallSparkle.svg(width: 24, height: 24),
         onTap: null,
       );
