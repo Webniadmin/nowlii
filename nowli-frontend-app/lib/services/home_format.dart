@@ -55,4 +55,23 @@ String sparksAvailableLabel({
   return '$remaining sparks available';
 }
 
+/// How wide the "Todays progress" fill should be, in pixels.
+///
+/// Two rules pull against each other. A day with one quest of five done must still read as
+/// a rounded pill rather than a sliver, so the fill has a floor of its own height
+/// ([barHeight]). But a day with nothing done must draw **nothing** — a floor applied at
+/// zero paints a pill that says work happened when none did, which is the same untruth as
+/// a ring drawn full for a single completion.
+double progressFillWidth({
+  required double progress,
+  required double trackWidth,
+  double barHeight = 24.0,
+}) {
+  if (progress <= 0 || trackWidth <= 0) return 0.0;
+  return (trackWidth * progress).clamp(
+    barHeight.clamp(0.0, trackWidth),
+    trackWidth,
+  );
+}
+
 DateTime _dayOf(DateTime value) => DateTime(value.year, value.month, value.day);

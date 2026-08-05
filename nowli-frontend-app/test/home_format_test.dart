@@ -55,6 +55,43 @@ void main() {
     });
   });
 
+  group('progress bar fill', () {
+    const track = 300.0;
+
+    test('draws nothing when nothing is done', () {
+      // The floor below exists so one-of-five reads as a pill. Applied at zero it painted
+      // a pill on an empty day — progress the user had not made.
+      expect(progressFillWidth(progress: 0.0, trackWidth: track), 0.0);
+    });
+
+    test('draws nothing on a day with no quests at all', () {
+      // An empty day arrives here as 0.0 too; it must look empty, not started.
+      expect(progressFillWidth(progress: 0.0, trackWidth: track), 0.0);
+    });
+
+    test('gives a small share the pill floor rather than a sliver', () {
+      // 1/20 of 300 is 15px — narrower than the bar is tall, so it would render as a
+      // lopsided nub.
+      expect(progressFillWidth(progress: 0.05, trackWidth: track), 24.0);
+    });
+
+    test('is proportional once past the floor', () {
+      expect(progressFillWidth(progress: 0.5, trackWidth: track), 150.0);
+    });
+
+    test('fills the track when the day is done, and never overruns it', () {
+      expect(progressFillWidth(progress: 1.0, trackWidth: track), track);
+      expect(progressFillWidth(progress: 1.5, trackWidth: track), track);
+    });
+
+    test('survives a track narrower than the floor', () {
+      // First layout pass can hand out odd constraints; the fill must not exceed them.
+      expect(progressFillWidth(progress: 1.0, trackWidth: 10.0), 10.0);
+      expect(progressFillWidth(progress: 0.1, trackWidth: 10.0), 10.0);
+      expect(progressFillWidth(progress: 0.5, trackWidth: 0.0), 0.0);
+    });
+  });
+
   group('sparks label', () {
     test('matches the pills beside it', () {
       expect(

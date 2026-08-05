@@ -649,11 +649,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     Container(
                       height: 24,
-                      // Never narrower than its own height, so a day with one quest done
-                      // still reads as a rounded pill rather than a sliver.
-                      width: (constraints.maxWidth * progress).clamp(
-                        24.0,
-                        constraints.maxWidth,
+                      width: progressFillWidth(
+                        progress: progress,
+                        trackWidth: constraints.maxWidth,
                       ),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
