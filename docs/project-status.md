@@ -1,8 +1,38 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-08-04 (evening)_
+_Last reviewed: 2026-08-05 (evening)_
 
-## Completed this session (2026-08-04)
+## Completed this session (2026-08-05)
+
+_Full detail in `daily-reports/2026-08-05.md`. Fourteen commits, all pushed; backend deployed
+through `8c0d52e`; `nowlii-prod-v0.1.apk` built against the live HTTPS backend._
+
+- **Every call reminder was firing late by the user's whole UTC offset.** Quests store naive
+  wall-clock fields and the instant was built in the *server's* zone, which is UTC — a call
+  set for 11:20 in Belgrade became 11:20 UTC and reached the phone as 13:20. The quest card
+  said so out loud: "Call scheduled for 13:20" under a quest set for 11:20. The phone now
+  reports its IANA zone (`Profile.timezone`, migration `users.0019`); an offset would have
+  been wrong by December. `_calls_used_today` moved to the user's day too — two sparks were
+  resetting at 02:00 their time.
+- **Editing a quest never rebuilt its reminder.** `today.dart` and `scheduled.dart` pushed the
+  edit screen without awaiting it, so neither the list reload nor `CallReminderService.sync()`
+  ran. Proven with `dumpsys`: the armed alarms were the same objects to the millisecond. The
+  edit screen also never received the quest's own time, and `TimePickerCard` silently rejected
+  the API's `"09:58:00"` because it only parsed two-part strings.
+- **Reminder delivery proven end to end for the first time** — two notifications read out of
+  `dumpsys notification`, the second for a quest whose time had just been edited.
+- **A day that cannot take a call stops offering one.** The Enable-call card blurs with the
+  reason named, keyed to the quest's day rather than today; and swiping to talk now offers a
+  stranded scheduled call the same time tomorrow.
+- **Five screens stopped disagreeing with themselves**: the Insights month grid put every mark
+  on the wrong weekday (and printed no dates at all); the completion banner called every tick
+  the first and claimed a streak that had not been earned; the progress bar drew a pill at
+  zero; five separate zone colour tables disagreed on three of four zones; and the time picker
+  reported a stale "now" that produced "You can't schedule a quest in the past".
+- **The membership screen stopped selling to people who had already bought** — a subscriber on
+  Spark month 1 was shown "READY TO CONTINUE?" over a button offering to charge them again.
+
+## Completed on 2026-08-04
 
 _Full detail in `daily-reports/2026-08-04.md`. **Nothing is committed** — the whole day is on
 one machine, and production is running backend code shipped from the working tree._

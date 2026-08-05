@@ -12,6 +12,16 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
 
 ## P0 — Blocks the store listing
 
+- [ ] **The trial-ending reminders do not exist.** The "SEVEN DAYS. ON US." screen
+      (`subscription_popup.dart`, Figma `1:1558`) promises, in its own timeline, "Day 5 —
+      Trial Status Update" and "Day 6 — Your Call to Continue". Nothing sends either: the only
+      code that schedules a notification is `call_reminder_service.dart` and it handles
+      `ScheduledCall` alone; `Apps/subscriptions/` has no job, cron or email. A user's trial
+      ends in silence and they meet the paywall cold. **Decision needed:** local notifications
+      laid down when the trial starts (recommended — the mechanism exists and is proven, no
+      backend, works offline; lost on reinstall) or a backend job (survives reinstall; needs a
+      scheduler on the box, which does not exist yet).
+
 - [ ] **Terms of Service does not exist.** The document was never written, so both places it
       was referenced now hide the link rather than show dead text: the sign-up screen
       (`lib/screen/auth/sign_up.dart`) and Settings → Privacy (`privacy_data_screen.dart`).
@@ -19,13 +29,15 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
       `ApiConstants.termsOfServiceUrl`, and uncomment the two blocks.
       Privacy Policy is done — https://www.nowlii.com/privacy-policy, live and reachable
       from both screens.
-- [ ] **HTTPS for the API.** Domain is `nowlii.com` (www is a Figma-hosted site behind
-      Cloudflare; the apex parks at a registrar IP). **Blocked on one DNS record:** an
-      `A` record for `api.nowlii.com` → `16.170.191.239`, DNS-only (grey cloud) so
-      Let's Encrypt can answer the HTTP-01 challenge on the box. Once it resolves:
-      nginx + certbot in front of :8000 and :8001, switch `dart_defines.prod.json` to
-      `https://`, then flip the HTTPS block in `~/backend/.env` (see `.env.example`).
-      Until then a **release** build cannot reach the backend at all — see `deploy-aws.md`.
+- [x] ~~**HTTPS for the API.**~~ **Done** — live on `https://api.nowlii.com` and
+      `https://ai.nowlii.com` (nginx + Let's Encrypt, cert to 2026-10-29, auto-renewing), and
+      `dart_defines.prod.json` points at both. What remains is the **cutover**, and it is
+      deliberately held until an APK is proven on a phone, because each step breaks any
+      pre-HTTPS build the instant it lands: flip the HTTPS block in `~/backend/.env`
+      (`SECURE_SSL_REDIRECT`, `SESSION`/`CSRF_COOKIE_SECURE`, `SECURE_HSTS_SECONDS` — ramp
+      3600 → 31536000, not straight to a year), add the nginx HTTP→HTTPS redirect (the cert
+      was issued `--no-redirect` on purpose), then close 8000/8001 in the security group.
+      Tracked in `daily-checklist.md`.
 - [ ] **Release signing keystore** — not created yet; release builds fall back to the debug
       keystore, which Play rejects. Wiring is done (`android/key.properties.example`).
 - [ ] **Real payments** — `activate` is a mock, `verify-receipt` a 501 stub. See P3 below.

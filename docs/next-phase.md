@@ -8,19 +8,29 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
-## ▶ START HERE (2026-08-05)
+## ▶ START HERE (2026-08-06)
 
-**Commit first — before any deploy.** A full day of work (2026-08-04) exists only on one
-machine, and the backend running in production was shipped **from the working tree**, not from
-a commit. A routine `git archive HEAD:nowli-backend` deploy would silently overwrite the live
-read-only entitlement gate with older code.
+**Put the APK on a real phone.** `nowlii-prod-v0.1.apk` is built and points at the live HTTPS
+backend; the code is pushed and the backend is deployed. Everything that has stacked up is now
+waiting on one thing, and three parts of the app can only be judged on hardware: the
+microphone, the voice check, and an AI call. The emulator cannot route host audio.
 
-What changed yesterday, in one line: a lapsed plan now half-opens the app instead of closing
-it, and four screens stopped reporting success they had not achieved — including the companion
-picker, which discarded the user's choice at signup for every new account. Detail:
-`daily-reports/2026-08-04.md`; the day's list is `daily-checklist.md`.
+Test the timezone fix there specifically. Yesterday's deploy makes reminders follow the
+**phone's** clock instead of the server's UTC — but only for a phone running the new APK. Set
+a quest for a time and check the card quotes that time, not that time plus your offset.
 
-The payments decision below is unchanged and still gates everything in payments.
+Two decisions are now blocking work rather than merely pending:
+
+- **The trial-ending reminders do not exist.** The "SEVEN DAYS. ON US." screen promises a
+  reminder on day 5 and day 6, in its own timeline. Nothing sends either — no scheduler, no
+  notification, no cron, no email. Local notifications are the recommended path: the mechanism
+  already exists and delivered twice yesterday.
+- **Which markets launch first** — Stripe vs store IAP, unchanged and still gating payments.
+
+What changed yesterday, in one line: every call reminder was firing hours late because the
+server read the user's wall-clock time as UTC, editing a quest never rebuilt its reminder at
+all, and five screens stopped disagreeing with themselves. Detail:
+`daily-reports/2026-08-05.md`; the day's list is `daily-checklist.md`.
 
 ---
 
