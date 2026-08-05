@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
+import 'package:nowlii/screen/home/sparks/out_of_sparks_sheet.dart';
 import 'package:nowlii/services/spark_state.dart';
 
 /// Takes the place of the "Ready to make today count?" card once both of the day's sparks
@@ -13,10 +14,23 @@ import 'package:nowlii/services/spark_state.dart';
 class OutOfSparksCard extends StatelessWidget {
   final SparkState sparks;
 
-  const OutOfSparksCard({super.key, required this.sparks});
+  /// The next step from the user's most recent call, passed through to the sheet.
+  final String? nextStep;
+
+  const OutOfSparksCard({super.key, required this.sparks, this.nextStep});
 
   @override
   Widget build(BuildContext context) {
+    return GestureDetector(
+      // The card states that the day is done; tapping it answers the question that
+      // provokes — why only two. It looked pressable long before it was.
+      onTap: () => OutOfSparksSheet.show(context, nextStep: nextStep),
+      behavior: HitTestBehavior.opaque,
+      child: _card(),
+    );
+  }
+
+  Widget _card() {
     return Container(
       width: double.infinity,
       clipBehavior: Clip.antiAlias,

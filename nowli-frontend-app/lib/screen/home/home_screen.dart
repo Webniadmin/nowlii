@@ -562,7 +562,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return ValueListenableBuilder<SparkState>(
       valueListenable: SparkStateStore.instance.state,
       builder: (context, sparks, _) {
-        if (sparks.isSpent) return OutOfSparksCard(sparks: sparks);
+        if (sparks.isSpent) {
+          return OutOfSparksCard(
+            sparks: sparks,
+            nextStep: _lastSaid?.nextStep,
+          );
+        }
 
         final total = _quests.length;
         final done = _quests.where((q) => q.taskDone).length;
@@ -683,7 +688,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return ValueListenableBuilder<SparkState>(
       valueListenable: SparkStateStore.instance.state,
       builder: (context, sparks, _) {
-        if (sparks.isSpent) return OutOfSparksCard(sparks: sparks);
+        if (sparks.isSpent) {
+          return OutOfSparksCard(
+            sparks: sparks,
+            nextStep: _lastSaid?.nextStep,
+          );
+        }
 
         final said = _lastSaid;
         // Nothing to quote yet — a new account has no calls behind it, and an empty

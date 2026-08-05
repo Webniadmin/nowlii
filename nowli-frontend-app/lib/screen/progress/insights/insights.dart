@@ -523,12 +523,37 @@ class _InsightsScreenState extends State<InsightsScreen> {
                   style: TextStyle(fontSize: 14, color: Color(0xFF1A1A3E)),
                 ),
                 const SizedBox(height: 16),
-                ...monthly.mostCompletedQuests.take(3).map((quest) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _buildQuestItem(quest.task),
-                  );
-                }).toList(),
+                ...() {
+                  // "The quests you tend to finish the most" — so only the ones actually
+                  // finished more than once. A quest done a single time is not a habit, and
+                  // listing it under that sentence makes the card say something untrue.
+                  // The backend already caps its list at three; capped again here so the
+                  // section cannot grow if that ever changes.
+                  final repeated = monthly.mostCompletedQuests
+                      .where((q) => q.completedCount > 1)
+                      .take(3)
+                      .toList();
+
+                  if (repeated.isEmpty) {
+                    return [
+                      Text(
+                        'Nothing yet — finish a quest more than once and it shows up here.',
+                        style: GoogleFonts.workSans(
+                          color: const Color(0xFF4C586E),
+                          fontSize: 14,
+                          height: 1.4,
+                        ),
+                      ),
+                    ];
+                  }
+
+                  return repeated
+                      .map((quest) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildQuestItem(quest.task),
+                          ))
+                      .toList();
+                }(),
               ],
             ),
           ),
@@ -558,9 +583,12 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 const SizedBox(height: 16),
                 Row(
                   children: [
+                    // Both boxes: padding down from 20 to 12, which is what actually buys
+                    // the width. "Wednesday" — the longest weekday — was wrapping onto a
+                    // second line and pushing the two boxes out of step.
                     Expanded(
                       child: Container(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: koro,
                           borderRadius: BorderRadius.circular(16),
@@ -579,16 +607,25 @@ class _InsightsScreenState extends State<InsightsScreen> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              monthly.mostProductiveDay.isNotEmpty
-                                  ? monthly.mostProductiveDay
-                                  : '—',
-                              style: GoogleFonts.workSans(
-                                color: const Color(0xFFFFFDF7),
-                                fontSize: 28,
-                                fontWeight: FontWeight.w800,
-                                height: 1.20,
-                                letterSpacing: -1,
+                            // scaleDown rather than a smaller fixed size: it keeps the
+                            // design's 26px for "Monday" and only shrinks for the long
+                            // ones — and it holds for a translated weekday too.
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                monthly.mostProductiveDay.isNotEmpty
+                                    ? monthly.mostProductiveDay
+                                    : '—',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: GoogleFonts.workSans(
+                                  color: const Color(0xFFFFFDF7),
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.20,
+                                  letterSpacing: -1,
+                                ),
                               ),
                             ),
                           ],
@@ -598,7 +635,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Container(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: const Color(0xFFD4E7FF),
                           borderRadius: BorderRadius.circular(16),
@@ -617,16 +654,22 @@ class _InsightsScreenState extends State<InsightsScreen> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              monthly.mostProductiveHour.isNotEmpty
-                                  ? monthly.mostProductiveHour
-                                  : '—',
-                              style: GoogleFonts.workSans(
-                                color: const Color(0xFF4542EB),
-                                fontSize: 32,
-                                fontWeight: FontWeight.w800,
-                                height: 1.20,
-                                letterSpacing: -1,
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                monthly.mostProductiveHour.isNotEmpty
+                                    ? monthly.mostProductiveHour
+                                    : '—',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: GoogleFonts.workSans(
+                                  color: const Color(0xFF4542EB),
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.20,
+                                  letterSpacing: -1,
+                                ),
                               ),
                             ),
                           ],
@@ -656,31 +699,39 @@ class _InsightsScreenState extends State<InsightsScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.check_circle,
-                color: const Color(0xFF4CAF50),
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                title,
-                style: GoogleFonts.workSans(
-                  color: const Color(0xFF011F54), // Text-text-default
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  height: 1.40,
-                  letterSpacing: -0.90,
+          Expanded(
+            child: Row(
+              children: [
+                Icon(
+                  Icons.check_circle,
+                  color: const Color(0xFF4CAF50),
+                  size: 24,
                 ),
-              ),
-            ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.workSans(
+                      color: const Color(0xFF011F54), // Text-text-default
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      height: 1.40,
+                      letterSpacing: -0.90,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          Image.asset(
-            Assets.svgIcons.buttonCalendarComplate.path,
-            height: 32,
-            width: 32,
-          ),
+          // The repeat badge reads as a button and does nothing. Kept, not deleted, until
+          // it either gets a tap target or a clearer role.
+          // Image.asset(
+          //   Assets.svgIcons.buttonCalendarComplate.path,
+          //   height: 32,
+          //   width: 32,
+          // ),
         ],
       ),
     );
