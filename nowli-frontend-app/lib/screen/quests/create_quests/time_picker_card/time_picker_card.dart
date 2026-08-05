@@ -30,11 +30,15 @@ class _TimePickerCardState extends State<TimePickerCard> {
   void initState() {
     super.initState();
     
-    // Parse initial time if provided (format: "10:00")
+    // Parse initial time if provided.
+    //
+    // The API sends "09:58:00" — a Django TimeField, seconds and all — while this only
+    // accepted "09:58". Three parts failed the length check, so an existing quest's time
+    // was silently replaced by whatever the clock said when the edit screen opened.
     if (widget.initialTime != null) {
       try {
         final parts = widget.initialTime!.split(':');
-        if (parts.length == 2) {
+        if (parts.length >= 2) {
           final hour = int.parse(parts[0]);
           final minute = int.parse(parts[1]);
           _selectedHour = hour;

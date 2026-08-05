@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
+import 'package:nowlii/services/call_reminder_service.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:intl/intl.dart';
 
@@ -187,8 +188,8 @@ class _ScheduledState extends State<Scheduled> {
             ),
             child: ScheduledQuestCard(
               quest: quest,
-              onEdit: () {
-                context.push(
+              onEdit: () async {
+                final changed = await context.push<bool>(
                   AppRoutespath.editQuestPage,
                   extra: {
                     'taskId': quest.id,
@@ -196,6 +197,9 @@ class _ScheduledState extends State<Scheduled> {
                       'title': quest.task,
                       'zone': quest.zone,
                       'selectADate': quest.selectADate,
+                      // Read as 'time' by the edit screen; without it the picker opens on
+                      // the current clock instead of the quest's own time.
+                      'time': quest.selectATime,
                       'enableCall': quest.enableCall,
                       'repeatQuest': quest.repeatQuest,
                       'setAlarm': quest.setAlarm,
@@ -208,6 +212,11 @@ class _ScheduledState extends State<Scheduled> {
                     },
                   },
                 );
+
+                if (changed == true && mounted) {
+                  await CallReminderService.instance.sync();
+                  await _loadScheduledQuests();
+                }
               },
             ),
           );

@@ -253,8 +253,10 @@ class _TodayState extends State<Today> {
               await questService.updateQuestStatus(quest.id, !quest.taskDone);
               _loadTodayQuests();
             },
-            onEdit: () {
-              context.push(
+            onEdit: () async {
+              // Awaited: an edit can move the call, and the reminder for it is local. Not
+              // waiting left the list stale and the reminder pointing at the old time.
+              final changed = await context.push<bool>(
                 AppRoutespath.editQuestPage,
                 extra: {
                   'taskId': quest.id,
@@ -262,6 +264,9 @@ class _TodayState extends State<Today> {
                     'title': quest.task,
                     'zone': quest.zone,
                     'selectADate': quest.selectADate,
+                    // The edit screen reads 'time'; without it the picker opened on the
+                    // current clock and the quest's own time was nowhere on the screen.
+                    'time': quest.selectATime,
                     'enableCall': quest.enableCall,
                     'repeatQuest': quest.repeatQuest,
                     'setAlarm': quest.setAlarm,
@@ -274,6 +279,13 @@ class _TodayState extends State<Today> {
                   },
                 },
               );
+
+              if (changed == true && mounted) {
+                // Rebuild the local reminders before the list: the schedule is what the
+                // user just changed, and it is the half nothing else would catch up on.
+                await CallReminderService.instance.sync();
+                await _loadTodayQuests();
+              }
             },
           ),
         );
