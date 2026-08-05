@@ -176,10 +176,7 @@ class BacklogQuestCard extends StatelessWidget {
 
   Color _getLevelColor(String zone) => zoneColor(zone);
 
-  Color _getTextColor(Color backgroundColor) {
-    final luminance = backgroundColor.computeLuminance();
-    return luminance > 0.5 ? Colors.black : Colors.white;
-  }
+  Color _getTextColor(String zone) => zoneTextColor(zone);
 
   String _getDateLabel() {
     final questDate = DateTime.parse(quest.selectADate);
@@ -261,7 +258,7 @@ class BacklogQuestCard extends StatelessWidget {
                 child: Text(
                   quest.zone,
                   style: GoogleFonts.workSans(
-                    color: _getTextColor(levelColor),
+                    color: _getTextColor(quest.zone),
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     height: 1.40,

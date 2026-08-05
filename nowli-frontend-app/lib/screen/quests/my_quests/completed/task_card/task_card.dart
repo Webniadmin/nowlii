@@ -6,6 +6,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 
 import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/utils/color_palette/color_palette.dart';
+import 'package:nowlii/utils/color_palette/zone_colors.dart';
 
 /////////////////////////////////////////////////////////////////////
 /// QUEST LIST + TASK CARD
@@ -102,10 +103,7 @@ class TaskCard extends StatefulWidget {
 class _TaskCardState extends State<TaskCard> {
   bool isCompleted = true;
 
-  Color _getTextColor(Color backgroundColor) {
-    final luminance = backgroundColor.computeLuminance();
-    return luminance > 0.5 ? Colors.black : Colors.white;
-  }
+  Color _getTextColor(String zone) => zoneTextColor(zone);
 
   void _showPopup(BuildContext context) {
     showGeneralDialog(
@@ -326,7 +324,7 @@ class _TaskCardState extends State<TaskCard> {
                 child: Text(
                   widget.levelText,
                   style: GoogleFonts.workSans(
-                    color: _getTextColor(widget.levelColor),
+                    color: _getTextColor(widget.levelText),
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     height: 1.40,

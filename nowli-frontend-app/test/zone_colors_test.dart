@@ -47,6 +47,37 @@ void main() {
     });
   });
 
+  group('what is written on the badge', () {
+    test('the warm zones carry the dark navy', () {
+      // Two screens derived this from luminance instead, and the arithmetic put white on
+      // the orange — legible, but not the design, and not what the other three screens
+      // were showing for the same badge.
+      expect(zoneTextColor('Soft steps'), const Color(0xFF011F54));
+      expect(zoneTextColor('Elevated'), const Color(0xFF011F54));
+    });
+
+    test('the dark zones carry the light text', () {
+      expect(zoneTextColor('Stretch zone'), const Color(0xFFEEEEEE));
+      expect(zoneTextColor('Power move'), const Color(0xFFFFFDF7));
+    });
+
+    test('is never the same as the badge behind it', () {
+      for (final zone in [
+        'Soft steps',
+        'Elevated',
+        'Stretch zone',
+        'Power move',
+      ]) {
+        expect(zoneTextColor(zone), isNot(zoneColor(zone)), reason: zone);
+      }
+    });
+
+    test('follows the same case-insensitive lookup as the colour', () {
+      expect(zoneTextColor('power move'), zoneTextColor('Power move'));
+      expect(zoneTextColor('Hyperdrive'), zoneTextColor('Soft steps'));
+    });
+  });
+
   group('the hex form agrees with the colour form', () {
     test('for every zone', () {
       for (final zone in [

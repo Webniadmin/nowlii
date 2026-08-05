@@ -48,6 +48,25 @@ Color zoneColor(String zone) {
   }
 }
 
+/// What to write on top of [zoneColor], so a zone badge is always readable.
+///
+/// Chosen per zone rather than derived from luminance. Two screens did derive it, and on
+/// the orange the arithmetic said white — which is legible enough to pass a contrast check
+/// and wrong for the design, where every warm badge carries the dark navy. Deriving it also
+/// meant the same badge could be navy on one screen and white on the next.
+Color zoneTextColor(String zone) {
+  switch (zone.trim().toLowerCase()) {
+    case 'stretch zone':
+      return const Color(0xFFEEEEEE);
+    case 'power move':
+      return const Color(0xFFFFFDF7);
+    // Soft steps and Elevated are light enough to carry the dark text, and so is the
+    // fallback — which is Soft steps.
+    default:
+      return const Color(0xFF011F54);
+  }
+}
+
 /// The same colour as a `#RRGGBB` string, for the few places that pass colours as text.
 String zoneColorHex(String zone) {
   final value = zoneColor(zone).toARGB32() & 0xFFFFFF;

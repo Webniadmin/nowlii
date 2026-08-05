@@ -329,18 +329,7 @@ class QuestCard extends StatelessWidget {
 
   Color _getLevelColor(String zone) => zoneColor(zone);
 
-  Color _getTextColor(Color levelColor) {
-    if (levelColor == const Color(0xFFA0E871)) {
-      return const Color(0xFF011F54);
-    } else if (levelColor == const Color(0xFFFF8F26)) {
-      return const Color(0xFF011F54);
-    } else if (levelColor == const Color(0xFF3D87F5)) {
-      return const Color(0xFFEEEEEE);
-    } else if (levelColor == const Color(0xFFD53D40)) {
-      return const Color(0xFFFFFDF7);
-    }
-    return const Color(0xFF011F54);
-  }
+  Color _getTextColor(String zone) => zoneTextColor(zone);
 
   @override
   Widget build(BuildContext context) {
@@ -440,7 +429,7 @@ class QuestCard extends StatelessWidget {
                 child: Text(
                   quest.zone,
                   style: GoogleFonts.workSans(
-                    color: _getTextColor(levelColor),
+                    color: _getTextColor(quest.zone),
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     height: 1.40,
