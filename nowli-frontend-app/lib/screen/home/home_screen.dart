@@ -19,6 +19,7 @@ import 'package:nowlii/services/profile_service.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:intl/intl.dart';
 import 'package:nowlii/models/call_summary_history.dart';
+import 'package:nowlii/services/completion_banner.dart';
 import 'package:nowlii/services/home_format.dart';
 import 'package:nowlii/services/scheduled_call_state.dart';
 import 'package:nowlii/services/spark_state.dart';
@@ -256,7 +257,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
-  void _showCompletionDialog() {
+  void _showCompletionDialog({required String title, required String badge}) {
     if (!mounted) return;
     final overlay = Overlay.of(context);
     late OverlayEntry overlayEntry;
@@ -277,7 +278,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
               );
             },
-            child: const CompletionDialog(),
+            child: CompletionDialog(title: title, badge: badge),
           ),
         ),
       ),
@@ -1143,8 +1144,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (newStatus && mounted) {
       _confettiController.play();
-      _showCompletionDialog();
-      
+
+      final lifetime = await CompletionCounter.record();
+      if (!mounted) return;
+      final completedToday = _quests.where((q) => q.taskDone).length;
+      _showCompletionDialog(
+        title: completionBannerTitle(
+          lifetimeCompletions: lifetime,
+          completedToday: completedToday,
+        ),
+        badge: completionBannerBadge(
+          completedToday: completedToday,
+          totalToday: _quests.length,
+        ),
+      );
+
+
       // Reload streak after completing a quest
       _loadStreak();
       
@@ -1588,7 +1603,13 @@ class _AnimatedTaskItemState extends State<AnimatedTaskItem>
 // Completion Dialog
 // ============================================
 class CompletionDialog extends StatelessWidget {
-  const CompletionDialog({super.key});
+  /// Both lines are passed in rather than written here: the headline was a claim about
+  /// the user's first completion and the badge a claim about their streak, and the widget
+  /// knows neither. See `services/completion_banner.dart`.
+  const CompletionDialog({super.key, required this.title, required this.badge});
+
+  final String title;
+  final String badge;
 
   @override
   Widget build(BuildContext context) {
@@ -1640,10 +1661,10 @@ class CompletionDialog extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Text(
-                            'Boom, your first task completed!',
-                            style: TextStyle(
+                            title,
+                            style: const TextStyle(
                               color: Color(0xFF011F54),
                               fontSize: 20,
                               fontFamily: 'Work Sans',
@@ -1662,9 +1683,9 @@ class CompletionDialog extends StatelessWidget {
                               borderRadius: BorderRadius.circular(999),
                             ),
                           ),
-                          child: const Text(
-                            '+1 streak',
-                            style: TextStyle(
+                          child: Text(
+                            badge,
+                            style: const TextStyle(
                               color: Color(0xFF011F54),
                               fontSize: 12,
                               fontFamily: 'Work Sans',
