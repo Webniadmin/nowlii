@@ -5,7 +5,7 @@ during the day. At end of day, write a report in `daily-reports/` and reset this
 for tomorrow. Deferred items go to `future-checklist.md`._
 
 **Day:** 2026-08-05
-**Branch:** `feat/design-implementation` — **34 commits ahead of `origin/main`, not pushed**
+**Branch:** `feat/design-implementation` — **pushed to `origin`**; 36 commits ahead of `main`
 **Yesterday:** `daily-reports/2026-08-04.md` — partial lock after a lapse; four screens that
 reported success they had not achieved; home restored to the original design
 
@@ -18,18 +18,19 @@ the running container was verified byte-identical to `HEAD` — so a
 `git archive HEAD:nowli-backend` deploy is now safe and would be a no-op for the entitlement
 gate. That risk is closed.
 
-What is still true: **34 commits exist on this machine and nowhere else.**
-
-- [ ] **`git push -u origin feat/design-implementation`**
+- [x] **`git push -u origin feat/design-implementation`** — done, the branch is no longer
+      one machine's only copy
 - [ ] Merge → `main` once a phone test passes
 
 ---
 
 ## 🔲 Then, in order
 
-- [ ] **The blue hero card has never been seen.** `_buildReadyCard()` only renders while
-      sparks remain, and the test account had none left. Check it, including the
-      "Todays progress" bar against a day with some quests done.
+- [x] **The blue hero card has been seen** — emulator, against production, on a fresh day
+      with sparks left. It renders as designed. The "Todays progress" bar was checked at
+      0 of 0, and at 1 of 2 once quests existed: it now reads exactly half. **A bug came
+      out of it:** the fill's pill floor was applied at zero too, so an empty day drew a
+      pill that claimed progress. Fixed and pinned by six tests (`progressFillWidth`).
 - [ ] **A test for the avatar plumbing.** `CreateProfileRequest.toJson()` must emit
       `predefined_option`; it went missing once and cost every new account its companion.
 - [ ] **Merge `feat/design-implementation` → `main`** once a phone test passes.
