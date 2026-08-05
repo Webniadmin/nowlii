@@ -139,6 +139,35 @@ Note the box `.env` still literally contains `DEBUG=True`, but `docker-compose.p
 (`EMAIL_HOST=smtp.gmail.com`/587/TLS, `DEFAULT_FROM_EMAIL→EMAIL_HOST_USER`) since the box has
 `EMAIL_HOST_USER`+`EMAIL_HOST_PASSWORD`.
 
+## Deploy log — 2026-08-05 (the phone's clock, and the day's Insights/quests work)
+
+Shipped `feat/design-implementation` through `8c0d52e` — eleven commits, all pushed first.
+**Backend only; `nowli-ai` was not touched** because nothing in it changed, and deploying an
+unchanged service is risk without benefit.
+
+- **Migration `users.0019`** (`Profile.timezone`) applied. Prod was on `0018`.
+- The headline change: quests store naive wall-clock times, and the instant was being built
+  in the **server's** zone, which is UTC. A call set for 11:20 in Belgrade was stored as
+  11:20 UTC and reached the phone as 13:20 — every reminder late by the user's whole offset,
+  and the quest card said "Call scheduled for 13:20" under a quest set for 11:20. Both were
+  reproduced on a device before the fix. The phone now reports its IANA zone.
+- `_calls_used_today` also moved off the server's day: a Belgrade user's two sparks were
+  resetting at 02:00 their time.
+- Verified **inside the running container**, not from the deploy log: `showmigrations` shows
+  `[X] 0019`, `Profile._meta.get_field('timezone')` resolves, `resolve_timezone('Europe/Belgrade')`
+  returns the zone and a junk name falls back to UTC.
+- Live afterwards: `https://api.nowlii.com/api/profiles/` → **401** (route alive, auth
+  required), `/api/subscriptions/plan/` → 401, `ai.nowlii.com/health` → `openai:true`,
+  `hume:true`, `auth_required:true`.
+
+Note on the compose service name: it is **`backend`**, not `web`. `docker compose exec web …`
+answers "service is not running" and looks like an outage when it is a typo.
+
+**Existing scheduled calls keep their old (wrong) instants until their quest is next saved
+or their phone reports a zone** — a profile save re-derives every pending call for that user,
+which is why the correction could not be a data migration: at deploy time no profile has a
+zone to recompute from.
+
 ## Deploy log — 2026-08-03 (onboarding redesign + home/receipts/paywall)
 
 Shipped `feat/design-implementation` through `6feb88a` — everything from the 2026-07-31
