@@ -239,6 +239,37 @@ void main() {
     });
   });
 
+  group('the same time tomorrow', () {
+    test('keeps the hour the user picked', () {
+      expect(
+        sameTimeNextDay(DateTime(2026, 8, 5, 17, 30)),
+        DateTime(2026, 8, 6, 17, 30),
+      );
+    });
+
+    test('rolls over the end of a month', () {
+      expect(
+        sameTimeNextDay(DateTime(2026, 8, 31, 9, 0)),
+        DateTime(2026, 9, 1, 9, 0),
+      );
+    });
+
+    test('rolls over the end of a year', () {
+      expect(
+        sameTimeNextDay(DateTime(2026, 12, 31, 23, 45)),
+        DateTime(2027, 1, 1, 23, 45),
+      );
+    });
+
+    test('is a wall-clock move, not 24 hours', () {
+      // add(Duration(days: 1)) lands an hour out either side of a DST change; a 17:00 call
+      // has to stay a 17:00 call.
+      final moved = sameTimeNextDay(DateTime(2026, 3, 28, 17, 0));
+      expect(moved.hour, 17);
+      expect(moved.minute, 0);
+    });
+  });
+
   test("the client's scenario: one call used, one planned, then a swipe", () {
     final planned = now.add(const Duration(hours: 5)); // 17:00
 
@@ -253,5 +284,10 @@ void main() {
     // They swipe anyway — the 17:00 call is now unreachable and must say so.
     expect(resolve(at: planned, remaining: 0), ScheduledCallState.locked);
     expect(canReschedule(resolve(at: planned, remaining: 0)), isTrue);
+
+    // ...and the home screen offers it the same hour tomorrow, which is a day the user
+    // has calls on again.
+    expect(sameTimeNextDay(planned).hour, planned.hour);
+    expect(sameTimeNextDay(planned).day, planned.add(const Duration(days: 1)).day);
   });
 }

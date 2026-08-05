@@ -19,6 +19,8 @@ import 'package:nowlii/services/profile_service.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:intl/intl.dart';
 import 'package:nowlii/models/call_summary_history.dart';
+import 'package:nowlii/models/scheduled_call.dart';
+import 'package:nowlii/services/call_reminder_service.dart';
 import 'package:nowlii/services/completion_banner.dart';
 import 'package:nowlii/services/home_format.dart';
 import 'package:nowlii/services/scheduled_call_state.dart';
@@ -27,6 +29,7 @@ import 'package:nowlii/services/spark_state_store.dart';
 import 'package:nowlii/services/voice_call_service.dart';
 import 'package:nowlii/screen/home/sparks/out_of_sparks_card.dart';
 import 'package:nowlii/widget/lapsed_reminder.dart';
+import 'dart:async';
 import 'dart:math';
 
 class HomeScreen extends StatefulWidget {
@@ -1063,23 +1066,93 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final today = DateTime(now.year, now.month, now.day);
       final laterToday = scheduled
           .where((c) => c.isPending && c.isOn(today))
-          .map((c) => c.scheduledFor)
-          .toList();
+          .toList()
+        ..sort((a, b) => a.scheduledFor.compareTo(b.scheduledFor));
 
       if (wouldStrandAScheduledCall(
         remainingCalls: quota.remaining,
-        scheduledLaterToday: laterToday,
+        scheduledLaterToday: [for (final c in laterToday) c.scheduledFor],
         now: now,
       )) {
-        laterToday.sort();
-        final next = DateFormat('HH:mm').format(laterToday.first);
-        final callNow = await _confirmSpendingLastCall(next);
+        final next = laterToday.firstWhere((c) => c.scheduledFor.isAfter(now));
+        final callNow = await _confirmSpendingLastCall(
+          DateFormat('HH:mm').format(next.scheduledFor),
+        );
         if (!mounted || !callNow) return;
+
+        // Talking now spends the call that one was counting on. Rather than leave it to
+        // fail at its own hour, offer it the same time tomorrow — rescheduleCall moves the
+        // quest with it, so the plan and the quest never disagree.
+        await _offerToMoveStrandedCall(next);
+        if (!mounted) return;
       }
     }
 
     if (!mounted) return;
     context.push(AppRoutespath.aiVoice);
+  }
+
+  /// Ask whether the call this swipe just stranded should move to tomorrow.
+  ///
+  /// Declining is a real answer, not a postponement: the call stays where it is and shows
+  /// as missed. Nothing here blocks the call the user asked for — a failed move is
+  /// reported and the call goes ahead.
+  Future<void> _offerToMoveStrandedCall(ScheduledCall call) async {
+    final at = DateFormat('HH:mm').format(call.scheduledFor);
+    final quest = call.questTitle.trim();
+    final named = quest.isEmpty ? 'your $at call' : '"$quest"';
+
+    final move = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Move $named to tomorrow?',
+          style: GoogleFonts.workSans(fontWeight: FontWeight.w900),
+        ),
+        content: Text(
+          "Your $at call can't run today now. Nowlii can move it — and the quest "
+          'with it — to $at tomorrow.',
+          style: GoogleFonts.workSans(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Leave it', style: GoogleFonts.workSans()),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              'Move to tomorrow',
+              style: GoogleFonts.workSans(
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF4542EB),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (move != true || !mounted) return;
+
+    final moved = await VoiceCallService()
+        .rescheduleCall(call.id, sameTimeNextDay(call.scheduledFor));
+    if (!mounted) return;
+
+    if (moved) {
+      unawaited(CallReminderService.instance.sync());
+      _loadQuests();
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          moved
+              ? 'Moved to $at tomorrow.'
+              : "Couldn't move it — it stays at $at today.",
+        ),
+      ),
+    );
   }
 
   /// Returns true if the user wants to talk now anyway.
