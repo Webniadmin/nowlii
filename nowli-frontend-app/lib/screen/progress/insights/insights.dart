@@ -7,6 +7,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/themes/text_styles.dart' show AppsTextStyles;
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 import 'package:nowlii/services/insights_service.dart';
+import 'package:nowlii/services/month_grid.dart';
 import 'package:nowlii/services/personal_notes_service.dart';
 import 'package:nowlii/models/insights_models.dart';
 
@@ -1536,7 +1537,11 @@ class _InsightsScreenState extends State<InsightsScreen> {
   Widget _buildCalendarGrid() {
     final calendarStatuses = _getCalendarStatuses();
     final calendarDays = _insightsData?.monthly.calendar ?? [];
-    
+
+    // The 1st of the month has to start in its own weekday's column, or every mark in the
+    // grid sits under the wrong day name.
+    final cells = monthGridCells([for (final d in calendarDays) d.date]);
+
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -1545,20 +1550,21 @@ class _InsightsScreenState extends State<InsightsScreen> {
         mainAxisSpacing: 8,
         crossAxisSpacing: 8,
       ),
-      itemCount: calendarDays.length,
+      itemCount: cells.length,
       itemBuilder: (context, index) {
-        if (index >= calendarStatuses.length) {
-          return _buildDayCircle(
-            DayStatus.empty,
-            index + 1,
-          );
-        }
-        
-        // Extract day number from date (e.g., "2026-04-16" -> 16)
-        final dayNumber = int.tryParse(calendarDays[index].date.split('-').last) ?? (index + 1);
-        
+        final dayIndex = cells[index];
+        // A blank before the 1st: not a day with nothing on it, so it gets no circle.
+        if (dayIndex == null) return const SizedBox.shrink();
+
+        final dayNumber = dayOfMonth(
+          calendarDays[dayIndex].date,
+          fallbackIndex: dayIndex,
+        );
+
         return _buildDayCircle(
-          calendarStatuses[index],
+          dayIndex < calendarStatuses.length
+              ? calendarStatuses[dayIndex]
+              : DayStatus.empty,
           dayNumber,
         );
       },
@@ -1607,9 +1613,19 @@ class _InsightsScreenState extends State<InsightsScreen> {
               : null,
         ),
         child: Center(
+          // A day that carries no mark prints its date instead. Without a number
+          // somewhere in the grid there is nothing to read a ✓ against.
           child: imagePath != null
               ? Image.asset(imagePath, width: 20, height: 20)
-              : null,
+              : Text(
+                  '$day',
+                  style: GoogleFonts.workSans(
+                    color: const Color(0xFFADB2BC),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    height: 1.0,
+                  ),
+                ),
         ),
       ),
     );
