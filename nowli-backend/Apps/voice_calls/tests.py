@@ -205,6 +205,66 @@ class ScheduledCallSignalTests(TestCase):
             timezone.localtime(scheduled.scheduled_for).date(), scheduled.local_date
         )
 
+    def test_a_call_planned_before_the_zone_was_known_is_corrected(self):
+        """Nothing is lost by having scheduled a call on the wrong clock.
+
+        The quest still holds the wall-clock time the user picked, so the instant can be
+        computed again the moment the phone reports its zone. This is why the fix is a
+        profile save and not a data migration: at deploy time no profile has a zone yet.
+        """
+        quest = _quest(self.user, days_ahead=1, at=time(11, 20))
+        before = ScheduledCall.objects.get(quest=quest).scheduled_for
+        # Planned on the server's clock, because that is all there was.
+        self.assertEqual(timezone.localtime(before).hour, 11)
+
+        _in_timezone(self.user, 'Europe/Belgrade')
+
+        after = ScheduledCall.objects.get(quest=quest).scheduled_for
+        self.assertNotEqual(after, before)
+        self.assertEqual(
+            after.astimezone(ZoneInfo('Europe/Belgrade')).hour, 11,
+            msg='the call should now be 11:20 on the user\'s clock',
+        )
+
+    def test_the_correction_reaches_every_pending_call(self):
+        """Not just the most recent one."""
+        quests = [
+            _quest(self.user, days_ahead=d, at=time(h, 0), task=f'q{d}')
+            for d, h in [(1, 9), (2, 14), (3, 20)]
+        ]
+
+        _in_timezone(self.user, 'Europe/Belgrade')
+
+        for quest, hour in zip(quests, [9, 14, 20]):
+            local = ScheduledCall.objects.get(quest=quest).scheduled_for.astimezone(
+                ZoneInfo('Europe/Belgrade')
+            )
+            self.assertEqual(local.hour, hour, msg=f'{quest.task} moved to {local.hour}')
+
+    def test_the_correction_leaves_history_alone(self):
+        """A call that already happened is a record, not a plan."""
+        quest = _quest(self.user, days_ahead=1, at=time(11, 20))
+        scheduled = ScheduledCall.objects.get(quest=quest)
+        scheduled.status = ScheduledCall.Status.COMPLETED
+        scheduled.save(update_fields=['status'])
+        before = scheduled.scheduled_for
+
+        _in_timezone(self.user, 'Europe/Belgrade')
+
+        scheduled.refresh_from_db()
+        self.assertEqual(scheduled.scheduled_for, before)
+
+    def test_one_users_zone_does_not_move_another_users_calls(self):
+        other = _make_user('bystander')
+        other_quest = _quest(other, days_ahead=1, at=time(11, 20))
+        untouched = ScheduledCall.objects.get(quest=other_quest).scheduled_for
+
+        _in_timezone(self.user, 'Asia/Tokyo')
+
+        self.assertEqual(
+            ScheduledCall.objects.get(quest=other_quest).scheduled_for, untouched
+        )
+
     def test_a_profile_with_no_zone_behaves_exactly_as_before(self):
         """Every row that existed before this field did relies on the old reading."""
         self.assertFalse(Profile.objects.filter(user=self.user).exists())

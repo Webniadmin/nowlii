@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_time
 
 from Apps.quests.models import Quests
+from Apps.users.models import Profile
 from Apps.users.timezones import user_timezone
 
 from .models import ScheduledCall
@@ -95,6 +96,40 @@ def sync_scheduled_call(sender, instance, **kwargs):
         logger.exception(
             'Could not sync the scheduled call for quest %s; the quest itself is unaffected.',
             instance.pk,
+        )
+
+
+@receiver(post_save, sender=Profile, dispatch_uid='voice_calls.resync_on_timezone')
+def resync_calls_for_profile(sender, instance, **kwargs):
+    """Re-derive this user's pending calls whenever their profile is saved.
+
+    Every call planned before the phone reported its timezone was built on the server's
+    clock — UTC — and is out by the user's whole offset. Nothing about it is lost, though:
+    the quest still holds the wall-clock time the user picked, so once the zone is known the
+    instant can simply be computed again.
+
+    This cannot be a data migration. At deploy time no profile has a zone yet, so there is
+    nothing to recompute *from*; the answer only arrives when each phone first reports in,
+    which is a profile save. Hence here.
+
+    Recomputing unconditionally rather than watching for a change: it is idempotent,
+    ``_sync_scheduled_call`` writes only when the value actually differs, and profile saves
+    are rare. Cheaper than being clever and getting the change detection wrong.
+    """
+    if instance.user_id is None:
+        return
+    try:
+        pending = ScheduledCall.objects.filter(
+            user_id=instance.user_id,
+            status=ScheduledCall.Status.PENDING,
+        ).select_related('quest')
+        for call in pending:
+            if call.quest_id:
+                _sync_scheduled_call(call.quest)
+    except Exception:
+        logger.exception(
+            'Could not re-derive scheduled calls for user %s after a profile save.',
+            instance.user_id,
         )
 
 
