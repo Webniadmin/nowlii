@@ -126,6 +126,13 @@ class CreateProfileRequest {
   /// defaults to, no matter which character the user picked during onboarding.
   final int? predefinedOption;
 
+  /// The phone's IANA zone (e.g. "Europe/Belgrade").
+  ///
+  /// Sent at signup so the very first quest a new account creates is scheduled on the
+  /// user's clock. Without it the backend reads their wall-clock times in the server's
+  /// zone, which is UTC. See `services/device_timezone.dart`.
+  final String? timezone;
+
   CreateProfileRequest({
     required this.name,
     required this.gender,
@@ -136,6 +143,7 @@ class CreateProfileRequest {
     required this.language,
     required this.voice,
     this.predefinedOption,
+    this.timezone,
   });
 
   Map<String, dynamic> toJson() {
@@ -177,6 +185,7 @@ class CreateProfileRequest {
       'language': language,
       'voice': voice,
       if (predefinedOption != null) 'predefined_option': predefinedOption,
+      if (timezone != null && timezone!.isNotEmpty) 'timezone': timezone,
     };
   }
 }
@@ -200,6 +209,10 @@ class UpdateProfileRequest {
   final List<String>? restrictedTopics;
   final bool? useDataToImprove;
 
+  /// The phone's IANA zone. Reported whenever it changes, so reminders follow a user who
+  /// travels. See `services/device_timezone.dart`.
+  final String? timezone;
+
   UpdateProfileRequest({
     this.name,
     this.gender,
@@ -212,6 +225,7 @@ class UpdateProfileRequest {
     this.predefinedOption,
     this.restrictedTopics,
     this.useDataToImprove,
+    this.timezone,
   });
 
   Map<String, dynamic> toJson() {
@@ -260,6 +274,7 @@ class UpdateProfileRequest {
     if (language != null) data['language'] = language;
     if (voice != null) data['voice'] = voice;
     if (predefinedOption != null) data['predefined_option'] = predefinedOption;
+    if (timezone != null && timezone!.isNotEmpty) data['timezone'] = timezone;
     return data;
   }
 }

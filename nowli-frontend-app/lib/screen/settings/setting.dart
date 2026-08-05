@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/api/auth_controller.dart';
+import 'package:nowlii/services/device_timezone.dart';
 import 'package:nowlii/screen/settings/api_personalization_screen/ai_personalization_screen.dart';
 import 'package:nowlii/screen/settings/language/languegs_selector_screen.dart';
 import 'package:nowlii/screen/settings/notification_screen/notification_screen.dart';
@@ -406,6 +407,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           // Perform logout
                           final authController = AuthController();
                           await authController.logout();
+                          // The reported-timezone cache belongs to the account that just
+                          // left, not to the phone. Without this the next user's profile
+                          // would never be told which clock they are on.
+                          await DeviceTimezone.forget();
                           
                           // Navigate to sign in screen
                           if (context.mounted) {

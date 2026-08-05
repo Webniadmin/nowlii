@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/core/app_routes/app_pages.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/services/call_reminder_service.dart';
+import 'package:nowlii/services/device_timezone.dart';
 import 'package:nowlii/services/subscription_service.dart';
 import 'package:nowlii/services/trial_intro_gate.dart';
 
@@ -88,10 +89,17 @@ class _SplashState extends State<Splash> with SingleTickerProviderStateMixin {
       if (!mounted) return;
       context.go('/homeScreen');
 
-      // Lay down this week's call reminders now that we know who is logged in. Also
-      // re-checks the quota, so a reminder for a call the user can no longer make says so
-      // rather than inviting them into a refusal. Fire-and-forget: never block the launch.
-      unawaited(CallReminderService.instance.sync());
+      // Report the phone's timezone, then lay down this week's call reminders. In that
+      // order: the backend reads a quest's wall-clock time in the zone the profile carries,
+      // so a user who has flown needs the new zone on record before anything is scheduled
+      // against it. sync() also re-checks the quota, so a reminder for a call the user can
+      // no longer make says so rather than inviting them into a refusal.
+      //
+      // Fire-and-forget as one chain: never block the launch.
+      unawaited(
+        DeviceTimezone.report()
+            .then((_) => CallReminderService.instance.sync()),
+      );
 
       // A reminder that started the app from cold never reaches the tap handler — the app
       // was not running to receive it. Pick it up here instead.

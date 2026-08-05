@@ -230,6 +230,14 @@ class Profile(models.Model):
     # because a privacy choice that lives only on the device is not a choice about anything
     # the server does.
     use_data_to_improve = models.BooleanField(default=True)
+    # The IANA zone the user's phone reports (e.g. "Europe/Belgrade"), sent on every profile
+    # load so it follows them when they travel.
+    #
+    # Quests store naive wall-clock times, so something has to say which clock they are on.
+    # It used to be the server's, which is UTC — a call set for 11:20 in Belgrade became
+    # 11:20 UTC and reached the phone as 13:20. Blank means "never reported", and falls back
+    # to the server zone exactly as before. See Apps/users/timezones.py.
+    timezone = models.CharField(max_length=64, blank=True, default='')
 
     def save(self, *args, **kwargs):
         # Handle nowlii name and logo logic

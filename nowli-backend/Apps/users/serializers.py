@@ -1,4 +1,5 @@
 from .models import CustomUserModel, Profile, NowliiPredefinedOption
+from .timezones import is_valid_timezone
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -104,6 +105,22 @@ class ProfileSerializer(serializers.ModelSerializer):
         model = Profile
         fields = '__all__'
         read_only_fields = ['user', 'avatar_logo', 'nowlii_name']
+
+    def validate_timezone(self, value):
+        """Only IANA zone names this machine knows.
+
+        The value decides when every one of the user's call reminders fires, so a typo has
+        to fail loudly here rather than silently resolve to the server's clock later.
+        Blank is allowed and means "not reported".
+        """
+        name = str(value or '').strip()
+        if not name:
+            return ''
+        if not is_valid_timezone(name):
+            raise serializers.ValidationError(
+                f"'{name}' is not a known IANA timezone (expected e.g. 'Europe/Belgrade')."
+            )
+        return name
 
     def validate_restricted_topics(self, value):
         """Only topics the AI has been told how to handle.

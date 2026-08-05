@@ -82,6 +82,61 @@ void main() {
     });
   });
 
+  group('the phone tells the backend which clock it is on', () {
+    // The backend reads a quest's naive "11:20" in whatever zone the profile carries. It
+    // used to carry nothing, so the server used its own — UTC — and every call reminder
+    // fired late by the device's whole offset.
+    test('signup carries the zone', () {
+      final json = CreateProfileRequest(
+        name: 'Miki',
+        gender: "I'm a man",
+        language: 'English',
+        voice: 'Female',
+        timezone: 'Europe/Belgrade',
+      ).toJson();
+
+      expect(json['timezone'], 'Europe/Belgrade');
+    });
+
+    test('an update can report a new one, for a user who travelled', () {
+      expect(
+        UpdateProfileRequest(timezone: 'Asia/Tokyo').toJson()['timezone'],
+        'Asia/Tokyo',
+      );
+    });
+
+    test('a zone that could not be read is omitted, not sent empty', () {
+      // Blank would be a value the server has to interpret; absent leaves the last known
+      // zone in place, which is a better guess than none.
+      expect(
+        CreateProfileRequest(
+          name: 'Miki',
+          gender: "I'm a man",
+          language: 'English',
+          voice: 'Female',
+          timezone: '',
+        ).toJson().containsKey('timezone'),
+        isFalse,
+      );
+      expect(
+        UpdateProfileRequest(timezone: null).toJson().containsKey('timezone'),
+        isFalse,
+      );
+    });
+
+    test('reporting a zone does not disturb the companion', () {
+      // Both ride the same request; the one that went missing before must not go missing
+      // again because a neighbour was added.
+      final json = UpdateProfileRequest(
+        predefinedOption: 3,
+        timezone: 'Europe/Belgrade',
+      ).toJson();
+
+      expect(json['predefined_option'], 3);
+      expect(json['timezone'], 'Europe/Belgrade');
+    });
+  });
+
   group('the id survives onboarding', () {
     test('the store keeps it, not just the picture', () async {
       final data = OnboardingData();

@@ -6,6 +6,7 @@ left than they have planned.
 """
 from datetime import time, timedelta
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -14,6 +15,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from Apps.quests.models import Quests
+from Apps.users.models import Profile
 
 from .models import CallSummary, ScheduledCall, VoiceCall
 from .views import VoiceCallSummaryNoteView, _clean_tiny_question, _clean_words_circled
@@ -26,6 +28,14 @@ def _make_user(username, **extra):
         username=username, email=f'{username}@example.com',
         password='pw-for-tests-123', **extra,
     )
+
+
+def _in_timezone(user, zone):
+    """Give [user] a profile reporting [zone], the way the app does on every load."""
+    profile, _ = Profile.objects.get_or_create(user=user)
+    profile.timezone = zone
+    profile.save()
+    return user
 
 
 def _quest(user, *, enable_call=True, days_ahead=0, at=time(16, 0), task='Go for a walk'):
@@ -122,6 +132,96 @@ class ScheduledCallSignalTests(TestCase):
         scheduled = ScheduledCall.objects.get(quest=quest)
         self.assertNotEqual(scheduled.scheduled_for, original)
         self.assertEqual(timezone.localtime(scheduled.scheduled_for).hour, 18)
+
+    def test_the_time_is_read_on_the_users_clock_not_the_servers(self):
+        """The bug this suite exists to keep out.
+
+        The server runs on UTC. A call set for 11:20 by a phone in Belgrade used to be
+        stored as 11:20 UTC and came back to that phone as 13:20 — every reminder late by
+        the user's whole offset. The wall-clock time the user picked has to survive the
+        round trip *in their zone*.
+        """
+        _in_timezone(self.user, 'Europe/Belgrade')
+
+        quest = _quest(self.user, days_ahead=1, at=time(11, 20))
+        scheduled = ScheduledCall.objects.get(quest=quest)
+
+        local = scheduled.scheduled_for.astimezone(ZoneInfo('Europe/Belgrade'))
+        self.assertEqual((local.hour, local.minute), (11, 20))
+        # And on the server's own clock it is *not* 11:20 — which is the whole point.
+        self.assertEqual(timezone.localtime(scheduled.scheduled_for).hour, 9)
+
+    def test_every_zone_gets_the_time_its_user_picked(self):
+        """Not just the one we happened to test in."""
+        for zone, utc_hour in [
+            ('Europe/Belgrade', 9),      # +02:00 in August
+            ('America/New_York', 15),    # -04:00
+            ('Asia/Tokyo', 2),           # +09:00
+            ('UTC', 11),
+        ]:
+            with self.subTest(zone=zone):
+                user = _in_timezone(
+                    _make_user(f'traveller-{zone.replace("/", "-")}'), zone
+                )
+
+                quest = _quest(user, days_ahead=1, at=time(11, 20))
+                scheduled = ScheduledCall.objects.get(quest=quest)
+
+                local = scheduled.scheduled_for.astimezone(ZoneInfo(zone))
+                self.assertEqual((local.hour, local.minute), (11, 20))
+                self.assertEqual(
+                    timezone.localtime(scheduled.scheduled_for).hour, utc_hour
+                )
+
+    def test_a_winter_quest_uses_winter_time(self):
+        """Why the zone is stored by name and not as an offset.
+
+        Belgrade is +02:00 in August and +01:00 in December. An offset captured today would
+        put a December call an hour out; a zone name resolves per date.
+        """
+        _in_timezone(self.user, 'Europe/Belgrade')
+
+        quest = Quests.objects.create(
+            user=self.user, task='Winter walk', zone='Soft steps',
+            select_a_date='2026-12-15', select_a_time=time(11, 20), enable_call=True,
+        )
+        scheduled = ScheduledCall.objects.get(quest=quest)
+
+        local = scheduled.scheduled_for.astimezone(ZoneInfo('Europe/Belgrade'))
+        self.assertEqual((local.hour, local.minute), (11, 20))
+        self.assertEqual(scheduled.scheduled_for.astimezone(ZoneInfo('UTC')).hour, 10)
+
+    def test_the_local_date_is_the_users_day(self):
+        """A late call in a zone ahead of UTC still belongs to the day the user is in."""
+        _in_timezone(self.user, 'Asia/Tokyo')  # +09:00
+
+        quest = _quest(self.user, days_ahead=1, at=time(1, 0))
+        scheduled = ScheduledCall.objects.get(quest=quest)
+
+        # 01:00 in Tokyo is 16:00 the previous day in UTC. The server's date would say
+        # yesterday; the user's says today, and the daily limit follows the user.
+        self.assertEqual(scheduled.local_date, quest.select_a_date)
+        self.assertNotEqual(
+            timezone.localtime(scheduled.scheduled_for).date(), scheduled.local_date
+        )
+
+    def test_a_profile_with_no_zone_behaves_exactly_as_before(self):
+        """Every row that existed before this field did relies on the old reading."""
+        self.assertFalse(Profile.objects.filter(user=self.user).exists())
+
+        quest = _quest(self.user, days_ahead=1, at=time(16, 0))
+        scheduled = ScheduledCall.objects.get(quest=quest)
+
+        self.assertEqual(timezone.localtime(scheduled.scheduled_for).hour, 16)
+
+    def test_an_unknown_zone_falls_back_rather_than_losing_the_quest(self):
+        """A bad zone should cost a correct reminder time, never the ability to save."""
+        _in_timezone(self.user, 'Mars/Olympus_Mons')
+
+        quest = _quest(self.user, days_ahead=1, at=time(16, 0))
+        scheduled = ScheduledCall.objects.get(quest=quest)
+
+        self.assertEqual(timezone.localtime(scheduled.scheduled_for).hour, 16)
 
     def test_turning_the_toggle_off_cancels_the_call(self):
         quest = _quest(self.user, days_ahead=1)

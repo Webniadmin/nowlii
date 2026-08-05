@@ -1,3 +1,5 @@
+from datetime import datetime, time, timedelta
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -9,6 +11,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
 from Apps.subscriptions.permissions import HasProAccess, HasProAccessOrReadOnly
+from Apps.users.timezones import user_timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -200,14 +203,24 @@ def _persist_call_summary(call, data):
 
 
 def _calls_used_today(user):
-    """Number of voice calls the user has *started* today (server timezone).
+    """Number of voice calls the user has *started* today, on **their** calendar.
 
     The daily limit is derived from this count, so it resets naturally at 00:00 with no
     counter and no scheduled job. Counting by ``started_at`` (creation) rather than by
     completion means a force-quit mid-call still consumes one of the daily calls.
+
+    The day is the user's, not the server's. The server runs on UTC, so ``started_at__date``
+    reset a Belgrade user's sparks at 02:00 their time and handed them back two hours of the
+    previous evening. The window is built from the user's midnight and compared as instants,
+    which is also the only form the database can use an index for.
     """
-    today = timezone.localdate()
-    return VoiceCall.objects.filter(user=user, started_at__date=today).count()
+    tz = user_timezone(user)
+    today = timezone.now().astimezone(tz).date()
+    start = datetime.combine(today, time.min, tzinfo=tz)
+    end = start + timedelta(days=1)
+    return VoiceCall.objects.filter(
+        user=user, started_at__gte=start, started_at__lt=end
+    ).count()
 
 
 def _is_unlimited_user(user):
