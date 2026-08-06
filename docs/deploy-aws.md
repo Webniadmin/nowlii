@@ -177,6 +177,13 @@ worked**; it took the empty username and every later new account collided with i
 derived a unique username and says so in a comment; Google now does the same. Six
 regression tests added (47 pass). No migration. Verified after: junk token → 401.
 
+**Verified on a real phone the same evening.** The QA account was deleted from prod (97 rows
+cascaded) so the sign-in would take the *create* path, and it did: two 200s at 19:13:52 — the
+first created the account, the second found it (`is_new_user` true then false, a one-byte
+difference in the response) — leaving one row, `p.pavle16`, user id 51, with no error in the
+log. The running container's `views.py` and `settings.py` are byte-identical to the committed
+source, line endings aside.
+
 ⚠️ **Worth knowing: `AUTH_USER_MODEL` is never set anywhere.** The table in that error is
 `auth_user`, i.e. Django's stock user — so `Apps/users/models.py::CustomUserModel` (email
 as `USERNAME_FIELD`, `paid_user`, `current_plan`, …) is **not the model in use**, despite

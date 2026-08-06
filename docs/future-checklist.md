@@ -143,8 +143,14 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
 - [ ] **Seed companions as a management command.** The 6 `NowliiPredefinedOption` rows are
       seeded manually; if the SQLite DB resets, avatars break. Make a repeatable
       `manage.py` command. See `running-on-android.md`.
-- [ ] **Reconcile unused `CustomUserModel`.** The app runs on the default `auth.User`; the
-      custom `users.CustomUserModel` is defined but unused — reconcile or remove.
+- [ ] **Reconcile unused `CustomUserModel`.** `AUTH_USER_MODEL` is never set, so the app runs
+      on the default `auth.User`; `users.CustomUserModel` is migrated and referenced but unused
+      — reconcile or remove. **This cost a production outage on 2026-08-06:** code written as
+      if accounts were email-only created Google users with an empty `username`, which
+      `auth_user` requires to be unique, so every new Google signup after the first 500ed.
+      Anything reading `paid_user` / `current_plan` / `current_period_end` off the user is
+      reading a table nobody writes. One row with `username=''` survives in prod from before
+      the fix — harmless (lookups go by email), but it is why the collisions started.
 - [ ] **`editFrom` avatar screen** should send `predefined_option` on update (like the main
       avatar picker) so the selection persists.
 - [ ] **`nowli-ai` structure.** Sessions are in-memory only (lost on restart) → add

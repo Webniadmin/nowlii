@@ -24,9 +24,14 @@ route host audio.
       check the card says that time, not that time plus your UTC offset. This is the whole
       point of yesterday's deploy and it only takes effect for a phone running the new APK.
 - [ ] Microphone, voice check, one AI call (~$0.25 — the QA allowlists are empty)
-- [ ] Google login — the APK is **debug-signed** (SHA-1 `d9edaa51eef3e0c57d6e9232c61f255109e2cafe`).
-      If it fails with `DEVELOPER_ERROR`, that SHA-1 needs registering in Google Cloud
-      project `274971792537`.
+- [x] **Google login — works on the device, and a real bug came out of it.** Only the *first*
+      Google signup ever could succeed: the account was built from the email alone, leaving
+      `username` empty, and the model requires a unique one — so that first row took the empty
+      username and every later new account 500ed forever, while anyone already registered
+      signed in fine. Fixed, deployed and verified on a phone (`794d7ca`); a fresh account was
+      created live at 19:13 (`p.pavle16`, id 51). The SHA-1 above never became a problem.
+- [ ] **Second phone still to retry** — `kekile49@gmail.com` was the account that failed all
+      afternoon and has not tried since the fix went out at ~18:26.
 - [ ] Merge → `main` once it passes
 
 ---
@@ -65,7 +70,8 @@ route host audio.
       exercised on 2026-08-04, but the QA account is now a paying subscriber, so repeating it
       means editing prod subscription data.
 - [ ] **The stranded-call prompt has never been seen** — reaching it costs a real call.
-- [ ] Clean up the two test quests left on the prod account (`Test poziv A`).
+- [x] ~~Clean up the two test quests left on the prod account (`Test poziv A`)~~ — moot, the
+      account was deleted.
 
 ---
 
@@ -82,7 +88,18 @@ route host audio.
   `VOICE_CALL_UNLIMITED_USERS`), at the user's request. **Real calls cost real money**
   (~$0.25 each). Restoring = delete those two lines and `up -d`. Backup:
   `.env.bak-20260804-before-allowlist-removal`.
-- `pavle` is prod user **id 7**, profile name "miki", currently **Spark plan, month 1**.
+- **The QA account was deleted and recreated on 2026-08-06** to test a first-time Google
+  signup. It is now `p.pavle16@gmail.com` = prod user **id 51**, username `p.pavle16`, on a
+  **fresh 7-day trial from today**. The old id 7 / username `pavle` are dead references —
+  including in the two allowlists above, which match on username. 97 rows went with it
+  (15 quests, 45 calls, 5 summaries, the subscription row), so any earlier finding that
+  rested on that history is gone.
+- **Production logs 500s now.** `LOGGING` sends `django.request` + `Apps.*` to stdout, so
+  `docker logs nowlii-backend` holds tracebacks. Before today, `DEBUG=False` with no `ADMINS`
+  mailed every traceback to nobody and nginx status codes were the only evidence.
+- **`AUTH_USER_MODEL` is never set** — production runs Django's stock `auth.User`, so
+  `Apps/users/models.py::CustomUserModel` is not the model in use despite being migrated and
+  referenced everywhere. See `future-checklist.md`.
 - **HTTPS is live**: `https://api.nowlii.com`, `https://ai.nowlii.com`. Cert to 2026-10-29.
 - `flutter` is not on PATH in tool shells — use `C:\src\flutter\bin\flutter.bat`.
 - Backend tests: use module labels (`Apps.users.tests`). A bare `manage.py test` **errors**
