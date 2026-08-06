@@ -67,6 +67,16 @@ class AuthService {
   Future<Map<String, dynamic>> signInWithGoogle() async {
     GoogleSignInAccount? account;
     try {
+      // The plugin keeps its own session on the device: once an account has been picked,
+      // signIn() returns it silently and the chooser never appears again — so a second
+      // person on the same phone, or the same person with a second account, is signed
+      // straight back into the first one. Dropping that session first makes every tap on
+      // "Continue with Google" ask which account to use.
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {
+        // Nothing to sign out of, or the plugin is unhappy — the chooser still opens.
+      }
       account = await _googleSignIn.signIn();
     } catch (e) {
       return {'success': false, 'message': 'Google sign-in failed. Please try again.'};
@@ -175,6 +185,13 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    // Leaving the Google session behind means the next "Continue with Google" silently
+    // signs the same account back in — logging out has to log out of Google too.
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {
+      // Never block a logout on Google.
+    }
     await _storage.clearAll();
   }
 
