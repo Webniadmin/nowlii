@@ -611,14 +611,25 @@ class GoogleLoginAPI(APIView):
 
         User = get_user_model()
         try:
-            user, created = User.objects.get_or_create(
-                email=User.objects.normalize_email(email),
-                defaults={'is_active': True},
-            )
-            if created:
-                # OAuth user has no local password.
-                user.set_unusable_password()
-                user.save(update_fields=['password'])
+            # Mirrors the Apple flow below. Creating the row from the email alone left
+            # `username` empty, and the active user model requires a unique one — so the
+            # first Google signup ever took the empty username and every later one collided
+            # with it, 500ing for that account on every attempt while existing accounts (who
+            # already had a username) signed in fine.
+            email = User.objects.normalize_email(email)
+            user = User.objects.filter(email=email).first()
+            created = False
+            if user is None:
+                base = (email.split('@')[0] or 'google')[:140]
+                username = base
+                n = 0
+                while User.objects.filter(username=username).exists():
+                    n += 1
+                    username = f"{base}{n}"[:150]
+                user = User.objects.create_user(username=username, email=email)  # unusable password
+                user.is_active = True
+                user.save()
+                created = True
             elif not user.is_active:
                 # A Google-verified email is trusted, so activate a previously-pending account.
                 user.is_active = True

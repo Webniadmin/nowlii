@@ -4,11 +4,13 @@ Focused on the access-control rules that are easy to regress silently — a perm
 change never fails loudly, it just quietly opens or closes a door.
 """
 from datetime import time
+from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
+from google.auth.exceptions import TransportError
 from django.utils import timezone
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
@@ -484,3 +486,69 @@ class ClearAIMemoryTests(APITestCase):
         self.assertIn(
             self.client.post('/api/profiles/clear-ai-memory/').status_code, (401, 403),
         )
+
+
+@override_settings(GOOGLE_OAUTH_CLIENT_ID='test-client-id.apps.googleusercontent.com')
+class GoogleLoginTests(APITestCase):
+    """Signing up with Google, twice.
+
+    The view used to create the account from the email alone, which left `username`
+    empty — and the active user model requires a unique one. So the first Google signup
+    on a fresh database worked, took the empty username, and every later new account
+    collided with it and got a 500 on every attempt, while anyone already registered
+    signed in fine. Production hit exactly that: one tester's phone failed for half an
+    hour while another phone succeeded in the same minutes.
+    """
+
+    def _sign_in(self, email):
+        with patch('Apps.users.views.google_id_token.verify_oauth2_token') as verify:
+            verify.return_value = {'email': email, 'email_verified': True}
+            return self.client.post('/api/auth/google/', {'id_token': 'stub'}, format='json')
+
+    def test_two_new_accounts_can_both_sign_up(self):
+        first = self._sign_in('one@example.com')
+        second = self._sign_in('two@example.com')
+
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(second.status_code, 200, second.data)
+        self.assertTrue(second.data['is_new_user'])
+        self.assertEqual(User.objects.filter(email='two@example.com').count(), 1)
+
+    def test_a_taken_username_does_not_stop_the_signup(self):
+        """Two different providers, one local part: bob@gmail.com after bob@example.com."""
+        _make_user('bob')
+
+        response = self._sign_in('bob@gmail.com')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertNotEqual(User.objects.get(email='bob@gmail.com').username, 'bob')
+
+    def test_signing_in_again_reuses_the_account(self):
+        self._sign_in('again@example.com')
+        response = self._sign_in('again@example.com')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data['is_new_user'])
+        self.assertEqual(User.objects.filter(email='again@example.com').count(), 1)
+
+    def test_an_unverified_email_is_refused(self):
+        with patch('Apps.users.views.google_id_token.verify_oauth2_token') as verify:
+            verify.return_value = {'email': 'nope@example.com', 'email_verified': False}
+            response = self.client.post('/api/auth/google/', {'id_token': 'stub'}, format='json')
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_a_bad_token_is_a_401_not_a_500(self):
+        with patch('Apps.users.views.google_id_token.verify_oauth2_token') as verify:
+            verify.side_effect = ValueError('bad audience')
+            response = self.client.post('/api/auth/google/', {'id_token': 'stub'}, format='json')
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_google_being_unreachable_is_not_reported_as_a_bad_token(self):
+        """A failed fetch of Google's signing certs is our outage, not the user's fault."""
+        with patch('Apps.users.views.google_id_token.verify_oauth2_token') as verify:
+            verify.side_effect = TransportError('could not fetch certificates')
+            response = self.client.post('/api/auth/google/', {'id_token': 'stub'}, format='json')
+
+        self.assertEqual(response.status_code, 503)
