@@ -161,8 +161,27 @@ leaves evidence.
 - Verified live afterwards: `/api/auth/google/` with a junk token → **401**
   `{"error":"Invalid Google token."}`, `/api/profiles/` → 401, and inside the container
   `settings.LOGGING['loggers']` → `['Apps', 'django.request']`.
-- **Still unexplained:** which of the two halves that phone was hitting. The next attempt
-  from it writes the answer to `docker logs nowlii-backend`.
+**Second deploy the same evening (`794d7ca`) — the cause, found within minutes of the
+tester retrying.** The log gave it up immediately:
+
+```
+IntegrityError: duplicate key value violates unique constraint "auth_user_username_key"
+DETAIL:  Key (username)=() already exists.
+```
+
+`GoogleLoginAPI` created the account from the verified email alone, so `username` was
+`''`. The user model requires a unique one — so **only the first Google signup ever
+worked**; it took the empty username and every later new account collided with it and
+500ed on every retry, while anyone already registered signed in fine. That is the whole
+"works on my phone, fails on theirs" split. The Apple flow immediately below already
+derived a unique username and says so in a comment; Google now does the same. Six
+regression tests added (47 pass). No migration. Verified after: junk token → 401.
+
+⚠️ **Worth knowing: `AUTH_USER_MODEL` is never set anywhere.** The table in that error is
+`auth_user`, i.e. Django's stock user — so `Apps/users/models.py::CustomUserModel` (email
+as `USERNAME_FIELD`, `paid_user`, `current_plan`, …) is **not the model in use**, despite
+being migrated and referenced. Anything assuming email-only accounts, or reading those
+subscription columns off the user, is reading a table nobody writes.
 
 ## Deploy log — 2026-08-05 (the phone's clock, and the day's Insights/quests work)
 
