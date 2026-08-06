@@ -139,6 +139,31 @@ Note the box `.env` still literally contains `DEBUG=True`, but `docker-compose.p
 (`EMAIL_HOST=smtp.gmail.com`/587/TLS, `DEFAULT_FROM_EMAIL→EMAIL_HOST_USER`) since the box has
 `EMAIL_HOST_USER`+`EMAIL_HOST_PASSWORD`.
 
+## Deploy log — 2026-08-06 (Google login stops failing silently)
+
+Shipped `d2b0737` from `feat/design-implementation`. **Backend only**, no migrations
+(`No migrations to apply`) — a diagnostic deploy, made so the next failed Google sign-in
+leaves evidence.
+
+- One tester's phone got **HTTP 500 on every `POST /api/auth/google/`** (nginx
+  `api.access.log`, 06/Aug 17:32–18:01, IP `87.116.166.71`) while another phone got 200s in
+  the same minutes. Ruled out from the box: the client id **is** set, a junk token still
+  answers a clean 401, and Google's certs endpoint returned 200 three times from inside the
+  container.
+- **Production discarded every traceback.** `DEBUG=False` with no `ADMINS` means Django's
+  default config mails the 500 to nobody, and gunicorn logs no requests — nginx status codes
+  were the only evidence there was a problem at all. `LOGGING` now sends `django.request`
+  (ERROR) and `Apps.*` (INFO) to stdout, so `docker logs nowlii-backend` holds the traceback.
+- `GoogleLoginAPI` caught `ValueError` only — which covers every way a *token* can be bad,
+  and nothing else. Certs unreachable, or the account row failing to save, escaped as a bare
+  500. Both halves are now caught, logged with the email that tripped them, and answered
+  with 503 / 500 + a JSON message rather than Django's HTML error page.
+- Verified live afterwards: `/api/auth/google/` with a junk token → **401**
+  `{"error":"Invalid Google token."}`, `/api/profiles/` → 401, and inside the container
+  `settings.LOGGING['loggers']` → `['Apps', 'django.request']`.
+- **Still unexplained:** which of the two halves that phone was hitting. The next attempt
+  from it writes the answer to `docker logs nowlii-backend`.
+
 ## Deploy log — 2026-08-05 (the phone's clock, and the day's Insights/quests work)
 
 Shipped `feat/design-implementation` through `8c0d52e` — eleven commits, all pushed first.
