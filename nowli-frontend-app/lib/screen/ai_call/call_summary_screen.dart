@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:nowlii/utils/mood_icons.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/services/call_summary_service.dart';
 import 'package:nowlii/services/voice_call_service.dart';
@@ -32,6 +34,12 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
   CallSummaryResponse? _summary;
   bool _isLoading = true;
   String? _errorMessage;
+
+  /// Whether the summary itself was sent to the backend. The "Save reflection" button
+  /// only ever handled the optional personal note, so with the note box empty it
+  /// answered "Nothing to save yet" — while the summary had already been saved on load
+  /// and duly appeared in Call History. The button was contradicting the app.
+  bool _summaryPersisted = false;
 
   @override
   void initState() {
@@ -94,6 +102,7 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
         summary.nextStep.isNotEmpty;
     if (!hasContent) return;
 
+    _summaryPersisted = true;
     _voiceCallService.saveSummary(
       callId: callId,
       moodDetected: summary.moodDetected,
@@ -259,6 +268,13 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                             description: _summary?.moodDetected ?? "I didn't quite catch your mood this time.",
                             backgroundColor: const Color(0xFFFAE3CE),
                             icon: Icons.mood,
+                            // The face follows the mood. It was a fixed `Icons.mood`, so
+                            // a call that ended in tears and one that ended laughing
+                            // carried the same smile.
+                            iconAsset: moodIconAsset(
+                              category: _summary?.dominantEmotion,
+                              text: _summary?.moodDetected,
+                            ),
                           ),
                           
                           const SizedBox(height: 8),
@@ -392,14 +408,22 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                                     }
                                     if (!mounted) return;
 
+                                    // Three honest outcomes, where there used to be two
+                                    // and one of them was wrong: the note was saved, or
+                                    // there was no note but the summary is safely stored
+                                    // anyway, or genuinely nothing was kept.
+                                    final saved = note.isNotEmpty || _summaryPersisted;
+                                    final message = note.isNotEmpty
+                                        ? 'Reflection saved!'
+                                        : _summaryPersisted
+                                            ? 'Summary saved to your history.'
+                                            : 'Nothing to save yet.';
+
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text(note.isEmpty
-                                            ? 'Nothing to save yet.'
-                                            : 'Reflection saved!'),
-                                        backgroundColor: note.isEmpty
-                                            ? Colors.orange
-                                            : Colors.green,
+                                        content: Text(message),
+                                        backgroundColor:
+                                            saved ? Colors.green : Colors.orange,
                                       ),
                                     );
 
@@ -633,6 +657,9 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
     required String description,
     required Color backgroundColor,
     required IconData icon,
+    /// An SVG to draw instead of [icon]. Used by "Mood detected", whose face changes
+    /// with the mood; [icon] stays the fallback for a mood nothing recognised.
+    String? iconAsset,
   }) {
     return Container(
       width: double.infinity,
@@ -652,11 +679,19 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
               color: Colors.white.withOpacity(0.5),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              icon,
-              color: const Color(0xFF4542EB),
-              size: 24,
-            ),
+            child: iconAsset != null
+                ? Padding(
+                    // The faces are drawn to the edge of their own 64 box, so they need
+                    // a little breathing room inside the 50 circle; a Material glyph
+                    // carries its own padding and does not.
+                    padding: const EdgeInsets.all(9),
+                    child: SvgPicture.asset(iconAsset),
+                  )
+                : Icon(
+                    icon,
+                    color: const Color(0xFF4542EB),
+                    size: 24,
+                  ),
           ),
           const SizedBox(width: 12),
           Expanded(
