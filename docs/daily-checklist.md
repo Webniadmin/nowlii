@@ -22,8 +22,10 @@ because the emulator cannot route host audio.
 - [ ] Install it and sign in as a real user
 - [ ] **Confirm the timezone fix on the device** — make a quest for a time an hour out and
       check the card says that time, not that time plus your UTC offset
-- [ ] Microphone, voice check, one AI call. **The allowlists are empty again, so this costs
-      ~$0.25 and the daily limit is 2.**
+- [ ] Microphone, voice check, one AI call. **Calls are free and unlimited on the QA account
+      right now** — the allowlists were restored at the end of 08-12 so the expiring trial
+      would not block this. That also means nothing caps the OpenAI spend, so **empty them
+      again as soon as the test is done** (see Accounts below).
 - [ ] **Second phone still to retry** — `kekile49@gmail.com` failed all of 08-06 afternoon
       and has not tried since the fix went out at ~18:26
 - [ ] Merge → `main` once it passes
@@ -119,13 +121,17 @@ wording, and the **call screen pulse**.
   nothing waiting to deploy.
 
 ### Accounts, money, data
-- **Both QA allowlists are EMPTY on production** (`SUBSCRIPTION_UNLIMITED_USERS`,
-  `VOICE_CALL_UNLIMITED_USERS`). Real calls cost ~$0.25 and the daily limit is 2.
-  **To grant unlimited again, set both to `p.pavle16` and `up -d` — do NOT "restore" them by
-  deleting the lines.** `settings.py` defaults both to `"pavle"`, a username dead since the
-  account was recreated on 08-06, so deleting the lines yields an allowlist matching nobody.
-  They match on **username**. Backups: `.env.bak-20260812-before-allowlist-restore` (empty
-  state), `.env.bak-20260812-before-allowlist-remove` (granted state).
+- ⚠️ **Both QA allowlists are ACTIVE on production** — both set to `p.pavle16`, restored at
+  the end of 08-12 so the phone test is not blocked when the trial expires. That account
+  therefore has **unlimited entitlement and unlimited voice calls**, so it will neither meet
+  the paywall nor stop at 2 calls a day, and **every call still bills OpenAI** — the limit
+  that used to cap the spend is gone. **Empty them again the moment the phone test is done.**
+- **To empty:** set both to blank in `~/backend/.env` and `up -d`. **Do NOT "restore" them by
+  deleting the lines** — `settings.py` defaults both to `"pavle"`, a username dead since the
+  account was recreated on 08-06, so deleting them yields an allowlist matching nobody. They
+  match on **username**. Backups on the box: `.env.bak-20260812-before-allowlist-restore`
+  and `.env.bak-20260812-eod-before-restore` are both the *empty* state.
+- Off the allowlist, real calls cost ~$0.25 each and the daily limit is 2.
 - **The QA account** is `p.pavle16@gmail.com` = prod user **id 51**, username `p.pavle16`.
   Its trial had **1 day left on 08-12**, so it meets the paywall around 08-13.
 - **Existing scheduled calls keep their old (wrong) instants** until their quest is saved
