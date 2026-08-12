@@ -1,6 +1,78 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-08-05 (evening)_
+_Last reviewed: 2026-08-12 (evening)_
+
+## Completed this session (2026-08-12)
+
+_Full detail in `daily-reports/2026-08-12.md`. Frontend and docs only — no backend or
+`nowli-ai` code changed, and production was verified byte-identical to committed `HEAD`._
+
+- **The companion poses landed and are wired.** 6 characters × 4 poses (sleeping, reading,
+  speaking, waving) in `assets/companions/`, transparent, imported from Figma. `NowliiAvatar`
+  takes a `pose:` and 12 of 17 call sites name one — chosen from the asset each had replaced,
+  not guessed. Poses are **bundled-only**: the backend serves one neutral picture per
+  companion, so a pose can never come from S3. Closes the P4 item that had been waiting on
+  art since 08-11. `waving` ships unused.
+- **The avatar→art mapping had been wrong for five of the six companions.** Art was chosen by
+  `(predefined_option - 1) % 6`, but production serves ids `2, 3, 4, 6, 10, 12` — the table
+  was reseeded, so the ids are neither 1-based nor contiguous — and 4/10 and 6/12 collapsed
+  onto one slot each. It hid for months because it only fed the offline fallback tile, and
+  because the QA account is Zee, the single id the arithmetic gets right. Poses read it on
+  every draw, so it was about to become visible on the home screen. Now resolved from the
+  `avatar_logo` filename → preset `nowlii_name` → id, and asserted against the real
+  production ids in tests. **The S3 filenames are now load-bearing** until the backend has a
+  stable slug.
+- **The call screen stopped appearing to pulse whole.** The 08-11 swap put a disc-only asset
+  where the *entire composition* (character + disc + two halos in one image) used to be,
+  leaving an empty band that exposed the faint pulsing gradients. The original widget is
+  restored verbatim — every ring number, the 240 box, the 1.05 scale — with only the picture
+  changed, via a new `callStartedEmpty.png` rebuilt from the two existing assets. A first
+  attempt that made the rings responsive was re-designing rather than restoring, and was
+  reverted.
+- **The summary tells the truth now.** "Mood detected" was a fixed `Icons.mood`; nine mood
+  faces (SVG) now follow the mood. Trap found by running it: `dominant_emotion` reports
+  `happy: 100.0` whenever `nowli-ai` has no scores, so the sentence is read first and the
+  bucket is the backstop. And "Save reflection" no longer answers "Nothing to save yet" over
+  a summary that had already been saved on load.
+- **A 320dp sweep** across seven screens against the live backend: zero `RenderFlex`
+  overflows, three pre-existing defects fixed — Edit Profile's hardcoded `\n` that silently
+  ate half a sentence, the paywall's fixed-height timeline rows with nothing flexible in
+  them, and a truncated trial CTA. Also: the receipt footer showed a fixed orange character
+  on every receipt, and the profile name used a 52pt display size in a pill 25dp too narrow
+  for it.
+- Verified: `flutter analyze lib` 10 warnings (the standing baseline), 0 errors;
+  **262 tests pass**, up from 251.
+
+_Previously reviewed: 2026-08-11 (evening)_
+
+## Completed this session (2026-08-11)
+
+_Full detail in `daily-reports/2026-08-11.md`. **Nothing committed** — 25 modified files and 3
+new ones are in the working tree awaiting review. No deploy; the backend was not touched._
+
+- **Text no longer breaks the layout on narrow phones.** Only ~27 of ~930 font sizes use
+  `.sp`; the rest are literals across 118 files, so the fix is one `MediaQuery.textScaler`
+  override rather than 900 edits — `lib/core/responsive/responsive_text.dart`, hung off
+  `MaterialApp.router`'s own `builder:` (above it, the app's own `MediaQuery` discards it).
+  375pt and up is untouched, shrinking in proportion to 0.85 at 320. The OS font-size slider,
+  previously unbounded, is clamped to 0.85–1.15. **It deliberately does not use
+  `TextScaler.linear`:** since Android 14 the platform scaler is non-linear, and flattening it
+  to one factor applied *no* enlargement at all for users on large-text settings — caught by
+  measuring on a device, not by review. A local pass then fixed the spots scaling cannot save:
+  a `Text` in a `Row` with no `Flexible` overflows rather than wraps.
+- **The companion follows the user's pick everywhere.** Previously a user who chose one of six
+  characters met a fixed orange one on the home card, in calls and in every popup.
+  `lib/widget/nowlii_avatar.dart` + `lib/services/companion_avatar.dart` resolve cached S3 URL
+  → bundled `A–F.png` by `predefined_option` id → default, hydrated inside `StorageService`'s
+  profile read/write/clear so no screen has to refresh it. 17 sites across 14 files converted.
+  Two live bugs fixed on the way: `ProfileModel.toJson()` dropped `predefined_option`, so the
+  cached profile lost the id the offline fallback depends on; and two profile screens fell back
+  to a hardcoded `A.png`, showing every user milo. **Still blocked on art** — per-character
+  poses do not exist, so pose-specific slots show the right companion in a neutral pose.
+- **A "Google login returns 401" report was not a bug.** The emulator's clock was 6 days behind
+  with `auto_time=0`, so Play Services served a cached ID token that had expired 143 hours
+  earlier and the backend rejected it correctly. Second time clock skew on this machine has
+  looked like an auth failure.
 
 ## Completed this session (2026-08-05)
 

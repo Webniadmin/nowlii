@@ -143,6 +143,13 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
 - [ ] **Seed companions as a management command.** The 6 `NowliiPredefinedOption` rows are
       seeded manually; if the SQLite DB resets, avatars break. Make a repeatable
       `manage.py` command. See `running-on-android.md`.
+      **Give the model a stable `slug` while doing it.** There is no field today that
+      identifies *which character* a row is, so the app has to infer it from the
+      `avatar_logo` filename. Production ids are already `2, 3, 4, 6, 10, 12` from earlier
+      reseeding — the id says nothing — and keying art off it shipped the wrong character
+      for five of six companions (found 2026-08-12, fixed client-side in
+      `companion_avatar.dart`). A `slug` the seeder sets would let the client stop parsing
+      URLs; until then, **do not rename the S3 files**.
 - [ ] **Reconcile unused `CustomUserModel`.** `AUTH_USER_MODEL` is never set, so the app runs
       on the default `auth.User`; `users.CustomUserModel` is migrated and referenced but unused
       — reconcile or remove. **This cost a production outage on 2026-08-06:** code written as
@@ -153,6 +160,36 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
       the fix — harmless (lookups go by email), but it is why the collisions started.
 - [ ] **`editFrom` avatar screen** should send `predefined_option` on update (like the main
       avatar picker) so the selection persists.
+- [x] ~~**Companion poses.**~~ ✅ **Done 2026-08-12** — the art landed and is wired.
+      24 files (`assets/companions/<option id>_<pose>.png`, 6 characters × sleeping /
+      reading / speaking / waving, transparent, 512px, 4.5 MB) imported from Figma
+      `y4Wzcc018iQEfEjm8T0Yjd` node `36:8041`. `NowliiAvatar` takes a `pose:`; 12 of the 17
+      call sites now name one, chosen from the asset each had replaced (`companionSleeping`,
+      `homeQuestBlob` — the one with the book, `Popup_Speaking`, `callStarted`). The other
+      five stay `.neutral`, which is the profile URL and was already correct.
+      Poses are deliberately **bundled-only** — the backend serves one neutral picture per
+      companion, so a pose can never come from S3. Guarded by `test/companion_pose_test.dart`
+      (loads all 24 through `rootBundle`, so a missing file *or* a `pubspec.yaml` slip fails).
+      **Two import traps, if more art arrives:** character 3 authors sleeping and speaking in
+      the opposite columns to the other five, and character 5's sleeping frame also contains
+      an awake copy — column position is not the pose, so look at the pictures.
+      **`waving` is shipped but unclaimed** — no slot asks for it yet.
+      Two things learned doing the widget, still true:
+  - **The served art is transparent; only the bundled fallback tiles are not.** So
+        `NowliiAvatar` draws the served art whole (`BoxFit.contain`, no clip) and applies the
+        circle/rounded clip *only* on the fallback path. Clipping everything with
+        `BoxFit.cover` sliced the character's feet off on the call screen.
+  - **Converting a slot means replacing the picture, not the footprint.** Sizing the
+        out-of-sparks companion as a 95 square rather than the original 78.885 pushed it 16pt
+        into a text column capped at 200, and it ran over the words. Match the dimensions of
+        the art being replaced.
+      **One open decision:** `all_quests_done_popup` and `missed_talks_popup` were app-icon
+      tiles — the character on an indigo rounded square. With transparent art and no clip the
+      tile no longer shows. Restore it (one line per site) or leave the bare character?
+      Not converted, deliberately: `Assets.svgIcons.avatar` in `popup_screen.dart` (a stock
+      photo of a person, not a companion) and `upscalemedia-transformed.png` in
+      `ai_call_remiender.dart` (a page background). `lib/experimental/` was left alone —
+      unrouted.
 - [ ] **`nowli-ai` structure.** Sessions are in-memory only (lost on restart) → add
       persistence. The `routers/` module is a parallel refactor that is **not mounted** —
       either wire it in or delete it. No dependency lockfile — add one.

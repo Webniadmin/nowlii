@@ -82,6 +82,50 @@ FastAPI app **"Emotion AI — Human Friend System"** (v4.2). This is the `:8001`
 - **Layers**: `lib/api/` (auth + profile controllers/services/models), `lib/services/` (feature services: quests, insights, streak, AI call, audio streaming, speech), `lib/models/` (data models), `lib/screen/` (feature UI modules), `lib/widget/` + `lib/custom_code/` (reusable UI), `lib/themes/` + `lib/utlis/color_palette/` (styling).
 - **Voice/AI**: `speech_to_text` + `flutter_tts` for the talking companion; audio streaming to the `:8001` server.
 - **Scheduled call reminders**: `lib/services/call_reminder_service.dart` is the only file that touches `flutter_local_notifications`. Everything else calls `sync()`, which rebuilds all pending reminders from the backend — call it after login, after a quest changes, and **after every call ends** (that last one is what keeps the out-of-calls wording accurate). "After a quest changes" includes **editing** one: `await` the push to the edit screen and `sync()` on a true result, or the reminder silently keeps pointing at the old time. Requires **core library desugaring** in `android/app/build.gradle.kts`; the build fails without it. Never declare `USE_EXACT_ALARM` (Play restricts it to alarm/calendar apps) — `SCHEDULE_EXACT_ALARM` with an inexact fallback is the supported path.
+- **The companion avatar (since 2026-08-11):** never hardcode a character image. Use
+  **`lib/widget/nowlii_avatar.dart`** (`NowliiAvatar(size:)`), backed by
+  **`lib/services/companion_avatar.dart`**, which resolves the user's pick: cached
+  `Profile.avatar_logo` (S3 URL) → bundled art for that character → default.
+  **Which character that is comes from the `avatar_logo` filename** (`…/nowlii_logos/zee.png`
+  → `zee`), then the preset `nowlii_name`, and only then the `predefined_option` id.
+  **Never key art off the id**: production serves ids `2, 3, 4, 6, 10, 12` — the table has
+  been reseeded, so they are neither 1-based nor contiguous — and the old `(id - 1) % 6`
+  picked the wrong character for five of the six, collapsing 4/10 and 6/12 onto one slot
+  each. It hid for months because it only fed the offline fallback tile and the QA account
+  is Zee, the one id the arithmetic gets right. **Never key art off the displayed name
+  either** — the user is invited to rename the companion, and that bug has shipped once. State is hydrated inside `StorageService`'s profile
+  read/write/clear — the one place every profile passes through — so screens never fetch or
+  refresh it themselves. The six bundled tiles are **opaque** (only E/fizzy is transparent),
+  which is why `circle` defaults to true; pass `borderRadius:` for the app-icon-style slots.
+  **Poses (since 2026-08-12):** pass `pose:` for a slot that held a *specific* picture —
+  `CompanionPose.sleeping` (out of sparks), `.reading` (home quest card), `.speaking` (voice
+  check, the speaking popups, the live call), `.waving` (shipped, unclaimed). The art is
+  `assets/companions/<option id>_<pose>.png`, 6 × 4, transparent, and is **always bundled,
+  never the profile URL**: the backend stores one neutral picture per companion, so asking S3
+  for a sleeping one returns the standing one and the slot goes quietly back to being wrong.
+  `pose` defaults to `.neutral`, which *is* the profile URL — the pre-pose behaviour, still
+  right for the profile tile and the pickers. Adding art: drop the file in, the path is
+  derived; `test/companion_pose_test.dart` fails if one is missing or the folder falls out of
+  `pubspec.yaml`. Two traps found importing them: **character 3 authors sleeping and speaking
+  in the opposite columns** to the other five, and **character 5's sleeping frame also holds
+  an awake copy** — the Figma column position is not the pose, so verify by looking.
+- **Text scaling (since 2026-08-11):** `lib/core/responsive/responsive_text.dart` is wired into
+  **`MaterialApp.router`'s own `builder:`** in `main.dart` and overrides `MediaQuery.textScaler`
+  for the whole app. At 375 and up nothing changes; below that type shrinks in proportion down
+  to 0.85 at 320, and the OS font-size slider is clamped to 0.85–1.15. It has to hang off
+  MaterialApp's builder, not `ScreenUtilInit`'s — the app inserts a fresh `MediaQuery` from the
+  view, so an override placed above it is discarded. This exists because ~900 of ~930 font sizes
+  are raw literals rather than `.sp`, and `textScaler` is the only lever that reaches all of them
+  without touching 118 files. It scales **text only** — fixed paddings, `SizedBox` widths and
+  hard container heights are unaffected, so a `Text` in a `Row` with no `Flexible` still overflows
+  and needs local `maxLines`/`Flexible`/`FittedBox`.
+  **Do not "simplify" it to `TextScaler.linear(someFactor)`.** Since Android 14 the platform
+  scaler is non-linear — body text grows with the accessibility slider while headings stay put —
+  and collapsing it to one number throws that away. Measured on an emulator at `font_scale=1.3`:
+  sampling the platform scaler at a heading size reports ~1.0, so the naive factor applied **no**
+  enlargement anywhere, silently breaking large-text accessibility. The current code clamps the
+  platform scaler (keeping its curve) and multiplies by the width fit via `_FittedTextScaler`.
+  Verified at 320/360/375/411dp × OS font 1.0/1.3.
 - **Zone colours** live in **`lib/utils/color_palette/zone_colors.dart`** (`zoneColor`, `zoneTextColor`, `zoneColorHex`) and nowhere else. There were five copies and only Soft steps agreed across them, so the same quest changed colour from screen to screen. Lookup is case-insensitive because the suggestion endpoints lower-case the zone name while the quest endpoints do not.
 
 ### Gotchas (this codebase is under active, messy development)
