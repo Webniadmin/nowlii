@@ -428,9 +428,13 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
       }
     }
 
+    // 24 all round leaves a 320dp phone about 200dp for a row that has to hold a stage
+    // name, a date, a price and a badge — it overflowed. 16 buys back 16dp of row.
+    final narrow = MediaQuery.sizeOf(context).width < 360;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(narrow ? 16 : 24),
       decoration: ShapeDecoration(
         color: _ink,
         shape: RoundedRectangleBorder(
@@ -523,9 +527,19 @@ class _ScheduleRow extends StatelessWidget {
         ? _NowliProSubscriptionState._cardInk
         : _NowliProSubscriptionState._cardMuted;
 
-    return SizedBox(
-      height: 60,
-      child: Row(
+    // Was `SizedBox(height: 60)` with nothing flexible inside: on a 320dp screen the
+    // stage name, date, price and badge could not fit the row and the whole card
+    // overflowed. Now 60 is a floor rather than a ceiling, the text side can flex, and
+    // the type steps down a point on narrow screens. `IntrinsicHeight` is what lets the
+    // rail keep using `Expanded` for its connecting line once the height is no longer
+    // fixed — without it that Expanded sits in an unbounded column and throws.
+    final narrow = MediaQuery.sizeOf(context).width < 360;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 60),
+      child: IntrinsicHeight(
+        child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // The rail. It has to read as one continuous line down the card, so each row
           // draws the segment *arriving* at its dot as well as the one leaving it —
@@ -555,11 +569,12 @@ class _ScheduleRow extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 16),
+          SizedBox(width: narrow ? 10 : 16),
           Expanded(
             child: Container(
+              alignment: Alignment.centerLeft,
               padding: step.current
-                  ? const EdgeInsets.symmetric(horizontal: 10, vertical: 6)
+                  ? EdgeInsets.symmetric(horizontal: narrow ? 8 : 10, vertical: 6)
                   : EdgeInsets.zero,
               decoration: step.current
                   ? BoxDecoration(
@@ -571,30 +586,39 @@ class _ScheduleRow extends StatelessWidget {
               child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      step.stage,
-                      style: GoogleFonts.workSans(
-                        color: ink,
-                        fontSize: 15,
-                        fontWeight:
-                            confirmed ? FontWeight.w700 : FontWeight.w600,
+                // Expanded, not bare: the stage name and its date are the only part of
+                // the row that can give, so they are what absorbs a narrow screen.
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        step.stage,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.workSans(
+                          color: ink,
+                          fontSize: narrow ? 14 : 15,
+                          fontWeight:
+                              confirmed ? FontWeight.w700 : FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      step.dateLabel,
-                      style: GoogleFonts.workSans(
-                        color: _NowliProSubscriptionState._cardMuted,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
+                      const SizedBox(height: 2),
+                      Text(
+                        step.dateLabel,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.workSans(
+                          color: _NowliProSubscriptionState._cardMuted,
+                          fontSize: narrow ? 10 : 11,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                SizedBox(width: narrow ? 6 : 8),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -602,12 +626,12 @@ class _ScheduleRow extends StatelessWidget {
                       step.priceLabel,
                       style: GoogleFonts.workSans(
                         color: ink,
-                        fontSize: 17,
+                        fontSize: narrow ? 15 : 17,
                         fontWeight:
                             confirmed ? FontWeight.w900 : FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: narrow ? 5 : 8),
                     _StatusBadge(step: step),
                   ],
                 ),
@@ -616,6 +640,7 @@ class _ScheduleRow extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }

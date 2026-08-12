@@ -72,11 +72,20 @@ class PaywallTapButton extends StatelessWidget {
               _knob(icon: knobIcon),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  label,
-                  style: _labelStyle(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                // Shrink rather than ellipsise: the longest label is
+                // "Continue — 7 days left", and next to the knob that did not fit a
+                // 320dp screen — the primary action read "Continue — 1 day…". The
+                // ellipsis stays as the backstop for a label longer than scaling can
+                // rescue. Same pattern as `custom_button.dart`.
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    label,
+                    style: _labelStyle(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
             ],

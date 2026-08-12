@@ -287,10 +287,22 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
                     child: Center(
                       child: _isLoading
                           ? const CircularProgressIndicator(strokeWidth: 2)
-                          : Text(
-                              (_profileData?.name ?? 'USER').toUpperCase(),
-                              textAlign: TextAlign.center,
-                              style: AppTextStylesQutes.alfaSlabOneTitle,
+                          // The shared 52pt title is a display size meant for short
+                          // headings; a name is user-supplied and can be any length, and
+                          // at 52 an eight-character one needed ~250dp of the 225dp this
+                          // pill has, so it ran to the edges. 40 with a scale-down keeps
+                          // short names large and lets long ones shrink instead of
+                          // colliding with the padding. Local override — the style is
+                          // shared with the quest screens, which are not affected.
+                          : FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                (_profileData?.name ?? 'USER').toUpperCase(),
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                style: AppTextStylesQutes.alfaSlabOneTitle
+                                    .copyWith(fontSize: 40),
+                              ),
                             ),
                     ),
                   ),
