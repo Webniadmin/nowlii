@@ -1,10 +1,10 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
-import 'package:nowlii/core/gen/assets.gen.dart';
 
 /// What the out-of-sparks card opens when tapped.
 ///
@@ -63,11 +63,15 @@ class OutOfSparksSheet extends StatelessWidget {
                 const SizedBox(height: 9),
                 Transform.rotate(
                   angle: 1.83 * math.pi / 180,
-                  child: Image.asset(
-                    Assets.svgIcons.companionSleeping.path,
-                    width: 60,
-                    height: 94.46,
-                    fit: BoxFit.contain,
+                  // See out_of_sparks_card: the sleeping pose exists only for the orange
+                  // character, so until per-character poses land this shows the user's
+                  // companion awake rather than someone else's asleep.
+                  //
+                  // 60 is the width of the art it replaced; keeping the design's footprint
+                  // rather than inventing a larger one.
+                  child: const NowliiAvatar(
+                    size: 60,
+                    pose: CompanionPose.sleeping,
                   ),
                 ),
                 const SizedBox(height: 16),

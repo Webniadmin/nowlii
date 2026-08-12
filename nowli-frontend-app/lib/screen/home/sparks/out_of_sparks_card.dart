@@ -1,6 +1,6 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/screen/home/sparks/out_of_sparks_sheet.dart';
 import 'package:nowlii/services/spark_state.dart';
 
@@ -60,16 +60,20 @@ class OutOfSparksCard extends StatelessWidget {
           Positioned(
             right: -7,
             bottom: -9.5,
-            child: Opacity(
-              opacity: 0.92,
-              child: Transform.rotate(
-                angle: -1.98 * 3.1415926535 / 180,
-                child: Image.asset(
-                  Assets.svgIcons.companionSleeping.path,
-                  width: 78.885,
-                  height: 118.327,
-                  fit: BoxFit.contain,
-                ),
+            child: Transform.rotate(
+              angle: -1.98 * 3.1415926535 / 180,
+              // The user's companion instead of the fixed sleeping one. The sleeping pose
+              // only exists for the orange character; when per-character poses arrive this
+              // becomes `NowliiAvatar(pose: .sleeping)`. See future-checklist P4.
+              //
+              // 79 matches the width of the art this replaced (78.885). At `right: -7`
+              // that puts its left edge at 200 — exactly where the text column below
+              // stops. Widening it to 95 pushed the companion 16pt into the copy and it
+              // ran over the words.
+              child: const NowliiAvatar(
+                size: 79,
+                pose: CompanionPose.sleeping,
+                opacity: 0.92,
               ),
             ),
           ),

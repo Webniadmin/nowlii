@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
@@ -475,13 +476,7 @@ class _AiCallRemienderState extends State<AiCallRemiender> {
             //     children: [Container(width: 24, height: 24, child: Stack())],
             //   ),
             // ),
-            Center(
-              child: Image.asset(
-                Assets.svgIcons.swipeToTalkToFuzzy.path,
-                height: 70,
-                width: 70,
-              ),
-            ),
+            const Center(child: NowliiAvatar(size: 70)),
             Text(
               'Swipe to talk to Fuzzy',
               textAlign: TextAlign.center,

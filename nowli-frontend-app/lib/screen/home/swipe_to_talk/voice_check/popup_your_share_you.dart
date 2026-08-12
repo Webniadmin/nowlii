@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -755,21 +756,10 @@ class _PoupYourShareYouState extends State<PoupYourShareYou>
                   ),
                 ),
                 // Center image/emoji
-                Positioned(
+                const Positioned(
                   left: 67.17,
                   top: 60.45,
-                  child: Container(
-                    width: 130.63,
-                    height: 129.18,
-                    decoration: BoxDecoration(
-                      image: DecorationImage(
-                        image: AssetImage(
-                          "assets/svg_images/popup_screen_carton.png",
-                        ),
-                        fit: BoxFit.fill,
-                      ),
-                    ),
-                  ),
+                  child: NowliiAvatar(size: 130, pose: CompanionPose.speaking),
                 ),
               ],
             ),

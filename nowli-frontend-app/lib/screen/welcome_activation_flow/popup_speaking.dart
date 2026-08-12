@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:go_router/go_router.dart';
@@ -587,12 +588,10 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                               )
                             ],
                           ),
-                          child: Center(
-                            child: Image.asset(
-                              "assets/dea_png/Popup_Speaking.png",
-                              width: 110,
-                              height: 110,
-                              fit: BoxFit.cover,
+                          child: const Center(
+                            child: NowliiAvatar(
+                              size: 110,
+                              pose: CompanionPose.speaking,
                             ),
                           ),
                         ),
@@ -886,11 +885,9 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                           ),
                           Transform.scale(
                             scale: _pulseAnimation.value * 0.98,
-                            child: Image.asset(
-                              "assets/dea_png/Popup_Speaking.png",
-                              width: 110,
-                              height: 110,
-                              fit: BoxFit.fill,
+                            child: const NowliiAvatar(
+                              size: 110,
+                              pose: CompanionPose.speaking,
                             ),
                           ),
                         ],
@@ -1053,12 +1050,7 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                           ],
                         ),
                       ),
-                      Image.asset(
-                        "assets/dea_png/Popup_Speaking.png",
-                        width: 110,
-                        height: 110,
-                        fit: BoxFit.fill,
-                      ),
+                      const NowliiAvatar(size: 110, pose: CompanionPose.speaking),
                     ],
                   ),
                 ),

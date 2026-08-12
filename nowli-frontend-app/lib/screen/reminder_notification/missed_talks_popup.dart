@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
@@ -61,11 +62,10 @@ class _MissedTalksPopupState extends State<MissedTalksPopup>
                     const Spacer(flex: 3),
 
                     SizedBox(height: 15),
-                    // Fuzzy avatar card
-                    SizedBox(
-                      width: 120,
-                      height: 120,
-                      child: Image.asset(Assets.images.carton.path),
+                    // The user's companion card
+                    NowliiAvatar(
+                      size: 120,
+                      borderRadius: BorderRadius.circular(26),
                     ),
 
                     const Spacer(flex: 2),

@@ -75,6 +75,12 @@ class ProfileModel {
       'voice': voice,
       'restricted_topics': restrictedTopics,
       'use_data_to_improve': useDataToImprove,
+      // Kept so the id survives the round-trip through the local cache. `fromJson` read
+      // it and `toJson` dropped it, so a cached profile came back with no companion id —
+      // which is the offline fallback for every avatar in the app. Safe to add: this
+      // method only feeds SharedPreferences and debug prints, never a request body
+      // (those go through Create/UpdateProfileRequest).
+      if (predefinedOption != null) 'predefined_option': predefinedOption,
     };
   }
 

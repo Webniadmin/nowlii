@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/api/profile_model.dart';
+import 'package:nowlii/services/companion_avatar.dart';
 
 class StorageService {
   static const String _accessTokenKey = 'access_token';
@@ -65,7 +66,11 @@ class StorageService {
     final prefs = await SharedPreferences.getInstance();
     final profileJson = jsonEncode(profile.toJson());
     await prefs.setString(_profileDataKey, profileJson);
-    
+
+    // Every profile read and write funnels through this class, so hydrating the companion
+    // here is what keeps the avatar current app-wide without any screen having to ask.
+    CompanionAvatar.adopt(profile);
+
     print('✅ Profile data saved successfully\n');
   }
 
@@ -76,6 +81,7 @@ class StorageService {
     if (profileJson != null) {
       final profileMap = jsonDecode(profileJson) as Map<String, dynamic>;
       final profile = ProfileModel.fromJson(profileMap);
+      CompanionAvatar.adopt(profile);
       print('🔍 Retrieved Profile: ${profile.toJson()}');
       return profile;
     }
@@ -88,6 +94,9 @@ class StorageService {
     print('\n🗑️ Clearing profile data from storage...');
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_profileDataKey);
+    // Otherwise the next account on this device is greeted by the previous user's
+    // companion until their own profile lands.
+    CompanionAvatar.clear();
     print('✅ Profile data cleared\n');
   }
 
@@ -95,6 +104,7 @@ class StorageService {
     print('\n🗑️ Clearing all data from storage...');
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
+    CompanionAvatar.clear();
     print('✅ All data cleared\n');
   }
 }

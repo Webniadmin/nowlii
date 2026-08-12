@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -438,21 +439,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
         ),
         const SizedBox(width: 12),
-        Text(
-          // Greet by name once we have one. The old fallback was the mock's "JULIE",
-          // so every user was greeted as someone else until their profile loaded.
-          (_profileData?.name.trim().isNotEmpty ?? false)
-              ? 'HI ${_profileData!.name.trim().toUpperCase()}!'
-              : 'HI THERE!',
-          style: TextStyle(
-            color: const Color(0xFF011F54),
-            fontSize: 32,
-            fontFamily: 'Wosker',
-            fontWeight: FontWeight.w400,
-            height: 0.80,
+        // Expanded, and NOT `Flexible` + `Spacer()`: both are flex-1 children, so the
+        // row split the free space evenly between them and the name was clipped to
+        // "HI P…" with half the row standing empty. Expanded takes all the space the
+        // avatar and streak pill leave, which both left-aligns the greeting exactly as
+        // before and keeps a long user-supplied name from overflowing.
+        Expanded(
+          child: Text(
+            // Greet by name once we have one. The old fallback was the mock's "JULIE",
+            // so every user was greeted as someone else until their profile loaded.
+            (_profileData?.name.trim().isNotEmpty ?? false)
+                ? 'HI ${_profileData!.name.trim().toUpperCase()}!'
+                : 'HI THERE!',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: const Color(0xFF011F54),
+              fontSize: 32,
+              fontFamily: 'Wosker',
+              fontWeight: FontWeight.w400,
+              height: 0.80,
+            ),
           ),
         ),
-        const Spacer(),
         Container(
           padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
           decoration: ShapeDecoration(
@@ -623,13 +632,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       color: const Color(0xFF4542EB),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: _profileData?.avatarLogo.isNotEmpty == true
-                        ? Image.network(
-                            _profileData!.avatarLogo,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                          )
-                        : const SizedBox.shrink(),
+                    // Was a bare Image.network whose error case collapsed to nothing,
+                    // leaving an empty indigo tile whenever S3 was slow or unreachable.
+                    child: const NowliiAvatar(size: 81),
                   ),
                 ],
               ),
@@ -804,13 +809,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 children: [
                   Assets.svgIcons.homePlus.svg(width: 18, height: 18),
                   const SizedBox(width: 8),
-                  Text(
-                    'Add quest',
-                    style: GoogleFonts.workSans(
-                      color: const Color(0xFF4542EB),
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      height: 0.8,
+                  Flexible(
+                    child: Text(
+                      'Add quest',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.workSans(
+                        color: const Color(0xFF4542EB),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        height: 0.8,
+                      ),
                     ),
                   ),
                 ],
@@ -972,63 +981,76 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Stack(
         children: [
           if (showArt)
-            Positioned(
+            const Positioned(
               right: 24,
               bottom: 13,
-              child: Opacity(
+              // The user's companion. This was `homeQuestBlob` — the orange character with
+              // the book — so the home card contradicted whatever the user picked.
+              child: NowliiAvatar(
+                size: 96,
+                pose: CompanionPose.reading,
                 opacity: 0.9,
-                child: Image.asset(
-                  Assets.svgIcons.homeQuestBlob.path,
-                  width: 96,
-                  height: 144,
-                  fit: BoxFit.contain,
-                ),
               ),
             ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
-            child: SizedBox(
-              // Keeps the copy clear of the illustration rather than running under it.
-              width: 190,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    "TODAY'S QUEST",
-                    style: GoogleFonts.workSans(
-                      color: const Color(0xFF6B3C10),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.72,
-                      height: 1.0,
-                    ),
-                  ),
-                  const SizedBox(height: 13),
-                  Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.archivoBlack(
-                      color: const Color(0xFF011F54),
-                      fontSize: 26,
-                      height: 0.9,
-                    ),
-                  ),
-                  if (subtitle.isNotEmpty) ...[
-                    const SizedBox(height: 13),
-                    Text(
-                      subtitle,
-                      style: GoogleFonts.workSans(
-                        color: const Color(0xFF4C586E),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w400,
-                        height: 1.4,
+            // Keeps the copy clear of the illustration rather than running under
+            // it. This used to be a hard `width: 190`, which is only correct on a
+            // 375 screen — on a 320 the card shrinks but 190 does not, so the
+            // title ran straight under the blob. Reserving the illustration's
+            // column instead keeps the same clearance at every width.
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "TODAY'S QUEST",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.workSans(
+                          color: const Color(0xFF6B3C10),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.72,
+                          height: 1.0,
+                        ),
                       ),
-                    ),
-                  ],
-                ],
-              ),
+                      const SizedBox(height: 13),
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.archivoBlack(
+                          color: const Color(0xFF011F54),
+                          fontSize: 26,
+                          height: 0.9,
+                        ),
+                      ),
+                      if (subtitle.isNotEmpty) ...[
+                        const SizedBox(height: 13),
+                        Text(
+                          subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.workSans(
+                            color: const Color(0xFF4C586E),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w400,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                // Width tuned so the copy keeps exactly the clearance it has in
+                // the 375 design; it then holds proportionally on narrower ones.
+                if (showArt) const SizedBox(width: 89),
+              ],
             ),
           ),
         ],

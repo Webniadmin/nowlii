@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 
@@ -206,12 +207,12 @@ class _PopPoSahreState extends State<PopPoSahre> {
                             fit: BoxFit.cover,
                           ),
                         ),
-                        child: Center(
-                          child: ClipOval(
-                            child: Assets.svgImages.popUpSpekingTwoCarton.image(
-                              width: 100,
-                              height: 100,
-                            ),
+                        // Only the innermost layer is the character — the two outer
+                        // circles are decorative rings, so they stay as they are.
+                        child: const Center(
+                          child: NowliiAvatar(
+                            size: 100,
+                            pose: CompanionPose.speaking,
                           ),
                         ),
                       ),

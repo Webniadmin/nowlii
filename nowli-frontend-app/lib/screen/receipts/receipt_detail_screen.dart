@@ -6,6 +6,7 @@ import 'package:nowlii/models/call_summary_history.dart';
 import 'package:nowlii/services/receipt_format.dart';
 import 'package:nowlii/services/receipt_pdf.dart';
 import 'package:nowlii/services/voice_call_service.dart';
+import 'package:nowlii/widget/nowlii_avatar.dart';
 
 /// One receipt, opened from the library.
 ///
@@ -250,12 +251,12 @@ class _ReceiptDetailScreenState extends State<ReceiptDetailScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
-          Image.asset(
-            Assets.svgIcons.receiptFizzy.path,
-            width: 32,
-            height: 48,
-            fit: BoxFit.contain,
-          ),
+          // The user's companion, not fizzy. `receipt_fizzy.png` is byte-for-byte the
+          // fizzy character standing neutral, so every receipt showed the same orange
+          // character whoever the reader had picked. Neutral pose = the profile's own
+          // picture, which is that same standing shot for each companion. Footprint
+          // unchanged at 32 × 48.
+          const NowliiAvatar(size: 32, height: 48),
           const SizedBox(width: 10),
           Expanded(
             child: Text(

@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
@@ -156,12 +157,11 @@ class _PoupErrorState extends State<PoupError> with ScreenFlowMixin {
                             fit: BoxFit.cover,
                           ),
                         ),
-                        child: Center(
-                          child: ClipOval(
-                            child: Assets.svgImages.popUpSpekingTwoCarton.image(
-                              width: 100,
-                              height: 100,
-                            ),
+                        // The surrounding circle is decorative; only this is the character.
+                        child: const Center(
+                          child: NowliiAvatar(
+                            size: 100,
+                            pose: CompanionPose.speaking,
                           ),
                         ),
                       ),

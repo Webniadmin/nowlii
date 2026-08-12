@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
@@ -26,12 +27,9 @@ class AllQuestsDonePopup extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // App icon
-                  SizedBox(
-                    width: 90,
-                    height: 90,
-                    child: Image.asset(
-                      Assets.svgIcons.dailyTalksWithFuzzy.path,
-                    ),
+                  NowliiAvatar(
+                    size: 90,
+                    borderRadius: BorderRadius.circular(20),
                   ),
 
                   const SizedBox(height: 36),

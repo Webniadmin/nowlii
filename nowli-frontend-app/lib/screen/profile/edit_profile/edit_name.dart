@@ -1,3 +1,4 @@
+import 'package:nowlii/services/companion_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -625,7 +626,10 @@ class CharacterWidget extends StatelessWidget {
                     errorBuilder: (context, error, stackTrace) {
                       print('Error loading image from ${avatarOption.avatarLogo}: $error');
                       return Image.asset(
-                        'assets/svg_images/A.png',
+                        // The bundled art for *this* option, not a hardcoded A.png —
+                        // which used to relabel every companion as milo whenever S3
+                        // failed, in the picker itself.
+                        CompanionIdentity(optionId: avatarOption.id).assetPath,
                         width: 260,
                         height: 210,
                         fit: BoxFit.contain,

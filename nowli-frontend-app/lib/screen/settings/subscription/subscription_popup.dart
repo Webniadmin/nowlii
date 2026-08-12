@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -190,12 +191,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                     Center(
                       child: Transform.rotate(
                         angle: 1.07 * 3.1415926535 / 180,
-                        child: Image.asset(
-                          Assets.svgIcons.paywallCompanion.path,
-                          width: 80,
-                          height: 80,
-                          fit: BoxFit.contain,
-                        ),
+                        child: const NowliiAvatar(size: 80),
                       ),
                     ),
                     const SizedBox(height: 23.7),
