@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:go_router/go_router.dart';
@@ -2029,7 +2030,7 @@ class _AiVoiceState extends State<AiVoice>
       animation: _pulseController,
       builder: (context, child) {
         final pulseValue = _pulseController.value;
-        
+
         return Stack(
           alignment: Alignment.center,
           children: [
@@ -2098,16 +2099,26 @@ class _AiVoiceState extends State<AiVoice>
             ),
             
             // Avatar image with scale animation
+            //
+            // Unchanged from the original except for the picture: `callStartedEmpty.png`
+            // is `callStarted.png` with the orange character lifted out and the disc
+            // underneath restored from `popupSpeking` at matching scale — same canvas,
+            // same halos, same disc, same position. The companion is drawn inside at 87,
+            // the height the baked-in character measured in this 240 box, and sits within
+            // the same `Transform.scale` so it breathes with the disc exactly as before.
             Transform.scale(
               scale: 1.0 + (pulseValue * 0.05),
               child: Container(
                 width: 240,
                 height: 240,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   image: DecorationImage(
-                    image: Assets.svgImages.callStarted.image().image,
+                    image: AssetImage('assets/svg_images/callStartedEmpty.png'),
                     fit: BoxFit.cover,
                   ),
+                ),
+                child: const Center(
+                  child: NowliiAvatar(size: 87, pose: CompanionPose.speaking),
                 ),
               ),
             ),
