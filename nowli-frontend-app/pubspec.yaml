@@ -121,6 +121,11 @@ flutter:
     - assets/lottie_animations/
     - assets/images/
     - assets/dea_png/
+    # Per-character companion poses: <predefined_option id>_<pose>.png, 6 × 4.
+    # Transparent, drawn whole — see lib/services/companion_avatar.dart.
+    - assets/companions/
+    # The nine mood faces, keyed by lib/utils/mood_icons.dart.
+    - assets/mood_icons/
   #   - images/a_dot_ham.jpeg
 
   # An image asset can refer to one or more resolution-specific "variants", see
