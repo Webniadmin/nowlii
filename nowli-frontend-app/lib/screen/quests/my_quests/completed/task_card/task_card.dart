@@ -234,17 +234,23 @@ class _TaskCardState extends State<TaskCard> {
                     color: const Color(0xFF4C4CE6),
                   ),
                   const SizedBox(width: 6),
-                  Text(
-                    isCompleted ? 'Completed' : 'Not completed',
-                    style: GoogleFonts.workSans(
-                      color: const Color(0xFF4542EB), // Text-text-primary
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      height: 1.40,
-                      letterSpacing: -0.50,
+                  // Expanded rather than Flexible + Spacer: two flex-1 children split the
+                  // row evenly, which clips the label at half width for no reason. See the
+                  // same fix on the home greeting.
+                  Expanded(
+                    child: Text(
+                      isCompleted ? 'Completed' : 'Not completed',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.workSans(
+                        color: const Color(0xFF4542EB), // Text-text-primary
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        height: 1.40,
+                        letterSpacing: -0.50,
+                      ),
                     ),
                   ),
-                  const Spacer(),
                   Container(
                     width: 48,
                     height: 48,
@@ -310,25 +316,30 @@ class _TaskCardState extends State<TaskCard> {
            Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Level Tag
-              Container(
-                height: 34,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: ShapeDecoration(
-                  color: widget.levelColor,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
+              // Level Tag — Flexible because both chips carry backend text
+              // ('Deep focus', a duration string) at 18px in fixed-height pills.
+              Flexible(
+                child: Container(
+                  height: 34,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: ShapeDecoration(
+                    color: widget.levelColor,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                   ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  widget.levelText,
-                  style: GoogleFonts.workSans(
-                    color: _getTextColor(widget.levelText),
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    height: 1.40,
-                    letterSpacing: -0.40,
+                  alignment: Alignment.center,
+                  child: Text(
+                    widget.levelText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.workSans(
+                      color: _getTextColor(widget.levelText),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      height: 1.40,
+                      letterSpacing: -0.40,
+                    ),
                   ),
                 ),
               ),
@@ -336,24 +347,28 @@ class _TaskCardState extends State<TaskCard> {
               const SizedBox(width: 8),
 
               // Duration Tag
-              Container(
-                height: 34,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: ShapeDecoration(
-                  color: const Color(0xFFFAE3CE),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
+              Flexible(
+                child: Container(
+                  height: 34,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: ShapeDecoration(
+                    color: const Color(0xFFFAE3CE),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                   ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  widget.duration,
-                  style: GoogleFonts.workSans(
-                    color: const Color(0xFF011F54),
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    height: 1.0,
-                    letterSpacing: -0.40,
+                  alignment: Alignment.center,
+                  child: Text(
+                    widget.duration,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.workSans(
+                      color: const Color(0xFF011F54),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      height: 1.0,
+                      letterSpacing: -0.40,
+                    ),
                   ),
                 ),
               ),

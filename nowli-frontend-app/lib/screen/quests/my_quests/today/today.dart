@@ -569,12 +569,16 @@ class QuestCard extends StatelessWidget {
           children: [
             const Icon(Icons.phone, size: 20, color: Colors.white),
             const SizedBox(width: 8),
-            Text(
-              label ?? 'Call Nowlii (5 min)',
-              style: GoogleFonts.workSans(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
+            Flexible(
+              child: Text(
+                label ?? 'Call Nowlii (5 min)',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.workSans(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ],
@@ -627,6 +631,8 @@ class QuestCard extends StatelessWidget {
         alignment: Alignment.center,
         child: Text(
           'Move to tomorrow',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: GoogleFonts.workSans(
             color: const Color(0xFF4542EB),
             fontSize: 15,

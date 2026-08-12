@@ -192,8 +192,32 @@ class CustomNextButton extends StatelessWidget {
                       right: 108.w, // 80(icon) + 8(right padding) + 20(gap)
                     ),
                     child: Center(
+                      // scaleDown so a long label shrinks to fit the pill instead
+                      // of spilling out of it — this is the shared CTA, and the
+                      // text it carries ranges from 'NEXT' to a full sentence.
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          buttonText,
+                          maxLines: 1,
+                          style:
+                              textStyle ??
+                              TextStyle(
+                                color: Colors.white,
+                                fontSize: 28.sp,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
                       child: Text(
                         buttonText,
+                        maxLines: 1,
                         style:
                             textStyle ??
                             TextStyle(
@@ -202,19 +226,6 @@ class CustomNextButton extends StatelessWidget {
                               fontWeight: FontWeight.bold,
                             ),
                       ),
-                    ),
-                  )
-                else
-                  Center(
-                    child: Text(
-                      buttonText,
-                      style:
-                          textStyle ??
-                          TextStyle(
-                            color: Colors.white,
-                            fontSize: 28.sp,
-                            fontWeight: FontWeight.bold,
-                          ),
                     ),
                   ),
 

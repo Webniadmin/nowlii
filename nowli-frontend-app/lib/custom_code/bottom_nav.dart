@@ -122,24 +122,32 @@ class _CustomNavigationBarState extends State<CustomNavigationBar> {
         ? const Color(0xFF4542EB)
         : const Color(0xFF011F54);
 
-    return GestureDetector(
-      onTap: () => _onNavTap(index), // FIXED
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: textColor,
-                fontSize: 14,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+    // Expanded so each tab owns a third of the bar — which is what the indicator
+    // at width/3 already assumes. Unbounded, a longer translated label ('Quests'
+    // and 'Progress' go through .tr) pushed its neighbours off the edge.
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _onNavTap(index), // FIXED
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 14,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Image.asset(icon, color: iconColor, width: 24, height: 24),
-          ],
+              const SizedBox(height: 4),
+              Image.asset(icon, color: iconColor, width: 24, height: 24),
+            ],
+          ),
         ),
       ),
     );
