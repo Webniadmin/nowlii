@@ -79,6 +79,13 @@ Public auth routes still redirect to home while signed in — for those, log out
 - **"Log out" leaves you on the Settings screen.** It does clear the session — the next
   launch lands on the entry screen — but nothing navigates at the time, so it reads as
   having failed.
+- **"Delete My Account" does the same thing, and worse.** Confirming it spins forever:
+  the account *is* deleted (verified — the next launch lands on sign-in because the stored
+  token points at a user who no longer exists), but the screen never leaves the spinner.
+  On the one flow both stores require, someone deleting their account is left staring at a
+  loader with no idea whether it worked. `auth_service.deleteAccount()` returns true on
+  200 and prints nothing, which is why the log looks empty. Same missing navigation as
+  Log out — worth fixing together.
 - **Terms of Service is linked on `readyToStartScreen`** even though the document does not
   exist. Sign-up and Settings → Privacy hide it; this screen does not.
 - **`popup_error`, `pop_po_sahre` and `procrastination_screen`** still draw the old
