@@ -7,6 +7,7 @@ import 'package:nowlii/api/nowlii_options_api.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/widget/animated_onboarding_topbar.dart';
+import 'package:nowlii/widget/auto_shrink_text.dart';
 
 class AvatarLogo extends StatefulWidget {
   const AvatarLogo({super.key});
@@ -93,8 +94,11 @@ class _AvatarLogoState extends State<AvatarLogo> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "LET'S SHAPE YOUR NOWLI!",
+                  // "NOWLI" in the original — one i short of the product's name,
+                  // on the screen that introduces it. The design reads NOWLII.
+                  AutoShrinkText(
+                    "LET'S SHAPE YOUR NOWLII!",
+                    maxLines: 1,
                     style: AppsTextStyles.black24Uppercase,
                   ),
                   const SizedBox(height: 8),
@@ -183,11 +187,19 @@ class _AvatarLogoState extends State<AvatarLogo> {
             GestureDetector(
               onTap: () => context.go("/avatarLogoAndName"),
               child: Container(
-                width: 354,
+                // Was a hardcoded 354 — the design width at 375. A 320dp screen
+                // clamps it, and the row inside adds up to 282 of fixed parts
+                // (a 170 label slot, 20 of gap, a 92 icon) against 68 of
+                // padding, so it overflowed by 30 and drew the striped bar.
+                // Full width now, with the label taking whatever is left, and
+                // a margin so it lines up with the grid above rather than
+                // running to both edges.
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 16),
                 height: 116,
                 padding: const EdgeInsets.only(
                   top: 8,
-                  left: 60,
+                  left: 24,
                   right: 8,
                   bottom: 8,
                 ),
@@ -212,24 +224,27 @@ class _AvatarLogoState extends State<AvatarLogo> {
                   ],
                 ),
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: MainAxisSize.max,
                   mainAxisAlignment: MainAxisAlignment.start,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    SizedBox(
-                      width: 170,
-                      child: Text(
-                        'Next',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.workSans(
-                          color: const Color(0xFF011F54),
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                          height: 0.8,
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Next',
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          style: GoogleFonts.workSans(
+                            color: const Color(0xFF011F54),
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            height: 0.8,
+                          ),
                         ),
                       ),
                     ),
-                    SizedBox(width: 20), // spacing
+                    SizedBox(width: 12), // spacing
                     Container(
                       padding: const EdgeInsets.all(16), // আগে 24 ছিল
                       decoration: ShapeDecoration(
@@ -274,7 +289,11 @@ class _AvatarLogoState extends State<AvatarLogo> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: option.backgroundColor,
+          // Flat for five of the six; Zee's tile is a gradient in the design.
+          color: option.backgroundGradient == null
+              ? option.backgroundColor
+              : null,
+          gradient: option.backgroundGradient,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected ? const Color(0xFF4B7BF5) : Colors.transparent,

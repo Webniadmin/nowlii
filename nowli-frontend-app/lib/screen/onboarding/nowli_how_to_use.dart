@@ -5,355 +5,418 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/widget/animated_onboarding_topbar.dart';
 
-/// Section heading inside the blue tips sheet.
+/// Step 4 — how to use Nowlii. Rebuilt to the design (Figma `46:10084`).
 ///
-/// `small` is for the two sub-headings under "A couple of honest truths" — they
-/// sit a level below it, so they must not compete with it visually.
-Widget _sectionHeading(String text, double screenWidth, {bool small = false}) {
-  return Text(
-    text,
-    style: GoogleFonts.workSans(
-      color: const Color(0xFFFFFCF1),
-      fontSize: screenWidth * (small ? 0.042 : 0.05),
-      fontWeight: FontWeight.w900,
-      height: 1.25,
-      letterSpacing: -0.10,
-    ),
-  );
-}
-
-Widget _sectionBody(String text, double screenWidth) {
-  return Text(
-    text,
-    style: GoogleFonts.workSans(
-      color: const Color(0xFFFFFCF1),
-      fontSize: screenWidth * 0.04,
-      fontWeight: FontWeight.w500,
-      height: 1.50,
-      letterSpacing: -0.10,
-    ),
-  );
-}
-
+/// **What was wrong.** The blue tips sheet was a `Positioned(bottom: 0)` capped
+/// at 55% of the screen, laid *over* the column behind it. On anything shorter
+/// than the mock it covered the sentence above it, so "Our biggest goal is you
+/// to stop to use Nowlii after 12 months." was sliced through its second line —
+/// the screen's whole point, half-hidden. And the three pieces of advice were
+/// run together as loose paragraphs; the design gives each one its own card with
+/// a round icon, which is what makes the panel readable rather than a wall.
+///
+/// The page is one scroll now: the sheet follows the heading instead of floating
+/// over it, so nothing can cover anything, at any height.
+///
+/// The three icons are Material glyphs in coloured circles. The design's are
+/// custom, but they were never exported, and a clock, a speech bubble and a pair
+/// of scales are exactly what these are — worth revisiting if the art arrives.
 class NowliHowToUse extends StatelessWidget {
   const NowliHowToUse({super.key});
 
+  static const _cream = Color(0xFFFFFCF1);
+  static const _navy = Color(0xFF011F54);
+  static const _panelBlue = Color(0xFF4542EB);
+
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
-    final screenWidth = MediaQuery.of(context).size.width;
+    final size = MediaQuery.of(context).size;
+    final screenHeight = size.height;
+    final screenWidth = size.width;
     final isSmallDevice = screenHeight < 700;
     final isMediumDevice = screenHeight >= 700 && screenHeight < 800;
+    final gutter = screenWidth * 0.05;
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          SafeArea(
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: screenWidth * 0.04,
-                vertical: screenHeight * 0.02,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Top Row
-                  AnimatedOnboardingTopbar(
-                    currentStep: 4,
-                    totalSteps: kOnboardingTotalSteps,
-                    backRoute: "/onbordingFetures",
-                    skipRoute: "/avatarLogo",
-                    isSmallDevice: isSmallDevice,
-                    isMediumDevice: isMediumDevice,
-                    screenWidth: screenWidth,
-                  ),
-
-                  SizedBox(height: screenHeight * 0.03),
-
-                  // Card with icon and text
-                  Container(
-                    height: screenHeight * 0.19,
-                    padding: EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFA0E871),
-                      borderRadius: BorderRadius.circular(screenWidth * 0.04),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: screenWidth * 0.35,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(
-                              screenWidth * 0.03,
-                            ),
-                          ),
-                          child: Assets.svgIcons.nowliHowToUse.svg(
-                            height: screenHeight * 0.15,
-                            width: screenWidth * 0.28,
-                          ),
-                        ),
-                        SizedBox(width: screenWidth * 0.04),
-                        Expanded(
-                          child: Text(
-                            'Nowlii is like a car, it is your toll that will bring where you are headed to! 🌱 like a domino effect in your life actions.',
-                            style: GoogleFonts.workSans(
-                              color: const Color(0xFF011F54),
-                              fontSize: screenWidth * 0.038,
-                              fontWeight: FontWeight.w900,
-                              height: 1.7,
-                              letterSpacing: -0.10,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  SizedBox(height: screenHeight * 0.03),
-
-                  Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: screenWidth * 0.02,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(height: 10),
-                        Text(
-                          'Our biggest goal is you to stop\nto use Nowlii after 12 months.',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.workSans(
-                            fontWeight: FontWeight.w900,
-                            fontSize: screenWidth * 0.055,
-                            height: 1.4,
-                            color: const Color(0xFF011F54),
-                          ),
-                        ),
-                        SizedBox(height: 10),
-                      ],
-                    ),
-                  ),
-
-                  const Expanded(child: SizedBox()),
-                ],
+      backgroundColor: _cream,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(gutter, screenHeight * 0.015, gutter, 0),
+              child: AnimatedOnboardingTopbar(
+                currentStep: 4,
+                totalSteps: kOnboardingTotalSteps,
+                backRoute: "/onbordingFetures",
+                skipRoute: "/avatarLogo",
+                isSmallDevice: isSmallDevice,
+                isMediumDevice: isMediumDevice,
+                screenWidth: screenWidth,
               ),
             ),
-          ),
-
-          // Bottom Sheet
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              constraints: BoxConstraints(maxHeight: screenHeight * 0.55),
-              padding: EdgeInsets.only(
-                left: screenWidth * 0.06,
-                right: screenWidth * 0.06,
-                top: screenHeight * 0.018,
-                bottom: screenHeight * 0.03,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0xFF4542EB),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(screenWidth * 0.06),
-                  topRight: Radius.circular(screenWidth * 0.06),
-                ),
-              ),
+            Expanded(
               child: SingleChildScrollView(
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Title
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
+                    SizedBox(height: screenHeight * 0.025),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: gutter),
+                      child: _IntroCard(screenWidth: screenWidth),
+                    ),
+                    SizedBox(height: screenHeight * 0.03),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: gutter),
                       child: Text(
-                        'SOME OF OUR TIPS AND\nTRICKS HOW TO USE\nNOWLII 🛋️💡',
-                        maxLines: 3,
+                        'Our biggest goal is you to stop to use Nowlii after '
+                        '12 months.',
                         style: GoogleFonts.workSans(
-                          color: const Color(0xFFFFFCF1),
-                          fontSize: screenWidth * 0.062,
+                          color: _navy,
+                          fontSize: screenWidth * 0.055,
                           fontWeight: FontWeight.w900,
                           height: 1.3,
-                          letterSpacing: -0.10,
                         ),
                       ),
                     ),
-
-                    SizedBox(height: screenHeight * 0.02),
-
-                    _sectionHeading('TIME IT RIGHT', screenWidth),
-                    SizedBox(height: screenHeight * 0.012),
-
-                    // ✅ Description - Fixed 5 lines all devices
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: SizedBox(
-                        width: screenWidth * 0.88,
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              TextSpan(
-                                text:
-                                    'We recommend booking the call with Nowlii when you are putting an alarm at night,',
-                                style: GoogleFonts.workSans(
-                                  color: const Color(0xFFFFFCF1),
-                                  fontSize: screenWidth * 0.045,
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.50,
-                                  letterSpacing: -0.10,
-                                ),
-                              ),
-                              TextSpan(
-                                text: ' 10 minutes after the alarm',
-                                style: GoogleFonts.workSans(
-                                  color: const Color(0xFFFFFCF1),
-                                  fontSize: screenWidth * 0.047,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.40,
-                                  letterSpacing: -0.50,
-                                ),
-                              ),
-                              TextSpan(
-                                text:
-                                    ' so Nowlii will be there to start the day with you ✨',
-                                style: GoogleFonts.workSans(
-                                  color: const Color(0xFFFFFCF1),
-                                  fontSize: screenWidth * 0.045,
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.50,
-                                  letterSpacing: -0.50,
-                                ),
-                              ),
-                            ],
-                          ),
-                          maxLines: 5,
-                        ),
-                      ),
-                    ),
-
-                    SizedBox(height: screenHeight * 0.035),
-
-                    // ── "A couple of honest truths" ──
-                    // Added 2026-07-31 from the updated onboarding design; this
-                    // section is why the screen now scrolls rather than fitting a
-                    // single viewport.
-                    _sectionHeading('A COUPLE OF HONEST TRUTHS', screenWidth),
-                    SizedBox(height: screenHeight * 0.02),
-
-                    _sectionHeading(
-                      'CLOSE TO YOURSELF, CLOSER TO OTHERS',
-                      screenWidth,
-                      small: true,
-                    ),
-                    SizedBox(height: screenHeight * 0.01),
-                    _sectionBody(
-                      'We all carry heavy loads. Sometimes the biggest act of love '
-                      'to yourself and others is to first talk it out with yourself '
-                      'and let your voice lead your way.',
-                      screenWidth,
-                    ),
-
-                    SizedBox(height: screenHeight * 0.025),
-
-                    _sectionHeading(
-                      "YOUR EASY IS SOMEONE'S HARD. AND OTHER WAY AROUND.",
-                      screenWidth,
-                      small: true,
-                    ),
-                    SizedBox(height: screenHeight * 0.01),
-                    _sectionBody(
-                      'Making a quick phone call can feel like climbing a mountain. '
-                      'Running a marathon can feel like a breeze. We all have '
-                      'different hard. No judgment, no comparison — know and be '
-                      'honest with yourself.',
-                      screenWidth,
-                    ),
-
-                    SizedBox(height: screenHeight * 0.035),
-
-                    // Next Button
-                    GestureDetector(
-                      onTap: () => context.go("/avatarLogo"),
-                      child: Container(
-                        width: double.infinity,
-                        height: screenHeight * 0.13,
-                        padding: EdgeInsets.only(
-                          top: screenHeight * 0.008,
-                          left: screenWidth * 0.08,
-                          right: screenWidth * 0.02,
-                          bottom: screenHeight * 0.008,
-                        ),
-                        decoration: ShapeDecoration(
-                          color: const Color(0xFFFF8F26),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          shadows: [
-                            BoxShadow(
-                              color: Color(0x070A0C12),
-                              blurRadius: 6,
-                              offset: Offset(0, 4),
-                              spreadRadius: -2,
-                            ),
-                            BoxShadow(
-                              color: Color(0x140A0C12),
-                              blurRadius: 16,
-                              offset: Offset(0, 12),
-                              spreadRadius: -4,
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.max,
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            // Next text
-                            Expanded(
-                              child: Text(
-                                'Next',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.workSans(
-                                  color: const Color(0xFF011F54),
-                                  fontSize: screenWidth * 0.07,
-                                  fontWeight: FontWeight.w900,
-                                  height: 1.0,
-                                ),
-                              ),
-                            ),
-
-                            // Arrow icon
-                            Container(
-                              padding: EdgeInsets.all(screenWidth * 0.035),
-                              decoration: ShapeDecoration(
-                                color: const Color(0xFF011F54),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                              ),
-                              child: SvgPicture.asset(
-                                Assets.svgIcons.startLetsGo.path,
-                                width: screenWidth * 0.13,
-                                height: screenWidth * 0.13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                    SizedBox(height: screenHeight * 0.03),
+                    _TipsPanel(
+                      screenWidth: screenWidth,
+                      screenHeight: screenHeight,
+                      gutter: gutter,
                     ),
                   ],
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The green card at the top: the app's mark on white, and the one-line idea.
+class _IntroCard extends StatelessWidget {
+  const _IntroCard({required this.screenWidth});
+
+  final double screenWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFA0E871),
+        borderRadius: BorderRadius.circular(screenWidth * 0.04),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: screenWidth * 0.30,
+            height: screenWidth * 0.30,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(screenWidth * 0.035),
+            ),
+            child: Center(
+              child: Assets.svgIcons.nowliHowToUse.svg(
+                width: screenWidth * 0.20,
+                height: screenWidth * 0.20,
+              ),
+            ),
+          ),
+          SizedBox(width: screenWidth * 0.04),
+          Expanded(
+            // Height is free here — the page scrolls — so the sentence simply
+            // takes the lines it needs instead of being trimmed to a box.
+            child: Text(
+              'Nowlii is like a car, it is your toll that will bring where you '
+              'are headed to! 🌱 like a domino effect in your life actions.',
+              style: GoogleFonts.workSans(
+                color: NowliHowToUse._navy,
+                fontSize: screenWidth * 0.038,
+                fontWeight: FontWeight.w900,
+                height: 1.45,
+                letterSpacing: -0.10,
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The blue sheet: a title, three advice cards, and the way on.
+class _TipsPanel extends StatelessWidget {
+  const _TipsPanel({
+    required this.screenWidth,
+    required this.screenHeight,
+    required this.gutter,
+  });
+
+  final double screenWidth;
+  final double screenHeight;
+  final double gutter;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(
+        gutter,
+        screenHeight * 0.03,
+        gutter,
+        screenHeight * 0.03 + bottomInset,
+      ),
+      decoration: BoxDecoration(
+        color: NowliHowToUse._panelBlue,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(screenWidth * 0.06),
+          topRight: Radius.circular(screenWidth * 0.06),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'SOME OF OUR TIPS AND TRICKS HOW TO USE NOWLII 🛋️💡',
+            style: GoogleFonts.workSans(
+              color: NowliHowToUse._cream,
+              fontSize: screenWidth * 0.062,
+              fontWeight: FontWeight.w900,
+              height: 1.25,
+              letterSpacing: -0.10,
+            ),
+          ),
+          SizedBox(height: screenHeight * 0.025),
+          _TipCard(
+            screenWidth: screenWidth,
+            icon: Icons.schedule_rounded,
+            iconBackground: const Color(0xFFFF8F26),
+            title: 'TIME IT RIGHT',
+            body: TextSpan(
+              children: [
+                TextSpan(
+                  text: 'We recommend booking the call with Nowlii when you '
+                      'are putting an alarm at night,',
+                  style: _bodyStyle(screenWidth),
+                ),
+                TextSpan(
+                  text: ' 10 minutes after the alarm',
+                  style: _bodyStyle(screenWidth).copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                TextSpan(
+                  text: ' so Nowlii will be there to start the day with you ✨',
+                  style: _bodyStyle(screenWidth),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: screenHeight * 0.035),
+          Text(
+            'A COUPLE OF HONEST TRUTHS',
+            style: GoogleFonts.workSans(
+              color: NowliHowToUse._cream,
+              fontSize: screenWidth * 0.05,
+              fontWeight: FontWeight.w900,
+              height: 1.25,
+              letterSpacing: -0.10,
+            ),
+          ),
+          SizedBox(height: screenHeight * 0.02),
+          _TipCard(
+            screenWidth: screenWidth,
+            icon: Icons.chat_bubble_rounded,
+            iconBackground: const Color(0xFFC7C6FF),
+            iconColor: NowliHowToUse._panelBlue,
+            title: 'CLOSE TO YOURSELF, CLOSER TO OTHERS',
+            body: TextSpan(
+              text: 'We all carry heavy loads. Sometimes the biggest act of '
+                  'love to yourself and others is to first talk it out with '
+                  'yourself and let your voice lead your way.',
+              style: _bodyStyle(screenWidth),
+            ),
+          ),
+          SizedBox(height: screenHeight * 0.02),
+          _TipCard(
+            screenWidth: screenWidth,
+            icon: Icons.balance_rounded,
+            iconBackground: const Color(0xFF7BD87F),
+            iconColor: NowliHowToUse._navy,
+            title: "YOUR EASY IS SOMEONE'S HARD. AND OTHER WAY AROUND.",
+            body: TextSpan(
+              text: 'Making a quick phone call can feel like climbing a '
+                  'mountain. Running a marathon can feel like a breeze. We all '
+                  'have different hard. No judgment, no comparison — know and '
+                  'be honest with yourself.',
+              style: _bodyStyle(screenWidth),
+            ),
+          ),
+          SizedBox(height: screenHeight * 0.035),
+          _NextButton(screenWidth: screenWidth, screenHeight: screenHeight),
+        ],
+      ),
+    );
+  }
+
+  static TextStyle _bodyStyle(double screenWidth) => GoogleFonts.workSans(
+        color: NowliHowToUse._cream,
+        fontSize: screenWidth * 0.044,
+        fontWeight: FontWeight.w500,
+        height: 1.45,
+        letterSpacing: -0.10,
+      );
+}
+
+/// One piece of advice: round icon, small caps title, body.
+class _TipCard extends StatelessWidget {
+  const _TipCard({
+    required this.screenWidth,
+    required this.icon,
+    required this.iconBackground,
+    required this.title,
+    required this.body,
+    this.iconColor = Colors.white,
+  });
+
+  final double screenWidth;
+  final IconData icon;
+  final Color iconBackground;
+  final Color iconColor;
+  final String title;
+  final TextSpan body;
+
+  @override
+  Widget build(BuildContext context) {
+    final iconSize = screenWidth * 0.11;
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(screenWidth * 0.04),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(screenWidth * 0.045),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: iconSize,
+                height: iconSize,
+                decoration: BoxDecoration(
+                  color: iconBackground,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: iconSize * 0.55, color: iconColor),
+              ),
+              SizedBox(width: screenWidth * 0.03),
+              Expanded(
+                child: Text(
+                  title,
+                  style: GoogleFonts.workSans(
+                    color: NowliHowToUse._cream,
+                    fontSize: screenWidth * 0.038,
+                    fontWeight: FontWeight.w800,
+                    height: 1.3,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: screenWidth * 0.03),
+          Text.rich(body),
+        ],
+      ),
+    );
+  }
+}
+
+class _NextButton extends StatelessWidget {
+  const _NextButton({required this.screenWidth, required this.screenHeight});
+
+  final double screenWidth;
+  final double screenHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => context.go("/avatarLogo"),
+      child: Container(
+        width: double.infinity,
+        height: screenHeight * 0.115,
+        padding: EdgeInsets.only(
+          top: screenHeight * 0.008,
+          left: screenWidth * 0.06,
+          right: screenWidth * 0.02,
+          bottom: screenHeight * 0.008,
+        ),
+        decoration: ShapeDecoration(
+          color: const Color(0xFFFF8F26),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+          ),
+          shadows: const [
+            BoxShadow(
+              color: Color(0x070A0C12),
+              blurRadius: 6,
+              offset: Offset(0, 4),
+              spreadRadius: -2,
+            ),
+            BoxShadow(
+              color: Color(0x140A0C12),
+              blurRadius: 16,
+              offset: Offset(0, 12),
+              spreadRadius: -4,
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  'Next',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  style: GoogleFonts.workSans(
+                    color: NowliHowToUse._navy,
+                    fontSize: screenWidth * 0.07,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(width: screenWidth * 0.02),
+            Container(
+              padding: EdgeInsets.all(screenWidth * 0.03),
+              decoration: const ShapeDecoration(
+                color: NowliHowToUse._navy,
+                shape: CircleBorder(),
+              ),
+              child: SvgPicture.asset(
+                Assets.svgIcons.startLetsGo.path,
+                width: screenWidth * 0.11,
+                height: screenWidth * 0.11,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

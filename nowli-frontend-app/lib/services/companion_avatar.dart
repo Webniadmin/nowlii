@@ -106,7 +106,22 @@ class CompanionIdentity {
   /// (`…/nowlii_logos/zee.png`), which is not user-editable; then the preset name; then
   /// the old id arithmetic, kept only so an unrecognised companion still renders
   /// something rather than nothing.
-  int get _slot {
+  int get _slot =>
+      slotFor(imageUrl: imageUrl, presetName: presetName, optionId: optionId);
+
+  /// The same resolution, for callers that hold an option rather than a profile —
+  /// the onboarding picker, which has a list of `NowliiPredefinedOption`s and no
+  /// companion of its own yet.
+  ///
+  /// Static and shared on purpose. The picker had its own `(id - 1) % 6` for tile
+  /// colours, so it repeated this bug in full: on production ids it put milo on
+  /// orange instead of navy and gave two pairs of companions the same colour.
+  /// Two copies of an ordering rule is one copy too many.
+  static int slotFor({
+    String? imageUrl,
+    String presetName = '',
+    int? optionId,
+  }) {
     final url = imageUrl;
     if (url != null && url.isNotEmpty) {
       final file = url.split('/').last.split('.').first.toLowerCase();

@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/widget/animated_onboarding_topbar.dart';
+import 'package:nowlii/widget/auto_shrink_text.dart';
 
 class OnboardingFeatures extends StatelessWidget {
   const OnboardingFeatures({super.key});
@@ -234,34 +235,32 @@ class OnboardingFeatures extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
+                // The three cards split the screen evenly, so on a short or
+                // narrow phone this text had less room than it needed — and the
+                // card's `Clip.hardEdge` sliced the last line in half, with no
+                // ellipsis to say so, just a row of half-height letters.
                 Flexible(
-                  child: Text(
+                  child: AutoShrinkText(
                     title,
                     maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: const Color(0xFF011F54),
                       fontSize: titleFontSize,
                       fontFamily: 'Wosker',
                       fontWeight: FontWeight.w400,
-
-                      // ✅ height: 0.95 use kora hoyeche
-                      // Default height: 1.1 thakle line gap beshi mone hoto,
-                      // especially "EMOTIONAL \nSUPPORT" er moton 2-line title e.
-                      // 0.95 dile actual line height = fontSize × 0.95,
-                      // mane lines gulo ektu kache ashe — tighter & cleaner dekha jay.
                       height: 0.80,
-
                       letterSpacing: 0.68,
                     ),
                   ),
                 ),
                 SizedBox(height: textSpacing),
                 Flexible(
-                  child: Text(
+                  child: AutoShrinkText(
                     description,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                    // 4 rather than 3: the sentence wants a fourth line on a
+                    // narrow screen, and what keeps it inside the card now is
+                    // the shrinking, not the line cap.
+                    maxLines: 4,
                     style: GoogleFonts.workSans(
                       color: const Color(0xFF011F54),
                       fontSize: 16,

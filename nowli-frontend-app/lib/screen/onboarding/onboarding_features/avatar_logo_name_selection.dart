@@ -94,11 +94,16 @@ class _AvatarLogoAndNameState extends State<AvatarLogoAndName> {
               child: Opacity(
                 opacity: _selectedName.trim().isEmpty ? 0.5 : 1.0,
                 child: Container(
-                width: 334,
+                // Was 334, the design width at 375; clamped on a 320dp screen
+                // the fixed parts of the row no longer fit and it overflowed
+                // by 10. See the same button on the previous step. The margin
+                // keeps it aligned with the card above instead of edge to edge.
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 24),
                 height: 116,
                 padding: const EdgeInsets.only(
                   top: 8,
-                  left: 40,
+                  left: 24,
                   right: 8,
                   bottom: 8,
                 ),
@@ -123,24 +128,27 @@ class _AvatarLogoAndNameState extends State<AvatarLogoAndName> {
                   ],
                 ),
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: MainAxisSize.max,
                   mainAxisAlignment: MainAxisAlignment.start,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    SizedBox(
-                      width: 170,
-                      child: Text(
-                        'Next',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.workSans(
-                          color: const Color(0xFF011F54),
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                          height: 0.8,
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Next',
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          style: GoogleFonts.workSans(
+                            color: const Color(0xFF011F54),
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            height: 0.8,
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 20),
+                    const SizedBox(width: 12),
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: ShapeDecoration(
@@ -428,10 +436,15 @@ class _NameSelectionPageState extends State<NameSelectionPage>
                     borderRadius: BorderRadius.circular(25),
                   ),
                   child: Center(
+                    // Always the companion the user picked on the previous
+                    // screen. Tapping "Choose your own name" used to swap this
+                    // to `avatars[0]` — so someone who had chosen the green one
+                    // watched it turn into a different character the moment they
+                    // went to type a name, on the one screen whose entire job is
+                    // naming the thing they already chose. Same class of bug the
+                    // ↻ control had, noted just above `_rotateName`.
                     child: CharacterWidget(
-                      avatarOption: _showTextField
-                          ? avatars[0]
-                          : avatars[_currentAvatarIndex],
+                      avatarOption: avatars[_currentAvatarIndex],
                     ),
                   ),
                 ),
@@ -466,7 +479,11 @@ class _NameSelectionPageState extends State<NameSelectionPage>
               const SizedBox(height: 12),
               Center(
                 child: SizedBox(
-                  width: 320,
+                  // 320 was the whole width of the narrowest phone we support,
+                  // leaving nothing for the screen's own padding, so the label
+                  // beside the + icon had to wrap. Full width inside the
+                  // padding, with the label scaling rather than wrapping.
+                  width: double.infinity,
                   height: 50,
                   child: OutlinedButton.icon(
                     onPressed: _showCustomNameInput,
@@ -475,13 +492,18 @@ class _NameSelectionPageState extends State<NameSelectionPage>
                       width: 18,
                       height: 18,
                     ),
-                    label: Text(
-                      'Choose your own name',
-                      style: GoogleFonts.workSans(
-                        color: const Color(0xFF011F54),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        height: 0.80,
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Choose your own name',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.workSans(
+                          color: const Color(0xFF011F54),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          height: 0.80,
+                        ),
                       ),
                     ),
                     style: OutlinedButton.styleFrom(
