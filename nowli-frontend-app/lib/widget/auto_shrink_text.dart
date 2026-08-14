@@ -20,6 +20,12 @@ import 'package:flutter/material.dart';
 ///
 /// Measuring is done with the same [TextScaler] the surrounding widgets get, so
 /// what is measured is what is painted, including the OS font-size setting.
+///
+/// **Do not put this inside `IntrinsicWidth` or `IntrinsicHeight`.** It is a
+/// [LayoutBuilder], which cannot answer an intrinsic-size query, so the parent
+/// measures it as nothing and the whole subtree collapses — silently, with no
+/// error to point at it. That happened to the fourth tutorial bubble: the
+/// screen dimmed and drew nothing at all.
 class AutoShrinkText extends StatelessWidget {
   const AutoShrinkText(
     this.data, {
@@ -58,6 +64,17 @@ class AutoShrinkText extends StatelessWidget {
         final scaler = MediaQuery.textScalerOf(context);
         final direction = Directionality.of(context);
 
+        // An ellipsis only belongs where there is a line cap to put it on.
+        //
+        // Setting `TextOverflow.ellipsis` with `maxLines: null` does not mean
+        // "wrap freely, trim if it runs out of room" — it collapses the text to
+        // a single ellipsised line. The tutorial bubbles read
+        // "Start here. A good day begi…" across one line with half the bubble
+        // empty underneath, and the measuring pass below could not see it
+        // coming because *it* had no ellipsis: it measured two lines, decided
+        // they fit, and never shrank anything.
+        final ellipsis = maxLines == null ? null : '…';
+
         while (size > minFontSize) {
           final painter = TextPainter(
             text: TextSpan(text: data, style: style.copyWith(fontSize: size)),
@@ -65,6 +82,7 @@ class AutoShrinkText extends StatelessWidget {
             textAlign: textAlign ?? TextAlign.start,
             textDirection: direction,
             textScaler: scaler,
+            ellipsis: ellipsis,
           )..layout(maxWidth: constraints.maxWidth);
 
           final tooManyLines = painter.didExceedMaxLines;
@@ -79,9 +97,11 @@ class AutoShrinkText extends StatelessWidget {
           style: style.copyWith(fontSize: size),
           maxLines: maxLines,
           textAlign: textAlign,
-          // Only reachable at the floor, where the text is genuinely longer
-          // than any readable size could fit.
-          overflow: TextOverflow.ellipsis,
+          // Matches the measuring pass above. With a line cap, the ellipsis is
+          // the backstop for text still too long at the floor size; without
+          // one, the text wraps to as many lines as it needs and the shrinking
+          // is what keeps it inside the box.
+          overflow: maxLines == null ? TextOverflow.clip : TextOverflow.ellipsis,
         );
       },
     );

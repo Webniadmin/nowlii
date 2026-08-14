@@ -260,8 +260,13 @@ class TextBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IntrinsicWidth(
-      child: Column(
+    // No `IntrinsicWidth` here any more. The text below now sets its own width,
+    // so there is nothing left for it to measure — and it cannot measure what
+    // is inside: `AutoShrinkText` is a `LayoutBuilder`, which has no intrinsic
+    // width to give, so the whole bubble collapsed to nothing. The tutorial's
+    // last step dimmed the screen and drew no bubble at all, which read as the
+    // app hanging for as long as it took to tap again.
+    return Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -310,8 +315,7 @@ class TextBubble extends StatelessWidget {
           ),
           const SizedBox(height: 6),
         ],
-      ),
-    );
+      );
   }
 }
 
