@@ -180,3 +180,8 @@ ehthumbs.db
 Desktop.ini
 *.tmp
 *.bak
+
+# Local archive of the repo — was swept in by a `git add -A` on 2026-08-14.
+# Kept on disk, out of git.
+nowli-app.rar
+*.rar
