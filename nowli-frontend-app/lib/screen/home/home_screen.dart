@@ -174,15 +174,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // Clear the new user flag
       await prefs.setBool('is_new_user', false);
       
-      // Show onboarding tooltips
+      // Show onboarding tooltips.
+      //
+      // Deliberately **without** `onComplete: _showAllNotifications`. Finishing
+      // the tour used to fire all four notification designs back to back, so a
+      // brand-new user's first moment in the app was a stack of alerts about
+      // things that had not happened — a quest starting soon, a call that
+      // succeeded, one that failed. They are design samples, not events. Each
+      // belongs to the moment it describes; until those moments are wired, none
+      // of them should fire.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          OnboardingOverlay.show(context, onComplete: _showAllNotifications);
+          OnboardingOverlay.show(context);
         }
       });
     }
   }
 
+  /// The four notification designs, with the copy they were written with.
+  ///
+  /// Kept, not deleted: this is the only place that spells out what each type
+  /// looks like and says, and it is what a real trigger should call when one
+  /// exists. Nothing calls it today — see the note in `_checkAndShowOnboarding`.
+  // ignore: unused_element
   void _showAllNotifications() {
     if (!mounted) return;
 

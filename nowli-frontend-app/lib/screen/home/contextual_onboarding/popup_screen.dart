@@ -1,6 +1,17 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
+import 'package:nowlii/widget/auto_shrink_text.dart';
+
+/// The tutorial bubbles were drawn at a flat 282 wide inside a fixed height.
+/// On a 320dp screen that is the whole width bar a couple of points, so the
+/// copy inside had nowhere to wrap and the fixed height cut it off. Keep the
+/// design width where it fits, and step back from the screen edges where it
+/// does not.
+double _bubbleWidth(BuildContext context) =>
+    math.min(282.0, MediaQuery.sizeOf(context).width - 32);
 
 // Add to HomeScreen's initState or build method:
 // OnboardingOverlay.show(context);
@@ -96,7 +107,7 @@ class ChatBubbleContainer extends StatelessWidget {
     return CustomPaint(
       painter: BubbleTail(),
       child: Container(
-        width: 282,
+        width: _bubbleWidth(context),
         height: 128,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -106,7 +117,7 @@ class ChatBubbleContainer extends StatelessWidget {
         child: Column(
           children: [
             Expanded(
-              child: Text(
+              child: AutoShrinkText(
                 "Start here. A good day begins with rest.",
                 style: GoogleFonts.workSans(
                   color: Colors.white,
@@ -147,7 +158,7 @@ class ChatMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 282,
+      width: _bubbleWidth(context),
       height: 128,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -157,7 +168,7 @@ class ChatMessage extends StatelessWidget {
       child: Column(
         children: [
           Expanded(
-            child: Text(
+            child: AutoShrinkText(
               "Swipe left to reschedule or edit quests..",
               style: GoogleFonts.workSans(
                 color: Colors.white,
@@ -199,7 +210,7 @@ class ConversationBubble extends StatelessWidget {
     return CustomPaint(
       painter: BubbleTail(),
       child: Container(
-        width: 282,
+        width: _bubbleWidth(context),
         height: 148,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -209,7 +220,7 @@ class ConversationBubble extends StatelessWidget {
         child: Column(
           children: [
             Expanded(
-              child: Text(
+              child: AutoShrinkText(
                 "Every streak starts with day one. You've already begun 💫",
                 style: GoogleFonts.workSans(
                   color: Colors.white,
@@ -276,14 +287,22 @@ class TextBubble extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  'Swipe here!\nIm available any time',
-                  style: GoogleFonts.workSans(
-                    color: const Color(0xFFFFFDF7),
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    height: 1.2,
-                    letterSpacing: -0.5,
+                SizedBox(
+                  width: _bubbleWidth(context) - 32,
+                  // Was "Swipe here! / Im available any time" — it never said
+                  // what swiping does, and the app's own word for a call is a
+                  // spark, which is what the control underneath is labelled.
+                  // (The missing apostrophe was in the original too.)
+                  child: AutoShrinkText(
+                    'Swipe here to start a spark.\nI\'m available any time.',
+                    maxLines: 2,
+                    style: GoogleFonts.workSans(
+                      color: const Color(0xFFFFFDF7),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      height: 1.2,
+                      letterSpacing: -0.5,
+                    ),
                   ),
                 ),
               ],
