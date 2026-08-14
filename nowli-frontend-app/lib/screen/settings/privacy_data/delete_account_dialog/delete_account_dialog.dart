@@ -72,7 +72,7 @@ class DeleteAccountDialog extends StatelessWidget {
             const SizedBox(height: 12),
 
             const Text(
-              'Nowlli will forget everything it knows about you - and personalization will reset.',
+              'Nowlii will forget everything it knows about you - and personalization will reset.',
               style: TextStyle(
                 fontSize: 14,
                 color: Color(0xFF6B7280),

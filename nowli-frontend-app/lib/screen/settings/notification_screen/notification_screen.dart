@@ -12,7 +12,7 @@
 //   final Map<String, bool> _notifications = {
 //     'Task Reminders': true,
 //     'Daily Tips': true,
-//     'Nowlli Check-ins': true,
+//     'Nowlii Check-ins': true,
 //     'Streak Progress': true,
 //     'AI Insights & Reflections': true,
 //   };
@@ -75,8 +75,8 @@
 //                   const SizedBox(height: 12),
 //                   _buildNotificationTile(
 //                     icon: Icons.sentiment_satisfied_rounded,
-//                     title: 'Nowlli Check-ins',
-//                     key: 'Nowlli Check-ins',
+//                     title: 'Nowlii Check-ins',
+//                     key: 'Nowlii Check-ins',
 //                   ),
 //                   const SizedBox(height: 12),
 //                   _buildNotificationTile(
@@ -172,7 +172,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   final Map<String, bool> _notifications = {
     'Task Reminders': true,
     'Daily Tips': true,
-    'Nowlli Check-ins': true,
+    'Nowlii Check-ins': true,
     'Streak Progress': true,
     'AI Insights & Reflections': true,
   };
@@ -190,7 +190,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           prefs.getBool('notif_task_reminders') ?? true;
       _notifications['Daily Tips'] = 
           prefs.getBool('notif_daily_tips') ?? true;
-      _notifications['Nowlli Check-ins'] = 
+      _notifications['Nowlii Check-ins'] = 
           prefs.getBool('notif_nowlli_checkins') ?? true;
       _notifications['Streak Progress'] = 
           prefs.getBool('notif_streak_progress') ?? true;
@@ -209,7 +209,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case 'Daily Tips':
         prefKey = 'notif_daily_tips';
         break;
-      case 'Nowlli Check-ins':
+      case 'Nowlii Check-ins':
         prefKey = 'notif_nowlli_checkins';
         break;
       case 'Streak Progress':
@@ -298,8 +298,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       width: 40,
                       height: 40,
                     ),
-                    title: 'Nowlli Check-ins',
-                    key: 'Nowlli Check-ins',
+                    title: 'Nowlii Check-ins',
+                    key: 'Nowlii Check-ins',
                   ),
                   const SizedBox(height: 12),
                   _buildNotificationTile(

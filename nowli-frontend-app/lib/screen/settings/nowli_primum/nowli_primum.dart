@@ -372,7 +372,7 @@ class _ExpiredContent extends StatelessWidget {
         const SizedBox(height: 16),
 
         const Text(
-          'Renew your Nowlli Pro plan to keep\ngrowing from here 🚀',
+          'Renew your Nowlii Pro plan to keep\ngrowing from here 🚀',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 14, color: Color(0xFF6B7280), height: 1.5),
         ),
@@ -581,7 +581,7 @@ class _CancellationContentState extends State<_CancellationContent> {
 
   final List<String> _reasons = [
     "It's too expensive",
-    "I'm not using Nowlli enough",
+    "I'm not using Nowlii enough",
     "I only needed it short-term",
     "Other reason",
   ];
@@ -613,7 +613,7 @@ class _CancellationContentState extends State<_CancellationContent> {
         ),
         const SizedBox(height: 16),
         const Text(
-          "Before you go, could you tell us why you'd like to cancel your plan?\nYour feedback helps Nowlli grow and support others better.",
+          "Before you go, could you tell us why you'd like to cancel your plan?\nYour feedback helps Nowlii grow and support others better.",
           style: TextStyle(fontSize: 14, color: Color(0xFF6B7280), height: 1.5),
         ),
         const SizedBox(height: 24),

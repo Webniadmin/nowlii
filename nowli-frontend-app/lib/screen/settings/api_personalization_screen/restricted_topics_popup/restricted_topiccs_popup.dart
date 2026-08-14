@@ -81,7 +81,7 @@
 //           ),
 //           const SizedBox(height: 12),
 //           Text(
-//             'You control what Nowlli talks about - for a safe, positive space.',
+//             'You control what Nowlii talks about - for a safe, positive space.',
 //             style: AppsTextStyles.workSansRegular16,
 //           ),
 //           const SizedBox(height: 20),
@@ -311,7 +311,7 @@ class _RestrictedTopicsPopupState extends State<RestrictedTopicsPopup> {
           SizedBox(
             width: 295,
             child: Text(
-              'You control what Nowlli talks about - for a safe, positive space.',
+              'You control what Nowlii talks about - for a safe, positive space.',
               style: GoogleFonts.workSans(
                 color: const Color(0xFF011F54), // Text-text-default
                 fontSize: 16,

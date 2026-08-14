@@ -227,9 +227,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           context,
           NotificationData(
             type: NotificationType.questSuggestion,
-            title: 'Wake up or wind down with Nowlli! 😴🌞',
+            title: 'Wake up or wind down with Nowlii! 😴🌞',
             subtitle:
-                'You can schedule Nowlli for wake-up or bedtime calls! Just create a task, turn on repeat, and Nowlli will call you 10 minutes before — to help you wake up or drift off peacefully. 💕',
+                'You can schedule Nowlii for wake-up or bedtime calls! Just create a task, turn on repeat, and Nowlii will call you 10 minutes before — to help you wake up or drift off peacefully. 💕',
             buttonText: 'Add quest',
             displayDuration: const Duration(seconds: 5),
             onButtonPressed: () {
