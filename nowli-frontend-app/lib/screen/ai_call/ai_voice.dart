@@ -2034,23 +2034,26 @@ class _AiVoiceState extends State<AiVoice>
   /// The width the composition below was drawn at.
   static const double _callArtExtent = 360.0;
 
-  /// The call composition: progress ring, glow, disc, companion. **Nothing in
-  /// it moves.**
+  /// The call composition: pulse halo, progress ring, glow, disc, companion.
   ///
-  /// It used to breathe — two radial-gradient rings growing and fading, and a
-  /// `Transform.scale` taking the disc from 1.0 to 1.05 — and it was reported
-  /// as "the whole screen pulses" three times over two days. Every attempt to
-  /// tame it treated the amplitude as the problem. It was not: the composition
-  /// is 82% of the width of a 320dp phone, and *anything* that size changing
-  /// size reads as the screen itself moving. The two gradient rings made it
-  /// worse (they were never meant to be visible at all — `callStarted.png` was
-  /// one opaque image that covered them, until the character was lifted out of
-  /// it on 08-12), but removing them still left the disc breathing, and it
-  /// still looked wrong.
+  /// **The halo is an overlay. It is painted, never measured.** That is the
+  /// whole fix for "the whole screen pulses", reported three times over two
+  /// days, and it took the user pointing at it to see why.
   ///
-  /// So it is still now. `_pulseController` is left running and disposed as
-  /// before; if a pulse is wanted back, it belongs on something small, or as a
-  /// glow that does not change any size — not as a scale on this.
+  /// The two pulse rings used to be ordinary children of this `Stack`, and a
+  /// Stack takes its size from the largest one — so with their width driven by
+  /// `pulseValue`, the composition *re-measured itself on every frame*. That
+  /// travelled up through the `Column` and the `IntrinsicHeight` above it, and
+  /// what moved was the layout, not just the picture. Every earlier attempt
+  /// treated the amplitude as the problem and shrank things, which could never
+  /// have worked.
+  ///
+  /// Now the rings sit in a `Positioned.fill` → `OverflowBox`, so they may draw
+  /// far outside this box while contributing nothing to its size, and the Stack
+  /// is pinned to the progress ring's 280. `Transform.scale` on the disc is
+  /// safe for the same reason — it is a paint transform and never touched
+  /// layout. `clipBehavior: Clip.none` lets the halo bleed past the edge, which
+  /// is the point of it.
   Widget _buildAvatarWithProgress(Size size) {
     // Every number in this Stack is absolute and the largest is wider than a
     // 320dp phone, so the whole thing is scaled to the room there is. At 375
@@ -2064,13 +2067,77 @@ class _AiVoiceState extends State<AiVoice>
     // to say why. `size` is the screen width, which is what this spans anyway.
     final fit = (size.width / _callArtExtent).clamp(0.0, 1.0);
 
-    return Stack(
+    // The laid-out size of the whole composition: the progress ring, and the
+    // only thing that decides how much room this takes in the column.
+    final extent = 280 * fit;
+
+    return SizedBox(
+      width: extent,
+      height: extent,
+      child: Stack(
           alignment: Alignment.center,
+          clipBehavior: Clip.none,
           children: [
-            // Progress ring
+            // Pulse halo — the overlay. `Positioned.fill` keeps it out of the
+            // Stack's sizing, and `OverflowBox` lifts the constraints so the
+            // rings can be wider than this box without being squeezed into it.
+            if (!_questCompleted)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: OverflowBox(
+                    maxWidth: double.infinity,
+                    maxHeight: double.infinity,
+                    child: AnimatedBuilder(
+                      animation: _pulseController,
+                      builder: (context, _) {
+                        final pulseValue = _pulseController.value;
+                        return Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Container(
+                              width: (320 + (pulseValue * 40)) * fit,
+                              height: (320 + (pulseValue * 40)) * fit,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  center: Alignment.center,
+                                  radius: 0.5,
+                                  colors: [
+                                    _timerColor.withOpacity(0),
+                                    _timerColor
+                                        .withOpacity(0.1 * (1 - pulseValue)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            Container(
+                              width: (300 + (pulseValue * 20)) * fit,
+                              height: (300 + (pulseValue * 20)) * fit,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  center: Alignment.center,
+                                  radius: 0.5,
+                                  colors: [
+                                    _timerColor.withOpacity(0),
+                                    _timerColor
+                                        .withOpacity(0.2 * (1 - pulseValue)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+
+            // Progress ring — this is what gives the Stack its size.
             SizedBox(
-              width: 280 * fit,
-              height: 280 * fit,
+              width: extent,
+              height: extent,
               child: CircularProgressIndicator(
                 value: _progressController.value,
                 strokeWidth: 16 * fit,
@@ -2102,26 +2169,35 @@ class _AiVoiceState extends State<AiVoice>
             // drawn inside at 87, the height the baked-in character measured in
             // this 240 box.
             //
-            // The `Transform.scale` that used to wrap this is gone — see the
-            // note on this method.
-            Container(
-              width: 240 * fit,
-              height: 240 * fit,
-              decoration: const BoxDecoration(
-                image: DecorationImage(
-                  image: AssetImage('assets/svg_images/callStartedEmpty.png'),
-                  fit: BoxFit.cover,
-                ),
+            // It breathes with the halo. `Transform.scale` is a paint-time
+            // transform — the box it wraps keeps its 240 for layout however far
+            // the scale takes it — so this was never part of the problem.
+            AnimatedBuilder(
+              animation: _pulseController,
+              builder: (context, child) => Transform.scale(
+                scale: 1.0 + (_pulseController.value * 0.05),
+                child: child,
               ),
-              child: Center(
-                child: NowliiAvatar(
-                  size: 87 * fit,
-                  pose: CompanionPose.speaking,
+              child: Container(
+                width: 240 * fit,
+                height: 240 * fit,
+                decoration: const BoxDecoration(
+                  image: DecorationImage(
+                    image: AssetImage('assets/svg_images/callStartedEmpty.png'),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                child: Center(
+                  child: NowliiAvatar(
+                    size: 87 * fit,
+                    pose: CompanionPose.speaking,
+                  ),
                 ),
               ),
             ),
           ],
-        );
+        ),
+    );
   }
 
   // In-call notice card, shared style (same cream card the mute/time popups used).
