@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/widget/auto_shrink_text.dart';
 
 /// The tutorial bubbles were drawn at a flat 282 wide inside a fixed height.
@@ -280,18 +279,10 @@ class TextBubble extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.asset(
-                    // The old path had a "?" in the filename, which cannot exist on
-                    // Windows — the file is gone and this rendered as a broken image.
-                    Assets.svgIcons.avatar.path,
-                    height: 80,
-                    width: 80,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                const SizedBox(height: 10),
+                // Text only, like the other three bubbles. This one used to
+                // carry an 80x80 photo above the copy — `svg_icons/avatar`, a
+                // stock picture of a person, not the user and not their
+                // companion, so it said nothing and matched nothing.
                 SizedBox(
                   width: _bubbleWidth(context) - 32,
                   // Was "Swipe here! / Im available any time" — it never said
