@@ -11,6 +11,7 @@ import 'package:nowlii/themes/text_styles.dart' show AppsTextStyles;
 import 'package:nowlii/api/auth_controller.dart';
 import 'package:nowlii/api/google_sign_in_flow.dart' show handleAppleSignIn;
 import 'package:nowlii/services/profile_service.dart';
+import 'package:nowlii/widget/social_auth_availability.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -258,7 +259,17 @@ class _SignInScreenState extends State<SignInScreen>
         height: 64,
         child: OutlinedButton.icon(
           icon: SvgPicture.asset(icon, height: 24, width: 24),
-          label: Text(text, style: AppsTextStyles.workSansSemiBold16signIn),
+          // Beside a 24 icon inside a 64 pill, this label wrapped to two lines
+          // on a narrow screen and the button grew into the sign-up link below.
+          label: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppsTextStyles.workSansSemiBold16signIn,
+            ),
+          ),
           style: OutlinedButton.styleFrom(
             side: const BorderSide(color: Color(0xFF011F54), width: 2),
             shape: RoundedRectangleBorder(
@@ -486,23 +497,28 @@ class _SignInScreenState extends State<SignInScreen>
                 opacity: _socialFade,
                 child: Column(
                   children: [
-                    socialButton(
-                      icon: Assets.svgIcons.signInGoole.path,
-                      text: "Continue with Google",
-                      onPressed: () =>
-                          _handleGoogleSignIn(context, authController),
-                    ),
-                    const SizedBox(height: 15),
-                    socialButton(
-                      icon: Assets.svgIcons.appleIconSignIn.path,
-                      text: "Continue with Apple",
-                      onPressed: () => handleAppleSignIn(context),
-                    ),
+                    // One per platform — see `social_auth_availability.dart`.
+                    if (offersGoogleSignIn)
+                      socialButton(
+                        icon: Assets.svgIcons.signInGoole.path,
+                        text: "Continue with Google",
+                        onPressed: () =>
+                            _handleGoogleSignIn(context, authController),
+                      ),
+                    if (offersAppleSignIn)
+                      socialButton(
+                        icon: Assets.svgIcons.appleIconSignIn.path,
+                        text: "Continue with Apple",
+                        onPressed: () => handleAppleSignIn(context),
+                      ),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 90),
+              // Was a flat 90. Under two social buttons on a 320dp screen that
+              // pushed "Don't have an account? Sign up" below the fold, and the
+              // page scrolls, so nothing announced that it was down there.
+              const SizedBox(height: 40),
 
               // Sign Up Link with animation
               FadeTransition(

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 import 'package:nowlii/api/google_sign_in_flow.dart';
+import 'package:nowlii/widget/social_auth_availability.dart';
 
 class ReadyToStartScreen extends StatefulWidget {
   const ReadyToStartScreen({super.key});
@@ -169,73 +170,87 @@ class _ReadyToStartScreenState extends State<ReadyToStartScreen>
               ),
               const Spacer(),
 
-              // Google Button
-              ScaleTransition(
-                scale: _button1Scale,
-                child: FadeTransition(
-                  opacity: _button1Fade,
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 74,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4A46FF),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(50),
+              // One social button per platform — see `social_auth_availability.dart`.
+              // Both used to be drawn everywhere, and two 74-high pills left the
+              // consent text and the rest of the screen nothing to sit in at 320dp.
+              if (offersGoogleSignIn)
+                ScaleTransition(
+                  scale: _button1Scale,
+                  child: FadeTransition(
+                    opacity: _button1Fade,
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 74,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF4A46FF),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(50),
+                          ),
                         ),
-                      ),
-                      icon:
-                          Assets.svgIcons.googleIcon.svg(height: 24, width: 24),
-                      label: Text(
-                        'Continue with Google',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.workSans(
-                          color: const Color(0xFFFFFDF7),
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          height: 0.80,
+                        icon: Assets.svgIcons.googleIcon
+                            .svg(height: 24, width: 24),
+                        // 20pt w900 beside a 24 icon does not fit 320dp, and the
+                        // label wrapped to two lines inside a fixed 74 pill. Scale
+                        // it down instead — the same thing `custom_button.dart` does.
+                        label: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            'Continue with Google',
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.workSans(
+                              color: const Color(0xFFFFFDF7),
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              height: 0.80,
+                            ),
+                          ),
                         ),
+                        onPressed: () => handleGoogleSignIn(context),
                       ),
-                      onPressed: () => handleGoogleSignIn(context),
                     ),
                   ),
                 ),
-              ),
 
-              const SizedBox(height: 8),
-
-              // Apple Button
-              ScaleTransition(
-                scale: _button2Scale,
-                child: FadeTransition(
-                  opacity: _button2Fade,
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 74,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4A46FF),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(50),
+              if (offersAppleSignIn)
+                ScaleTransition(
+                  scale: _button2Scale,
+                  child: FadeTransition(
+                    opacity: _button2Fade,
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 74,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF4A46FF),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(50),
+                          ),
                         ),
-                      ),
-                      icon:
-                          Assets.svgIcons.appleIcon.svg(height: 24, width: 24),
-                      label: Text(
-                        'Continue with Apple',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.workSans(
-                          color: const Color(0xFFFFFDF7),
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          height: 0.80,
+                        icon: Assets.svgIcons.appleIcon
+                            .svg(height: 24, width: 24),
+                        label: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            'Continue with Apple',
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.workSans(
+                              color: const Color(0xFFFFFDF7),
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              height: 0.80,
+                            ),
+                          ),
                         ),
+                        onPressed: () => handleAppleSignIn(context),
                       ),
-                      onPressed: () => handleAppleSignIn(context),
                     ),
                   ),
                 ),
-              ),
 
               const SizedBox(height: 24),
 

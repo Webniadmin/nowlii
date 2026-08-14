@@ -5,6 +5,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 import 'package:nowlii/api/google_sign_in_flow.dart';
+import 'package:nowlii/widget/social_auth_availability.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -47,37 +48,43 @@ class WelcomeScreen extends StatelessWidget {
 
               const Spacer(),
 
-              // Google Button
-              SizedBox(
-                width: double.infinity,
-                height: 74,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A46FF),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(50),
+              // One social button per platform — see `social_auth_availability.dart`.
+              if (offersGoogleSignIn)
+                SizedBox(
+                  width: double.infinity,
+                  height: 74,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4A46FF),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(50),
+                      ),
                     ),
-                  ),
-                  icon: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Assets.svgIcons.googleIcon.svg(height: 24, width: 24),
-                      const SizedBox(width: 12),
-                    ],
-                  ),
-                  label: Text(
-                    'Continue with Google',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.workSans(
-                      color: const Color(0xFFFFFDF7),
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      height: 0.80,
+                    icon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Assets.svgIcons.googleIcon.svg(height: 24, width: 24),
+                        const SizedBox(width: 12),
+                      ],
                     ),
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Continue with Google',
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.workSans(
+                          color: const Color(0xFFFFFDF7),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          height: 0.80,
+                        ),
+                      ),
+                    ),
+                    onPressed: () => handleGoogleSignIn(context),
                   ),
-                  onPressed: () => handleGoogleSignIn(context),
                 ),
-              ),
 
               // SizedBox(
               //   width: double.infinity,
@@ -106,38 +113,41 @@ class WelcomeScreen extends StatelessWidget {
               //     },
               //   ),
               // ),
-              const SizedBox(height: 8),
-
-              // Apple Button
-              SizedBox(
-                width: double.infinity,
-                height: 74,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A46FF),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(50),
+              if (offersAppleSignIn)
+                SizedBox(
+                  width: double.infinity,
+                  height: 74,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4A46FF),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(50),
+                      ),
                     ),
-                  ),
-                  icon: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Assets.svgIcons.appleIcon.svg(height: 24, width: 24),
-                      const SizedBox(width: 12),
-                    ],
-                  ),
-                  label: Text(
-                    'Continue with Apple',
-                    style: GoogleFonts.workSans(
-                      color: const Color(0xFFFFFDF7),
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      height: 0.80,
+                    icon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Assets.svgIcons.appleIcon.svg(height: 24, width: 24),
+                        const SizedBox(width: 12),
+                      ],
                     ),
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Continue with Apple',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.workSans(
+                          color: const Color(0xFFFFFDF7),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          height: 0.80,
+                        ),
+                      ),
+                    ),
+                    onPressed: () => handleAppleSignIn(context),
                   ),
-                  onPressed: () => handleAppleSignIn(context),
                 ),
-              ),
 
               const SizedBox(height: 24),
 

@@ -10,6 +10,7 @@ import 'package:nowlii/themes/text_styles.dart' show AppsTextStyles;
 import 'package:nowlii/api/api_constant.dart';
 import 'package:nowlii/api/auth_controller.dart';
 import 'package:nowlii/api/google_sign_in_flow.dart';
+import 'package:nowlii/widget/social_auth_availability.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -511,18 +512,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
         ),
         const SizedBox(height: 25),
 
-        _socialButton(
-          icon: Assets.svgIcons.googleIconsBlue.path,
-          text: "Continue with Google",
-          onPressed: () => handleGoogleSignIn(context),
-        ),
-        const SizedBox(height: 15),
-        _socialButton(
-          icon: Assets.svgIcons.appleIconsBlue.path,
-          text: "Continue with Apple",
-          onPressed: () => handleAppleSignIn(context),
-        ),
-        const SizedBox(height: 60),
+        // One per platform — see `social_auth_availability.dart`.
+        if (offersGoogleSignIn)
+          _socialButton(
+            icon: Assets.svgIcons.googleIconsBlue.path,
+            text: "Continue with Google",
+            onPressed: () => handleGoogleSignIn(context),
+          ),
+        if (offersAppleSignIn)
+          _socialButton(
+            icon: Assets.svgIcons.appleIconsBlue.path,
+            text: "Continue with Apple",
+            onPressed: () => handleAppleSignIn(context),
+          ),
+        // Was 60, which put "Already have an account? Sign in" off a 320dp screen.
+        const SizedBox(height: 32),
 
         Center(
           child: RichText(
@@ -573,11 +577,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
             SvgPicture.asset(icon, height: 20, width: 20),
             const SizedBox(width: 12),
             Flexible(
-              child: Text(
-                text,
-                style: AppsTextStyles.googleContinueButton,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
+              // scaleDown first, so a narrow screen shrinks the label rather
+              // than eating the end of it; the ellipsis stays as the backstop.
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  text,
+                  style: AppsTextStyles.googleContinueButton,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
               ),
             ),
           ],
