@@ -2025,8 +2025,25 @@ class _AiVoiceState extends State<AiVoice>
     );
   }
 
+  /// The width the composition below was drawn at: the outer ring reaches
+  /// 320 + 40 at the top of its pulse.
+  static const double _callArtExtent = 360.0;
+
   Widget _buildAvatarWithProgress(Size size) {
-    return AnimatedBuilder(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Every number in this Stack is absolute, and the largest of them is
+        // wider than a 320dp phone — so on a narrow screen the outer pulse ring
+        // ran past both edges and what breathed was the whole screen rather
+        // than a disc on it. Scaling the composition by how much room there
+        // actually is keeps every proportion exactly as drawn (at 375 and up
+        // `fit` is 1 and nothing changes) while giving the pulse an edge to
+        // stop at. This is the same bargain `ResponsiveText` makes for type.
+        final available =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : size.width;
+        final fit = (available / _callArtExtent).clamp(0.0, 1.0);
+
+        return AnimatedBuilder(
       animation: _pulseController,
       builder: (context, child) {
         final pulseValue = _pulseController.value;
@@ -2037,8 +2054,8 @@ class _AiVoiceState extends State<AiVoice>
             // Outermost pulse ring (animated)
             if (!_questCompleted)
               Container(
-                width: 320 + (pulseValue * 40),
-                height: 320 + (pulseValue * 40),
+                width: (320 + (pulseValue * 40)) * fit,
+                height: (320 + (pulseValue * 40)) * fit,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
@@ -2055,8 +2072,8 @@ class _AiVoiceState extends State<AiVoice>
             // Middle pulse ring
             if (!_questCompleted)
               Container(
-                width: 300 + (pulseValue * 20),
-                height: 300 + (pulseValue * 20),
+                width: (300 + (pulseValue * 20)) * fit,
+                height: (300 + (pulseValue * 20)) * fit,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
@@ -2072,11 +2089,11 @@ class _AiVoiceState extends State<AiVoice>
             
             // Progress ring
             SizedBox(
-              width: 280,
-              height: 280,
+              width: 280 * fit,
+              height: 280 * fit,
               child: CircularProgressIndicator(
                 value: _progressController.value,
-                strokeWidth: 16,
+                strokeWidth: 16 * fit,
                 backgroundColor: _timerColor.withOpacity(0.2),
                 valueColor: AlwaysStoppedAnimation(_timerColor),
               ),
@@ -2084,15 +2101,15 @@ class _AiVoiceState extends State<AiVoice>
             
             // Inner glow
             Container(
-              width: 250,
-              height: 250,
+              width: 250 * fit,
+              height: 250 * fit,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
                     color: _timerColor.withOpacity(0.3),
-                    blurRadius: 30,
-                    spreadRadius: 10,
+                    blurRadius: 30 * fit,
+                    spreadRadius: 10 * fit,
                   ),
                 ],
               ),
@@ -2109,20 +2126,25 @@ class _AiVoiceState extends State<AiVoice>
             Transform.scale(
               scale: 1.0 + (pulseValue * 0.05),
               child: Container(
-                width: 240,
-                height: 240,
+                width: 240 * fit,
+                height: 240 * fit,
                 decoration: const BoxDecoration(
                   image: DecorationImage(
                     image: AssetImage('assets/svg_images/callStartedEmpty.png'),
                     fit: BoxFit.cover,
                   ),
                 ),
-                child: const Center(
-                  child: NowliiAvatar(size: 87, pose: CompanionPose.speaking),
+                child: Center(
+                  child: NowliiAvatar(
+                    size: 87 * fit,
+                    pose: CompanionPose.speaking,
+                  ),
                 ),
               ),
             ),
           ],
+        );
+      },
         );
       },
     );
