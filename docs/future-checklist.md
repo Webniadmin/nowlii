@@ -158,8 +158,13 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
       Anything reading `paid_user` / `current_plan` / `current_period_end` off the user is
       reading a table nobody writes. One row with `username=''` survives in prod from before
       the fix — harmless (lookups go by email), but it is why the collisions started.
-- [ ] **`editFrom` avatar screen** should send `predefined_option` on update (like the main
-      avatar picker) so the selection persists.
+- [x] ~~**`editFrom` avatar screen** should send `predefined_option` on update.~~ **Already
+      done** — the screen sends `predefinedOption: selectedOption.id` and carries a comment
+      describing the old `avatar_logo`/`nowlii_name` bug. Verified on the emulator 2026-08-14
+      by switching through all six companions and watching the home card follow.
+      **Note this is the only way to change a companion after signup:** `/avatarLogo`, the
+      main picker, is routed from onboarding alone, so the pencil on Edit Profile → rename
+      screen → its own pencil is the whole path.
 - [x] ~~**Companion poses.**~~ ✅ **Done 2026-08-12** — the art landed and is wired.
       24 files (`assets/companions/<option id>_<pose>.png`, 6 characters × sleeping /
       reading / speaking / waving, transparent, 512px, 4.5 MB) imported from Figma

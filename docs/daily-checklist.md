@@ -4,10 +4,58 @@ _The single active document for the current working day. Update **only this file
 during the day. At end of day, write a report in `daily-reports/` and reset this list
 for tomorrow. Deferred items go to `future-checklist.md`._
 
-**Day:** 2026-08-13
-**Branch:** `feat/design-implementation` — pushed; still not merged to `main`
-**Yesterday:** `daily-reports/2026-08-12.md` — the pose art landed, and the mapping under
-every avatar turned out to have been wrong for five of the six companions
+**Day:** 2026-08-14
+**Branch:** `feat/design-implementation` — merged to `main` today at the user's decision,
+ahead of the phone test (see the note under the phone test below)
+**Last working day:** `daily-reports/2026-08-12.md` — the pose art landed, and the mapping
+under every avatar turned out to have been wrong for five of the six companions.
+**2026-08-13 produced no commits and no report.**
+
+## ✅ Done today (2026-08-14)
+
+- **The 320dp sweep is finished except the call screens.** Settings and every screen under
+  it driven at 320.0dp, and onboarding covered by a new `test/small_screen_layout_test.dart`
+  instead — it runs once, on a brand-new account, so a device cannot get back to it.
+  Three defects fixed: the **Clear All AI Memory** sheet drew its buttons half-cut (no
+  `isScrollControlled`, so the sheet was capped at 9/16 of the screen and clipped in
+  silence), and the **Update** button on both the rename screen and the companion picker
+  ran edge to edge from a hardcoded `width: 335`.
+- **All six companions checked by eye**, switching the account through each and watching
+  the home card. Every one showed the right character on the hero card *and* in the reading
+  pose on the quest card — including id 3, whose Figma columns are swapped, and the 4/10 and
+  6/12 pairs that used to collapse. Account restored to Zee afterwards.
+- **Reminders no longer degrade to inexact alarms after a restart** — `sync()` re-reads the
+  permission instead of trusting a flag only the create-quest screen ever set.
+- **"Nowlli" → "Nowlii"** in 24 user-facing strings across eight screens. The product's own
+  name was misspelled in Notifications, both AI-personalization sheets, the delete-account
+  warning and the cancel-plan flow.
+- Verified: `flutter analyze lib` → 0 errors, **10 warnings, the standing baseline**;
+  **268 tests pass**, up from 262.
+
+## ⚠️ Corrections to what this file used to say
+
+- **The emulator is signed in as `pavlegdn`, not `p.pavle16`.** That is why the entitlement
+  allowlist appeared not to work: the home card read "Unlimited sparks" (the voice allowlist
+  matched) while **Add quest went straight to the paywall**. Unblocked by subscribing through
+  the paywall — `activate` is still a mock, so it cost nothing — at the user's choice.
+  **`p.pavle16` has not been checked today**, so whether the allowlists reach it is unknown.
+- **The `editFrom` "doesn't send `predefined_option`" bug is fixed** and has been for a
+  while; the warning in this file was stale. It sends the id, and switching companions
+  persists — verified six times over today.
+- **`/avatarLogo`, the "main avatar picker", is routed from onboarding only.** So the pencil
+  on Edit Profile → rename screen → its own pencil is not the path to avoid, it is the only
+  path there is after signup.
+
+## 🔎 Found today, not yet acted on
+
+- **Create-quest asks for the nearby-devices (Bluetooth) permission** — "find, connect to,
+  and determine the relative position of nearby devices", on the screen where someone writes
+  down a task. Almost certainly a plugin pulling in `BLUETOOTH_CONNECT` for headsets. Play
+  wants a justification for it, and the wording is alarming in that context.
+- **The profile picture slot draws a washed-out, oversized logo** rather than a photo or a
+  clean placeholder, on both Profile and Edit Profile.
+- **Progress shows all seven weekday circles ticked** under "0-Day Streak" and "0 / 3 days".
+  Unverified — it may be the unfilled state, but ticked-and-orange reads as done.
 
 ---
 
@@ -28,7 +76,10 @@ because the emulator cannot route host audio.
       again as soon as the test is done** (see Accounts below).
 - [ ] **Second phone still to retry** — `kekile49@gmail.com` failed all of 08-06 afternoon
       and has not tried since the fix went out at ~18:26
-- [ ] Merge → `main` once it passes
+- [x] ~~Merge → `main` once it passes.~~ **Merged 08-14, before the phone test**, at the
+      user's explicit decision after the ordering was pointed out. So `main` now carries work
+      that no hardware has seen — the phone test still has to happen, and anything it finds
+      lands on `main` rather than on a branch.
 
 While the call is open, three things fixed yesterday are worth a glance on real hardware,
 since the emulator's silence made every summary a degenerate one:
@@ -39,20 +90,13 @@ wording, and the **call screen pulse**.
 
 ## 🔲 Then, in rough order of value
 
-- [ ] **See the other five companions on a screen.** The avatar→art mapping was rewritten
-      yesterday and only **Zee** has been looked at — the other five are covered by
-      `test/companion_pose_test.dart` against the real production ids and URLs, not by eye.
-      Switch the QA account's companion and check the home card. Use the **main avatar
-      picker**, not the pencil on Edit Profile: that goes to the rename screen, which has the
-      known "doesn't send `predefined_option`" bug.
-- [ ] **Reminders drop to inexact alarms after every restart.** `_canScheduleExact` is set
-      only in `requestPermissions()`, called only from the create-quest screen, so after a
-      restart `sync()` arms `inexactAllowWhileIdle` even though the permission is granted.
-      Measured on 08-05: a 12:10 reminder landed at 12:12:45, window 24 minutes. Fix is
-      small — have `sync()` re-read the permission.
-- [ ] **Finish the 320dp sweep.** Home, Quests, Progress, Insights, Profile, Edit Profile and
-      the paywall were checked yesterday. **Not yet:** the onboarding steps, Settings, and the
-      call / voice-check screens. Recipe in the standing notes below.
+- [x] ~~See the other five companions on a screen.~~ Done 08-14, all six.
+- [x] ~~Reminders drop to inexact alarms after every restart.~~ Fixed 08-14.
+- [ ] **The last of the 320dp sweep: the call and voice-check screens.** Everything else is
+      done. These two cannot be judged here — swiping to talk starts a real, billable call,
+      and the emulator routes no audio anyway — so they belong to the phone test. Candidates
+      from a static read: `popup_speaking` / `popup_your_share_you` (`width: 335`),
+      `popup_error` / `popup_processing` (`324.39`).
 - [ ] **Re-verify the lapsed state on a device.** Covered by backend tests and exercised on
       2026-08-04, but the QA account is mid-trial, so repeating it means editing prod
       subscription data.
@@ -134,6 +178,11 @@ wording, and the **call screen pulse**.
 - Off the allowlist, real calls cost ~$0.25 each and the daily limit is 2.
 - **The QA account** is `p.pavle16@gmail.com` = prod user **id 51**, username `p.pavle16`.
   Its trial had **1 day left on 08-12**, so it meets the paywall around 08-13.
+- ⚠️ **The emulator is not signed in as that account.** On 08-14 it was `pavlegdn`, whose
+  entitlement had lapsed — the paywall on every write — while its sparks were unlimited, so
+  only one of the two allowlists was reaching it. It was put on a plan through the paywall
+  (free; `activate` is still a mock), so **that account now carries a real Subscription row
+  on production** — worth remembering the next time someone wants to test the lapsed state.
 - **Existing scheduled calls keep their old (wrong) instants** until their quest is saved
   again or their phone reports a timezone.
 
