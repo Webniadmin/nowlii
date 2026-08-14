@@ -181,8 +181,21 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
             // Everything above the CTA scrolls in its own region. On a small
             // screen the content is taller than the viewport, and without this
             // split the primary action ends up below the fold.
+            //
+            // The fade is what tells you so. The region's edge fell wherever it
+            // fell — on a 320dp screen that was through the middle of "How it
+            // works?", leaving a row of half-height letters above the button
+            // that read as broken rather than as "there is more below".
             Expanded(
-              child: SingleChildScrollView(
+              child: ShaderMask(
+                shaderCallback: (rect) => const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.white, Colors.white, Colors.transparent],
+                  stops: [0.0, 0.94, 1.0],
+                ).createShader(rect),
+                blendMode: BlendMode.dstIn,
+                child: SingleChildScrollView(
                 controller: _scrollController,
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
@@ -295,6 +308,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                     const SizedBox(height: 24),
                   ],
                 ),
+              ),
               ),
             ),
 

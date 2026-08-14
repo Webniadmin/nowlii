@@ -108,12 +108,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  /// No photo yet. Was `editProfile.png` — the app's own mark, drawn `cover`
+  /// into a 120 circle, so it arrived as a pale cropped logo where a face goes.
+  /// The ordinary silhouette instead, matching the profile screen.
   Widget _buildFallbackImage() {
-    return Image.asset(
-      Assets.svgIcons.editProfilePng_.path,
-      fit: BoxFit.cover,
+    return Container(
       width: 120,
       height: 120,
+      color: const Color(0xFFDFEFFF),
+      child: const Icon(
+        Icons.person_rounded,
+        size: 68,
+        color: Color(0xFF8FB4E8),
+      ),
     );
   }
 

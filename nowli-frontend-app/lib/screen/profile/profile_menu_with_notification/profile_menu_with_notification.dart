@@ -192,38 +192,62 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
 
           // Profile Picture
           Center(
-            child: Stack(
-              children: [
-                Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 4),
-                    image: _profileData?.profileImage.isNotEmpty == true
-                        ? DecorationImage(
-                            image: NetworkImage(_profileData!.profileImage),
-                            fit: BoxFit.cover,
-                          )
-                        : DecorationImage(
-                            image: AssetImage(Assets.svgIcons.editProfilePng_.path),
-                            fit: BoxFit.cover,
+            child: SizedBox(
+              width: 128,
+              height: 128,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFDFEFFF),
+                      border: Border.all(color: Colors.white, width: 4),
+                      image: _profileData?.profileImage.isNotEmpty == true
+                          ? DecorationImage(
+                              image: NetworkImage(_profileData!.profileImage),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                    // No picture yet → the ordinary silhouette everyone
+                    // recognises. It used to fall back to `editProfile.png`,
+                    // the app's own mark, drawn `cover` in a 120 circle — so a
+                    // user with no photo met a washed-out, cropped logo where
+                    // their face goes, on both this screen and Edit Profile.
+                    child: _profileData?.profileImage.isNotEmpty == true
+                        ? null
+                        : const Icon(
+                            Icons.person_rounded,
+                            size: 68,
+                            color: Color(0xFF8FB4E8),
                           ),
                   ),
-                ),
-                Positioned(
-                  right: 20,
-                  bottom: 90,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    child: Image.asset(
-                      Assets.images.love.path,
-                      height: 26,
-                      width: 20,
+                  // The heart sits on the rim, reading as an online dot the way
+                  // the design has it — bigger than the old 20x26, filled, and
+                  // ringed in the page background so it lifts off the circle.
+                  Positioned(
+                    top: 4,
+                    right: 0,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF7FFF00),
+                        border: Border.all(color: Colors.white, width: 3),
+                      ),
+                      child: const Icon(
+                        Icons.favorite_rounded,
+                        size: 18,
+                        color: Color(0xFF4542EB),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 65),
@@ -319,7 +343,10 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
             children: [
               _buildActionButton(
                 'Edit Profile',
-                Assets.svgIcons.editProfilePng.path,
+                // A pencil, as the design has it. `Edit profile.png` is a
+                // left-pointing arrow, so the row read as "go back" rather than
+                // "edit" — and sat directly under a back button that does.
+                Assets.svgIcons.editProfilIcon.path,
                 () async {
                   // Navigate and reload when returning
                   await context.push('/editProfileScreen');

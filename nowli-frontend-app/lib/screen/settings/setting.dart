@@ -100,7 +100,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     // being shown where they are in it.
                     onTap: () => context.push(AppRoutespath.nowliProSubscription),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _buildSettingsItem(
                     iconWidget: Image.asset(
                       Assets.svgIcons.notifications.path,
@@ -117,7 +117,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                     },
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _buildSettingsItem(
                     iconWidget: Image.asset(
                       Assets.svgIcons.aIPersonalization.path,
@@ -132,7 +132,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _buildSettingsItem(
                     iconWidget: Image.asset(
                       Assets.svgIcons.language.path,
@@ -143,7 +143,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: _selectedLanguage,
                     onTap: _showLanguageSelector,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _buildSettingsItem(
                     iconWidget: Image.asset(
                       Assets.svgIcons.sounds.path,
@@ -166,7 +166,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     onTap: null,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _buildSettingsItem(
                     iconWidget: Image.asset(
                       Assets.svgIcons.privacyData.path,
@@ -181,7 +181,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _buildSettingsItem(
                     iconWidget: Image.asset(
                       Assets.svgIcons.help.path,
@@ -212,7 +212,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _buildSettingsItem(
                     iconWidget: Image.asset(
                       Assets.svgIcons.logOut.path,
@@ -269,18 +269,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          // Tighter, per the design (Figma 5:2003), where all nine rows sit on
+          // one screen. The row was 16 of padding around a 40 icon wrapped in
+          // another 8 — 88dp a row — so on a short phone Log out and Rate
+          // Nowlii were two scrolls down from Settings.
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
 
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-
+              SizedBox(
+                width: 40,
+                height: 40,
                 child:
                     iconWidget ??
                     (icon != null ? Icon(icon, size: 20) : const SizedBox()),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
