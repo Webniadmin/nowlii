@@ -63,6 +63,28 @@ Commits `9db9b30`, `8216571`, `c127330`, `299191f`, `184d7ad`.
 - Verified: `flutter analyze lib` 0 errors, 10 warnings (baseline); **276 tests pass**, up
   from 268.
 
+### Three follow-ups from the user's fresh run
+
+- **The tutorial bubbles read one ellipsised line** with half the bubble empty under them.
+  `AutoShrinkText` set `TextOverflow.ellipsis` on every `Text` it built — and with
+  `maxLines: null` that does not mean "wrap, trim if it runs out", it collapses the text to
+  a single line. Its own measuring pass had no ellipsis, so it measured two lines, decided
+  they fit and never shrank anything. The ellipsis is now only applied where there is a
+  line cap to put it on, and the measurement matches what is painted.
+  `test/auto_shrink_text_test.dart` covers both halves.
+- **The fourth tutorial step drew nothing** — the screen dimmed and stayed that way until
+  you tapped again, which read as the app hanging. `AutoShrinkText` is a `LayoutBuilder`,
+  and it was inside an `IntrinsicWidth`: a LayoutBuilder cannot answer an intrinsic-size
+  query, so the bubble measured as nothing and collapsed, silently. The `IntrinsicWidth`
+  is gone (the text sets its own width now) and the widget's doc comment warns about it.
+- **The picker had the right colours in the wrong seats.** The API returns companions by
+  primary key — on production milo, knotty, gumo, fizzy, bloop, zee — while the design
+  reads milo/bloop, gumo/knotty, fizzy/zee. `fetchNowliiOptions` sorts by the canonical
+  companion order now, which also repairs the offline fallback tile in `_buildCharacterCard`
+  (it picks a bundled tile by `A + index`, so it was only ever right when index met slot).
+  Worth knowing: **`Fizzy.png` is the one capitalised filename on S3** — the slug lookup
+  lower-cases, so it survives, but nothing else may assume the case.
+
 ### 🔑 Onboarding is reachable now
 
 `adb shell am start -n com.nowlii.app/.MainActivity -e route /avatarLogo` opens **any**
@@ -191,8 +213,15 @@ wording, and the **call screen pulse**.
 - [ ] **"Your moves" covers 2 of 4 zones** — a week of Stretch or Elevated shows 0 and 0.
       Redesign the card, or map the missing zones onto the two rings?
 - [ ] **Companion name suggestions** are placeholder (`companion_name_suggestions.dart`).
-- [ ] **Your dev machine is nearly full** — 8 GB of 559 GB on 08-06, and several APK builds
-      have landed since.
+- [ ] ⚠️ **The dev machine ran out of disk on 08-14** and stopped the test suite dead:
+      `flutter test` failed with `errno = 112, there is not enough space on the disk`, at
+      **87 MB free**. Recovered to 8.8 GB by deleting `nowli-frontend-app/build/` (5.1 GB,
+      regenerable — `flutter clean` does the same job) and three stale
+      `%TEMP%\flutter_tools.*` folders. The hand-named APKs that lived inside `build/` were
+      **moved, not deleted**, to `Just Web (projekti)/nowlii-apk-archive/`:
+      `nowlii-prod-v0.1.apk`, `nowlii-https.v0.2.apk`, `nowlii-prod.v0.1.apk`.
+      **This is a reprieve, not a fix** — the disk is still about 98% full and each debug
+      APK is ~180 MB, so expect it again within a few builds. Needs real space freed.
 
 ---
 

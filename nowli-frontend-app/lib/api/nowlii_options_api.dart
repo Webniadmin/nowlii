@@ -121,12 +121,24 @@ class NowliiOptionsApi {
         print('✅ Successfully loaded ${jsonData.length} avatar options');
         
         final options = jsonData.map((json) => NowliiOption.fromJson(json)).toList();
-        
+
+        // Put them in the order the design lays them out.
+        //
+        // The API returns them by primary key — on production that is
+        // 2, 3, 4, 6, 10, 12, i.e. milo, knotty, gumo, fizzy, bloop, zee — so
+        // the picker grid read milo/knotty, gumo/fizzy, bloop/zee while the
+        // design (Figma `44:8829`) reads milo/bloop, gumo/knotty, fizzy/zee.
+        // Right colours, wrong seats. Sorting by the canonical companion order
+        // fixes the grid, and it also happens to repair the offline fallback in
+        // `_buildCharacterCard`, which picks a bundled tile by `A + index` and
+        // was therefore only correct when index matched the slot.
+        options.sort((a, b) => a._slot.compareTo(b._slot));
+
         // Log converted URLs for debugging
         for (var option in options) {
           print('  - ${option.name}: ${option.avatarLogo}');
         }
-        
+
         return options;
       } else {
         print('❌ Failed to load Nowlii options: ${response.statusCode}');
