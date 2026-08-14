@@ -32,6 +32,62 @@ under every avatar turned out to have been wrong for five of the six companions.
 - Verified: `flutter analyze lib` → 0 errors, **10 warnings, the standing baseline**;
   **268 tests pass**, up from 262.
 
+## ✅ Also done today — a 16-item pass from the user, on a 320dp screen
+
+Commits `9db9b30`, `8216571`, `c127330`, `299191f`, `184d7ad`.
+
+- **Auth.** Both social buttons were drawn on every platform; two pills pushed
+  "Don't have an account? → Sign up" below the fold. Google on Android, Apple on iOS now
+  (`widget/social_auth_availability.dart`), labels scale instead of wrapping.
+- **Onboarding steps 3–6**, seen at this width for the first time. Card descriptions were
+  sliced mid-line; step 4's blue sheet covered the heading behind it and is rebuilt to
+  Figma `46:10084`; steps 5 and 6 overflowed by 30 and 10 pixels; and tapping "Choose your
+  own name" swapped the picture to `avatars[0]`, so the companion the user had just chosen
+  turned into a different one.
+- **The picker's tile colours were the id bug again** — `(id - 1) % 6` against production
+  ids `2, 3, 4, 6, 10, 12`. Third sighting of that arithmetic in this app. The rule is in
+  one place now (`CompanionIdentity.slotFor`) with `test/companion_tile_colour_test.dart`
+  pinned to the real ids.
+- **First run no longer fires four sample notifications** the moment the tutorial ends.
+  The tutorial bubbles fit, and the swipe bubble says what swiping does.
+- **The call pulse** no longer spans the whole screen at 320dp — the composition scales,
+  proportions unchanged, nothing moves at 375 and up.
+- **Profile**: real default silhouette instead of the app's own logo cropped into the
+  avatar circle; the heart is the design's size and reads as online; Edit Profile has a
+  pencil rather than a back arrow.
+- **Settings** rows tightened to the design — all nine within one short scroll.
+- **Quests → Today** empty state centres in the space it has instead of a guessed height.
+- **The paywall** fades its scroll edge instead of slicing "How it works?" in half.
+  (That change is in `184d7ad`, whose message does not mention it — `subscription_popup.dart`
+  lives under `screen/settings/`.)
+- Verified: `flutter analyze lib` 0 errors, 10 warnings (baseline); **276 tests pass**, up
+  from 268.
+
+### 🔑 Onboarding is reachable now
+
+`adb shell am start -n com.nowlii.app/.MainActivity -e route /avatarLogo` opens **any**
+route directly — Flutter's Android embedding takes the initial route from that intent
+extra. This is what made the onboarding work possible: those screens run once, on an
+account that has just been created, so a signed-in device could never get back to them.
+Public auth routes still redirect to home while signed in — for those, log out first.
+
+## 🔎 Open from that pass
+
+- **Whether the first call actually works is still unanswered.** The avatar on it is the
+  chosen companion and the controls sit in one row, both confirmed — but a call cannot be
+  judged here. Phone test.
+- **"Log out" leaves you on the Settings screen.** It does clear the session — the next
+  launch lands on the entry screen — but nothing navigates at the time, so it reads as
+  having failed.
+- **Terms of Service is linked on `readyToStartScreen`** even though the document does not
+  exist. Sign-up and Settings → Privacy hide it; this screen does not.
+- **`popup_error`, `pop_po_sahre` and `procrastination_screen`** still draw the old
+  `popupSpeking` composite — the disc with a character baked into it — rather than the
+  user's companion.
+- **Milo's home tile renders as a navy disc** inside the indigo square, where Zee fills it.
+  Either the served art carries its own background or the S3 image failed and the opaque
+  bundled tile was used; not chased.
+
 ## ⚠️ Corrections to what this file used to say
 
 - **The emulator is signed in as `pavlegdn`, not `p.pavle16`.** That is why the entitlement
