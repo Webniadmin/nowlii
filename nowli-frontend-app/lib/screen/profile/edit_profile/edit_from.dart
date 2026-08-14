@@ -261,7 +261,12 @@ class _EditFromState extends State<EditFrom> {
                     });
                   },
                   child: Container(
-                    width: 335,
+                    // Same as the Update button on the rename screen: 335 is the
+                    // design width at 375, so on a 320 screen it was clamped to
+                    // the full width and lost its inset entirely. A margin keeps
+                    // the design measurement where the design applies.
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(horizontal: 20),
                     height: 80,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 40,

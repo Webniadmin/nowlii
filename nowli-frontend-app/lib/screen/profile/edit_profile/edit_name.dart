@@ -204,7 +204,13 @@ class _EditNameScreenState extends State<EditNameScreen> {
             GestureDetector(
               onTap: _isLoading ? null : _updateAvatarName,
               child: Container(
-                width: 335,
+                // 335 is the design width at 375, and it was hardcoded — so on a
+                // 320 screen the parent clamped it to the full 320 and the button
+                // ran edge to edge with no margin at all, while "Edit Name" right
+                // above it kept its inset. Expressed as a margin instead: still
+                // exactly 335 at the design width, still inset on anything narrower.
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 20),
                 height: 80,
                 padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
                 decoration: ShapeDecoration(

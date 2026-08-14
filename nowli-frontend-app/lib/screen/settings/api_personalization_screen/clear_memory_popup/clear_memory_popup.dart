@@ -57,7 +57,7 @@
 
 //           // Description
 //           Text(
-//             'This will erase everything Nowlli has learned about you - moods, reflections, and conversation history. Your connection will start fresh, like meeting for the first time.\n\nAre you sure you want to continue?',
+//             'This will erase everything Nowlii has learned about you - moods, reflections, and conversation history. Your connection will start fresh, like meeting for the first time.\n\nAre you sure you want to continue?',
 //             textAlign: TextAlign.center,
 //             style: AppsTextStyles.workSansRegularF16,
 //           ),
@@ -127,6 +127,12 @@ class ClearMemoryPopup extends StatelessWidget {
     return showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
+      // Without this the sheet is capped at 9/16 of the screen. At 320dp the
+      // description wraps to enough extra lines to push Cancel and Delete out
+      // of that box — they were drawn half-cut, and nothing in the log said so,
+      // because the sheet clips rather than overflowing. Sizing to the content
+      // keeps the destructive button visible and tappable.
+      isScrollControlled: true,
       builder: (context) => const ClearMemoryPopup(),
     );
   }
@@ -172,7 +178,7 @@ class ClearMemoryPopup extends StatelessWidget {
 
             // Description
             Text(
-              'This will erase everything Nowlli has learned about you - moods, reflections, and conversation history. Your connection will start fresh, like meeting for the first time.\n\nAre you sure you want to continue?',
+              'This will erase everything Nowlii has learned about you - moods, reflections, and conversation history. Your connection will start fresh, like meeting for the first time.\n\nAre you sure you want to continue?',
               textAlign: TextAlign.center,
               style: AppsTextStyles.workSansRegularF16,
             ),

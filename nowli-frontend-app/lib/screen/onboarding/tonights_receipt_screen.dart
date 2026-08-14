@@ -120,12 +120,22 @@ class _ReceiptPreviewCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Nowlii Receipt',
-                style: GoogleFonts.workSans(
-                  color: const Color(0xFF011F54),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
+              // Flexible because the row has no give otherwise: two bare Texts
+              // under `spaceBetween` will overflow rather than wrap the moment
+              // the title needs more room than the card has — a wider
+              // translation, or the OS font slider at its 1.15 cap. The
+              // duration beside it is short and fixed, so the title is the half
+              // that should yield.
+              Flexible(
+                child: Text(
+                  'Nowlii Receipt',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.workSans(
+                    color: const Color(0xFF011F54),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
               Text(
