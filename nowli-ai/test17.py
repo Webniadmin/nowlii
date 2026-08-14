@@ -329,6 +329,62 @@ _SUMMARY_FALLBACKS: dict[str, dict[str, str]] = {
 }
 
 
+_WORDS_CIRCLED_MAX      = 5
+_WORDS_CIRCLED_MAX_CHARS = 32
+
+
+def _clean_words_circled(raw: Any) -> List[str]:
+    """Sanitise the model's `words_circled` before it reaches the user.
+
+    These are displayed back as the user's *own* words, so anything malformed is
+    dropped rather than guessed at: wrong type, empty, or long enough to be a
+    sentence the model wrote instead of a word the user said. Duplicates are
+    collapsed case-insensitively while keeping the first spelling seen.
+    """
+    if not isinstance(raw, list):
+        return []
+
+    cleaned: List[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        word = item.strip().strip('"').strip("'").strip()
+        if not word or len(word) > _WORDS_CIRCLED_MAX_CHARS:
+            continue
+        key = word.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(word)
+        if len(cleaned) >= _WORDS_CIRCLED_MAX:
+            break
+    return cleaned
+
+
+_TINY_QUESTION_MAX_CHARS = 120
+
+
+def _clean_tiny_question(raw: Any) -> str:
+    """Sanitise the model's `tiny_question` before it reaches the user.
+
+    This is printed on the receipt as a single short question, so the failure modes
+    worth catching are the model returning a paragraph instead of a question, or
+    returning a statement. Anything that is not a short question is dropped — the
+    card hides rather than showing the model thinking out loud.
+    """
+    if not isinstance(raw, str):
+        return ""
+
+    question = raw.strip().strip('"').strip("'").strip()
+    if not question or len(question) > _TINY_QUESTION_MAX_CHARS:
+        return ""
+    # A receipt line without a question mark is a statement the model slipped in.
+    if "?" not in question:
+        return ""
+    return question
+
+
 def _build_summary_prompt(session: "Session") -> str:
     lang      = session.language
     timeline  = session.emotion_timeline()
@@ -343,16 +399,31 @@ def _build_summary_prompt(session: "Session") -> str:
     return (
         f"Here is the full turn-by-turn log:\n{turns_text}\n\n"
         f"First emotion: {first_emotion}\nLast emotion: {last_emotion}\nFrequency: {counts}\n\n"
-        "Return ONLY a JSON object with exactly these 5 keys:\n"
+        "Return ONLY a JSON object with exactly these 7 keys:\n"
         "{\n"
         f'  "mood_detected": "<{keys["mood_detected"]}>",\n'
         f'  "focus_topic":   "<{keys["focus_topic"]}>",\n'
         f'  "energy_shift":  "<{keys["energy_shift"]}>",\n'
         f'  "next_step":     "<{keys["next_step"]}>",\n'
-        '  "top_emotions":  {"happy": <n>, "motivated": <n>, "angry": <n>, "tired": <n>, "sad": <n>}\n'
+        '  "top_emotions":  {"happy": <n>, "motivated": <n>, "angry": <n>, "tired": <n>, "sad": <n>},\n'
+        '  "words_circled": ["<word>", "<word>", "<word>"],\n'
+        '  "tiny_question": "<one short question>"\n'
         "}\n"
         "The five top_emotions numbers estimate the user's overall emotional split across the "
-        "whole chat and MUST sum to 100. No markdown. No extra keys. No text outside the JSON."
+        "whole chat and MUST sum to 100.\n"
+        "words_circled: 3 to 5 single words or very short phrases the USER kept coming back to, "
+        "copied EXACTLY as they said them — same wording, same language, lowercase. These are "
+        "shown back to the user as their own words, so do NOT paraphrase, translate, summarise "
+        "or invent. Skip filler like 'yeah', 'okay', 'like', 'um' and pick words that carry "
+        "weight. If the conversation was too short or had no such pattern, return an empty list "
+        "rather than reaching for something.\n"
+        "tiny_question: ONE short, concrete, gentle question the user could ask themselves "
+        "about the next step above — at most 12 words, in the same language as the "
+        "conversation, and it MUST end with a question mark. Make it small and answerable "
+        "(\"What's the first click?\"), never therapy-speak, never a question about how they "
+        "feel, and never advice phrased as a question. If the conversation gives you nothing "
+        "concrete to ask about, return an empty string rather than inventing one.\n"
+        "No markdown. No extra keys. No text outside the JSON."
     )
 
 
@@ -371,6 +442,56 @@ class TurnRecord:
         self.ts               = time.time()
 
 
+# The Restricted Topics catalogue, mirroring Apps/users/models.py Profile.RESTRICTED_TOPIC_CHOICES.
+# Kept here as well because this service is reachable directly: the backend validates what it
+# stores, but nothing stops a client posting straight to /session/new. Anything not on this
+# list is dropped rather than passed into a prompt.
+_RESTRICTED_TOPICS: Dict[str, str] = {
+    "Health or medical discussions":        "health or medical matters",
+    "Relationship advice":                  "advice about their relationships",
+    "Emotionally heavy or distress topics": "heavy emotional territory",
+    "Sensitive news / politics":            "news or politics",
+}
+
+
+def _clean_restricted_topics(raw) -> List[str]:
+    """Keep only known topic labels, in order, without duplicates."""
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out, seen = [], set()
+    for item in raw:
+        topic = str(item).strip()
+        if topic in _RESTRICTED_TOPICS and topic not in seen:
+            seen.add(topic)
+            out.append(topic)
+    return out
+
+
+def _restricted_topics_block(topics: List[str]) -> str:
+    """The per-user addition to the persona.
+
+    Two things it is careful about. It describes what the companion should not *raise*, not
+    what the user is allowed to say — someone who brings up their own health is not to be
+    stonewalled by their own setting. And it carves out safety explicitly: a preference about
+    subject matter must never become a reason to deflect somebody at risk.
+    """
+    if not topics:
+        return ""
+    phrases = [_RESTRICTED_TOPICS[t] for t in topics]
+    if len(phrases) == 1:
+        joined = phrases[0]
+    else:
+        joined = ", ".join(phrases[:-1]) + " and " + phrases[-1]
+    return (
+        f"\n\nThis person has asked you not to bring up {joined}. Do not introduce those "
+        "subjects or steer the conversation toward them. If they raise one themselves, follow "
+        "their lead warmly — this shapes what you start, not what they may talk about."
+        "\n\nThis never applies to safety. If anything they say suggests they may be at risk "
+        "of harming themselves or someone else, respond with care and stay with them. A topic "
+        "preference is never a reason to deflect that."
+    )
+
+
 def _normalize_voice_gender(value: str) -> str:
     """Normalize the client's voice choice (Profile.voice: 'Male'/'Female') to 'male'/'female'.
 
@@ -387,13 +508,17 @@ def _normalize_voice_gender(value: str) -> str:
 class Session:
     def __init__(self, session_id: str, user_name: str = "User",
                  system_name: str = "Aria", language: str = DEFAULT_LANGUAGE,
-                 voice: str = ""):
+                 voice: str = "", restricted_topics: Optional[List[str]] = None):
         self.session_id  = session_id
         self.user_name   = user_name.strip()   or "User"
         self.system_name = system_name.strip() or "Aria"
         self.language    = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
         # Chosen companion voice ('male'/'female' or '' for default) — drives the Realtime voice.
         self.voice_gender = _normalize_voice_gender(voice)
+        # Topics this user asked the companion not to bring up (AI Personalization →
+        # Restricted Topics). Only names from the known list survive the backend's
+        # validation, so these are labels, never free text from the client.
+        self.restricted_topics = _clean_restricted_topics(restricted_topics)
         self.turns: List[TurnRecord] = []
         self.created_at  = time.time()
 
@@ -476,6 +601,9 @@ class NewSessionRequest(BaseModel):
     # Chosen companion voice: 'Male'/'Female' (from the user's profile). Optional — an unset
     # or unknown value keeps the default Realtime voice.
     voice:       str = Field(default="")
+    # Topics the user asked the companion to steer clear of. The Django backend validates
+    # these against its own list before they ever get here.
+    restricted_topics: List[str] = Field(default_factory=list)
 
     @field_validator("language")
     @classmethod
@@ -504,6 +632,15 @@ class MoodSummaryResponse(BaseModel):
     # 5-category Top-Emotion split for this call (happy/motivated/angry/tired/sad, sums ~100).
     # Extracted from the transcript by the same summary GPT call (per-message detection removed).
     top_emotions: Dict[str, float] = {}
+    # Words the user themselves kept returning to — the "receipt" the app shows after a
+    # call. Verbatim from the transcript, never paraphrased. Empty when the summary call
+    # failed or the conversation was too short to have a pattern; an empty list is a
+    # truthful answer and the UI hides the section rather than inventing one.
+    words_circled: List[str] = []
+    # One short question the user could ask themselves about their own next step, printed
+    # on the receipt. Empty when the model gave nothing concrete to ask about, or wrote a
+    # statement instead of a question — the card hides rather than inventing one.
+    tiny_question: str = ""
 
 
 class EmotionBreakdownResponse(BaseModel):
@@ -892,7 +1029,7 @@ async def new_session(request: NewSessionRequest = NewSessionRequest()):
     _sessions[sid] = Session(
         session_id=sid, user_name=request.user_name,
         system_name=request.system_name, language=request.language,
-        voice=request.voice,
+        voice=request.voice, restricted_topics=request.restricted_topics,
     )
     s = _sessions[sid]
     logger.info("New session | id=%s | user=%s | friend=%s | lang=%s | voice=%s",
@@ -992,8 +1129,10 @@ def _realtime_instructions(session) -> str:
         base = _REALTIME_PERSONA_EN.format(
             system_name=session.system_name, user_name=session.user_name,
         )
-        return base + _VOICE_RULES.get("en", "")
-    return _build_system_prompt("neutral", session.user_name, session.system_name, lang)
+        return (base + _VOICE_RULES.get("en", "")
+                + _restricted_topics_block(getattr(session, "restricted_topics", [])))
+    return (_build_system_prompt("neutral", session.user_name, session.system_name, lang)
+            + _restricted_topics_block(getattr(session, "restricted_topics", [])))
 
 
 class RealtimeTokenRequest(BaseModel):
@@ -1378,6 +1517,8 @@ async def chat_summary(request: SummaryRequest):
     top_emotions = ({c: round(v / _te_total * 100, 1) for c, v in _te.items()}
                     if _te_total > 0 else {**{c: 0.0 for c in _TOP_EMOTIONS}, "happy": 100.0})
     dominant = max(top_emotions, key=top_emotions.get)
+    words_circled = _clean_words_circled(gpt_data.get("words_circled"))
+    tiny_question = _clean_tiny_question(gpt_data.get("tiny_question"))
 
     return MoodSummaryResponse(
         session_id=request.session_id, user_name=session.user_name,
@@ -1389,6 +1530,7 @@ async def chat_summary(request: SummaryRequest):
         #   dominant_emotion=session.overall_dominant(),
         dominant_emotion=dominant, emotion_counts=session.dominant_emotion_counts(),
         emotion_timeline=session.emotion_timeline(), top_emotions=top_emotions,
+        words_circled=words_circled, tiny_question=tiny_question,
         processing_ms=round(elapsed_ms, 1),
     )
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:nowlii/api/profile_model.dart';
 import 'package:nowlii/api/profile_service.dart';
+import 'package:nowlii/services/device_timezone.dart';
 
 class ProfileController extends ChangeNotifier {
   ProfileModel? _profile;
@@ -23,6 +24,7 @@ class ProfileController extends ChangeNotifier {
     String? customNowliiName,
     required String language,
     required String voice,
+    int? predefinedOption,
     File? avatarLogoFile,
     File? profileImageFile,
     XFile? avatarLogoXFile,
@@ -42,6 +44,10 @@ class ProfileController extends ChangeNotifier {
         customNowliiName: customNowliiName,
         language: language,
         voice: voice,
+        predefinedOption: predefinedOption,
+        // Sent at signup rather than waiting for the next launch, so the first quest a new
+        // account creates is already scheduled on their own clock.
+        timezone: await DeviceTimezone.current(),
       );
 
       final result = await ProfileService.createProfile(
@@ -110,6 +116,8 @@ class ProfileController extends ChangeNotifier {
     String? language,
     String? voice,
     int? predefinedOption,
+    List<String>? restrictedTopics,
+    bool? useDataToImprove,
     File? avatarLogoFile,
     File? profileImageFile,
     XFile? avatarLogoXFile,
@@ -130,6 +138,8 @@ class ProfileController extends ChangeNotifier {
         language: language,
         voice: voice,
         predefinedOption: predefinedOption,
+        restrictedTopics: restrictedTopics,
+        useDataToImprove: useDataToImprove,
       );
 
       final result = await ProfileService.updateProfile(

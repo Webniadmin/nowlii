@@ -62,7 +62,7 @@ class QuestSuggestionPurple extends StatelessWidget {
                   SizedBox(
                     width: 237,
                     child: Text(
-                      'Wake up or wind down with Nowlli! 😴🌞',
+                      'Wake up or wind down with Nowlii! 😴🌞',
                       style: GoogleFonts.workSans(
                         color: const Color(0xFF011F54),
                         fontSize: 20,
@@ -75,7 +75,7 @@ class QuestSuggestionPurple extends StatelessWidget {
                   SizedBox(
                     width: 237,
                     child: Text(
-                      'You can schedule Nowlli for wake-up or bedtime calls!                 Just create a task, turn on repeat, and Nowlli will call you 10 minutes before — to help you wake up or drift off peacefully. 💕',
+                      'You can schedule Nowlii for wake-up or bedtime calls!                 Just create a task, turn on repeat, and Nowlii will call you 10 minutes before — to help you wake up or drift off peacefully. 💕',
                       style: GoogleFonts.workSans(
                         color: const Color(0xFF595754),
                         fontSize: 14,

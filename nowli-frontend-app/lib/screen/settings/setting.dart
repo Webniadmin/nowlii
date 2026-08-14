@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/api/auth_controller.dart';
+import 'package:nowlii/services/device_timezone.dart';
 import 'package:nowlii/screen/settings/api_personalization_screen/ai_personalization_screen.dart';
 import 'package:nowlii/screen/settings/language/languegs_selector_screen.dart';
 import 'package:nowlii/screen/settings/notification_screen/notification_screen.dart';
@@ -12,6 +13,7 @@ import 'package:nowlii/screen/settings/notification_screen/notification_screen.d
 import 'package:nowlii/screen/settings/privacy_data/privacy_data_screen.dart';
 import 'package:nowlii/screen/settings/rate_nowli/rate_nowli.dart';
 import 'package:nowlii/themes/text_styles.dart';
+import 'package:nowlii/widget/coming_soon.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -88,8 +90,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       width: 40,
                       height: 40,
                     ),
-                    title: 'Nowlii Pro',
-                    onTap: () => {context.push('/subscriptionPage')},
+                    // "Your membership" per the design (Figma 5:2015). "Nowlii Pro" is the
+                    // product's name for the paid tier, not a thing the user owns; the row
+                    // leads to their own plan.
+                    title: 'Your membership',
+                    // The Pro screen, not the trial explainer. This used to open
+                    // /subscriptionPage — the "seven days on us" pitch — so a paying
+                    // subscriber tapping their own plan was offered a free trial instead of
+                    // being shown where they are in it.
+                    onTap: () => context.push(AppRoutespath.nowliProSubscription),
                   ),
                   const SizedBox(height: 12),
                   _buildSettingsItem(
@@ -183,20 +192,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onTap: () => _navigateTo('Help'),
                   ),
                   const SizedBox(height: 12),
-                  _buildSettingsItem(
-                    iconWidget: Image.asset(
-                      Assets.svgIcons.rateNowliw.path,
-                      width: 40,
-                      height: 40,
+                  // Blurred until the app is actually listed. A rating prompt with nowhere
+                  // to send the rating spends the one moment a happy user is willing to
+                  // leave one, and store review prompts only work against a real listing.
+                  ComingSoon(
+                    child: _buildSettingsItem(
+                      iconWidget: Image.asset(
+                        Assets.svgIcons.rateNowliw.path,
+                        width: 40,
+                        height: 40,
+                      ),
+                      title: 'Rate Nowlii',
+                      onTap: () {
+                        showModalBottomSheet(
+                          context: context,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => const RatingPopup(),
+                        );
+                      },
                     ),
-                    title: 'Rate Nowtli',
-                    onTap: () {
-                      showModalBottomSheet(
-                        context: context,
-                        backgroundColor: Colors.transparent,
-                        builder: (_) => const RatingPopup(),
-                      );
-                    },
                   ),
                   const SizedBox(height: 12),
                   _buildSettingsItem(
@@ -396,6 +410,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           // Perform logout
                           final authController = AuthController();
                           await authController.logout();
+                          // The reported-timezone cache belongs to the account that just
+                          // left, not to the phone. Without this the next user's profile
+                          // would never be told which clock they are on.
+                          await DeviceTimezone.forget();
                           
                           // Navigate to sign in screen
                           if (context.mounted) {

@@ -7,6 +7,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:intl/intl.dart';
 import 'package:nowlii/themes/text_styles.dart';
+import 'package:nowlii/utils/color_palette/zone_colors.dart';
 
 class Completed extends StatefulWidget {
   const Completed({super.key});
@@ -172,33 +173,9 @@ class CompletedQuestCard extends StatelessWidget {
     required this.quest,
   });
 
-  Color _getLevelColor(String zone) {
-    switch (zone) {
-      case 'Soft steps':
-        return const Color(0xFFA0E871);
-      case 'Elevated':
-        return const Color(0xFFFF8F26);
-      case 'Stretch zone':
-        return const Color(0xFF3D87F5);
-      case 'Power move':
-        return const Color(0xFFD53D40);
-      default:
-        return const Color(0xFFA0E871);
-    }
-  }
+  Color _getLevelColor(String zone) => zoneColor(zone);
 
-  Color _getTextColor(Color levelColor) {
-    if (levelColor == const Color(0xFFA0E871)) {
-      return const Color(0xFF011F54);
-    } else if (levelColor == const Color(0xFFFF8F26)) {
-      return const Color(0xFF011F54);
-    } else if (levelColor == const Color(0xFF3D87F5)) {
-      return const Color(0xFFEEEEEE);
-    } else if (levelColor == const Color(0xFFD53D40)) {
-      return const Color(0xFFFFFDF7);
-    }
-    return const Color(0xFF011F54);
-  }
+  Color _getTextColor(String zone) => zoneTextColor(zone);
 
   String _getDateLabel() {
     final questDate = DateTime.parse(quest.selectADate);
@@ -291,7 +268,7 @@ class CompletedQuestCard extends StatelessWidget {
                 child: Text(
                   quest.zone,
                   style: GoogleFonts.workSans(
-                    color: _getTextColor(levelColor),
+                    color: _getTextColor(quest.zone),
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     height: 1.40,

@@ -100,6 +100,26 @@ class CallReminderService {
     return true;
   }
 
+  /// Re-read whether the OS will currently let us set an exact alarm.
+  ///
+  /// [requestPermissions] used to be the only thing that ever set
+  /// [_canScheduleExact], and it runs on the create-quest screen alone. So after
+  /// every app restart the flag was back to its `false` default, and [sync]
+  /// armed `inexactAllowWhileIdle` for a user who *had* granted the permission —
+  /// the reminders quietly degraded until the next time someone happened to open
+  /// create-quest. Measured on 2026-08-05: a 12:10 reminder landed at 12:12:45,
+  /// a window of 24 minutes.
+  ///
+  /// This reads the status rather than requesting it, so it shows no prompt and
+  /// is safe to run on every sync.
+  Future<void> _refreshExactAlarmCapability() async {
+    try {
+      _canScheduleExact = await Permission.scheduleExactAlarm.isGranted;
+    } catch (_) {
+      _canScheduleExact = false; // iOS / older Android: the concept does not apply
+    }
+  }
+
   /// Rebuild every pending reminder from the backend's schedule.
   ///
   /// Call this whenever the schedule OR the remaining quota can have changed: after login,
@@ -111,6 +131,10 @@ class CallReminderService {
 
     // Never scheduled anything, and can't — nothing to rebuild.
     if (!await Permission.notification.isGranted) return;
+
+    // Before arming anything: the permission may have been granted in a session
+    // that has since ended, or revoked in Settings while the app was closed.
+    await _refreshExactAlarmCapability();
 
     final scheduled = await _voiceCalls.getScheduledCalls();
     final quota = await _voiceCalls.getQuota();

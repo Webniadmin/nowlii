@@ -81,7 +81,7 @@
 //           ),
 //           const SizedBox(height: 12),
 //           Text(
-//             'You control what Nowlli talks about - for a safe, positive space.',
+//             'You control what Nowlii talks about - for a safe, positive space.',
 //             style: AppsTextStyles.workSansRegular16,
 //           ),
 //           const SizedBox(height: 20),
@@ -221,14 +221,21 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 
 class RestrictedTopicsPopup extends StatefulWidget {
-  const RestrictedTopicsPopup({super.key});
+  const RestrictedTopicsPopup({super.key, this.initialTopics = const []});
 
-  static Future<List<String>?> show(BuildContext context) {
+  /// What the user chose last time. Without this the sheet opened empty every time and
+  /// saving it silently cleared a setting the user had already made.
+  final List<String> initialTopics;
+
+  static Future<List<String>?> show(
+    BuildContext context, {
+    List<String> initialTopics = const [],
+  }) {
     return showModalBottomSheet<List<String>>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => const RestrictedTopicsPopup(),
+      builder: (context) => RestrictedTopicsPopup(initialTopics: initialTopics),
     );
   }
 
@@ -237,7 +244,7 @@ class RestrictedTopicsPopup extends StatefulWidget {
 }
 
 class _RestrictedTopicsPopupState extends State<RestrictedTopicsPopup> {
-  final Set<String> _selectedTopics = {};
+  late final Set<String> _selectedTopics = {...widget.initialTopics};
 
   final List<String> _topics = [
     'Health or medical discussions',
@@ -304,7 +311,7 @@ class _RestrictedTopicsPopupState extends State<RestrictedTopicsPopup> {
           SizedBox(
             width: 295,
             child: Text(
-              'You control what Nowlli talks about - for a safe, positive space.',
+              'You control what Nowlii talks about - for a safe, positive space.',
               style: GoogleFonts.workSans(
                 color: const Color(0xFF011F54), // Text-text-default
                 fontSize: 16,

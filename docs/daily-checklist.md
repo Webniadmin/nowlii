@@ -4,146 +4,217 @@ _The single active document for the current working day. Update **only this file
 during the day. At end of day, write a report in `daily-reports/` and reset this list
 for tomorrow. Deferred items go to `future-checklist.md`._
 
-**Day:** 2026-07-31
+**Day:** 2026-08-14
+**Branch:** `feat/design-implementation` — merged to `main` today at the user's decision,
+ahead of the phone test (see the note under the phone test below)
+**Last working day:** `daily-reports/2026-08-12.md` — the pose art landed, and the mapping
+under every avatar turned out to have been wrong for five of the six companions.
+**2026-08-13 produced no commits and no report.**
+
+## ✅ Done today (2026-08-14)
+
+- **The 320dp sweep is finished except the call screens.** Settings and every screen under
+  it driven at 320.0dp, and onboarding covered by a new `test/small_screen_layout_test.dart`
+  instead — it runs once, on a brand-new account, so a device cannot get back to it.
+  Three defects fixed: the **Clear All AI Memory** sheet drew its buttons half-cut (no
+  `isScrollControlled`, so the sheet was capped at 9/16 of the screen and clipped in
+  silence), and the **Update** button on both the rename screen and the companion picker
+  ran edge to edge from a hardcoded `width: 335`.
+- **All six companions checked by eye**, switching the account through each and watching
+  the home card. Every one showed the right character on the hero card *and* in the reading
+  pose on the quest card — including id 3, whose Figma columns are swapped, and the 4/10 and
+  6/12 pairs that used to collapse. Account restored to Zee afterwards.
+- **Reminders no longer degrade to inexact alarms after a restart** — `sync()` re-reads the
+  permission instead of trusting a flag only the create-quest screen ever set.
+- **"Nowlli" → "Nowlii"** in 24 user-facing strings across eight screens. The product's own
+  name was misspelled in Notifications, both AI-personalization sheets, the delete-account
+  warning and the cancel-plan flow.
+- Verified: `flutter analyze lib` → 0 errors, **10 warnings, the standing baseline**;
+  **268 tests pass**, up from 262.
+
+## ⚠️ Corrections to what this file used to say
+
+- **The emulator is signed in as `pavlegdn`, not `p.pavle16`.** That is why the entitlement
+  allowlist appeared not to work: the home card read "Unlimited sparks" (the voice allowlist
+  matched) while **Add quest went straight to the paywall**. Unblocked by subscribing through
+  the paywall — `activate` is still a mock, so it cost nothing — at the user's choice.
+  **`p.pavle16` has not been checked today**, so whether the allowlists reach it is unknown.
+- **The `editFrom` "doesn't send `predefined_option`" bug is fixed** and has been for a
+  while; the warning in this file was stale. It sends the id, and switching companions
+  persists — verified six times over today.
+- **`/avatarLogo`, the "main avatar picker", is routed from onboarding only.** So the pencil
+  on Edit Profile → rename screen → its own pencil is not the path to avoid, it is the only
+  path there is after signup.
+
+## 🔎 Found today, not yet acted on
+
+- **Create-quest asks for the nearby-devices (Bluetooth) permission** — "find, connect to,
+  and determine the relative position of nearby devices", on the screen where someone writes
+  down a task. Almost certainly a plugin pulling in `BLUETOOTH_CONNECT` for headsets. Play
+  wants a justification for it, and the wording is alarming in that context.
+- **The profile picture slot draws a washed-out, oversized logo** rather than a photo or a
+  clean placeholder, on both Profile and Edit Profile.
+- **Progress shows all seven weekday circles ticked** under "0-Day Streak" and "0 / 3 days".
+  Unverified — it may be the unfilled state, but ticked-and-orange reads as done.
 
 ---
 
-## ✅ HTTPS IS LIVE — `https://api.nowlii.com` + `https://ai.nowlii.com` (2026-07-31)
+## ▶ START HERE — the phone test, seven days overdue
 
-**The release blocker is gone.** Both services are behind a domain with a valid Let's Encrypt
-certificate, and a new APK built against them is ready to install.
+Everything else on this list is smaller than this one. A **prod** APK pointing at the live
+HTTPS backend has been waiting since 08-06, and three things can only be judged on hardware
+because the emulator cannot route host audio.
 
-### What landed
+- [ ] **Build a fresh APK** — yesterday's frontend work is not in the one on disk.
+      `flutter build apk --dart-define-from-file=dart_defines.prod.json`
+- [ ] Install it and sign in as a real user
+- [ ] **Confirm the timezone fix on the device** — make a quest for a time an hour out and
+      check the card says that time, not that time plus your UTC offset
+- [ ] Microphone, voice check, one AI call. **Calls are free and unlimited on the QA account
+      right now** — the allowlists were restored at the end of 08-12 so the expiring trial
+      would not block this. That also means nothing caps the OpenAI spend, so **empty them
+      again as soon as the test is done** (see Accounts below).
+- [ ] **Second phone still to retry** — `kekile49@gmail.com` failed all of 08-06 afternoon
+      and has not tried since the fix went out at ~18:26
+- [x] ~~Merge → `main` once it passes.~~ **Merged 08-14, before the phone test**, at the
+      user's explicit decision after the ordering was pointed out. So `main` now carries work
+      that no hardware has seen — the phone test still has to happen, and anything it finds
+      lands on `main` rather than on a branch.
 
-- **DNS at GoDaddy** — `api` and `ai` both → `16.170.191.239`, propagated everywhere.
-  > First attempt pointed both at `204.69.207.1`, the GoDaddy **parking** IP copied from the
-  > `@` record. The names existed but led nowhere. If a subdomain "exists but doesn't work",
-  > check the *value*, not just that the record is there.
-- **Security group** — 80 and 443 opened. 8000/8001 deliberately still open (see cutover below).
-  > **Not scriptable from the dev machine.** The `Nowlii` IAM keys in `nowli-backend/.env` are
-  > **S3-only** — a permissions boundary denies every `ec2:` action, reads included (verified
-  > 2026-07-31; `deploy-aws.md` used to claim EC2 FullAccess and was wrong). Console only.
-- **nginx 1.24 + certbot 2.9** installed; `certbot.timer` enabled for auto-renewal.
-  `ufw` confirmed **inactive** — the security group is genuinely the only firewall.
-- **Vhosts** `/etc/nginx/sites-available/{api,ai}.nowlii.com` → `:8000` / `:8001`.
-  `ai` gets `proxy_buffering off` + 3600 s timeouts so **SSE `chat-stream` isn't held back**;
-  both get `client_max_body_size 25m` for media / recorded audio.
-- **Certificate** — one cert, both SANs (`api.nowlii.com`, `ai.nowlii.com`), expires
-  **2026-10-29**. Issued `--no-redirect` on purpose: a forced HTTP→HTTPS redirect while the
-  old APK still talks plain HTTP to `:8000` would have broken it.
-- **`~/backend/.env`** — `ALLOWED_HOSTS` + `CSRF_TRUSTED_ORIGINS` extended with both subdomains
-  (backup `.env.bak-20260731-predomain`); container **force-recreated**, because `env_file` is
-  baked in at container *create* time and a plain `restart` would not have picked it up.
-- **`dart_defines.prod.json`** → `https://api.nowlii.com` / `https://ai.nowlii.com`.
-  The old IP config is kept as **`dart_defines.prod-ip.json`** for a fast rollback build.
-
-### Verified, not assumed
-
-| Check | Result |
-|---|---|
-| TLS cert from outside | valid, `CN=api.nowlii.com`, SANs cover both, Let's Encrypt |
-| `api` `/api/docs/`, `/admin/login/` | 200 |
-| `api` protected routes, no token | 401 |
-| `ai` `/health` | 200 |
-| `ai` `/api/v1/*`, no token | 401 (gate enforcing) |
-| **Authenticated** over HTTPS — quests, profiles, rest-days, quota, subscriptions, scheduled | **all 200** |
-| `ai` `/api/v1/*` with a **Django** token | 200 — cross-service JWT still matches |
-| same token, one char changed | 401 |
-| `session/new` → `realtime/token` | 200, `gpt-realtime-mini`, `voice: marin` (cost cap + gender intact) |
-| APK contents | `https://api.nowlii.com` + `https://ai.nowlii.com` present, old IP **absent** |
-
-**New build:** `nowlii-https.v0.2.apk` (debug, HTTPS) in
-`nowli-frontend-app/build/app/outputs/flutter-apk/`.
-
-### Social login on the new domain (2026-07-31)
-
-- **Google — nothing to change, and nothing was.** The native Android flow never involves the
-  backend URL: Google matches by package `com.nowlii.app` + SHA-1, and the app posts the
-  `id_token` to whatever `BASE_URL` it was built with. Verified on the new domain: a bad token
-  gives **401**, not 503, so the audience check is live.
-  > ⚠️ **Coming with the release keystore:** register the **release SHA-1** in Google Cloud
-  > `274971792537` alongside the debug one, or Google login dies with `DEVELOPER_ERROR` on the
-  > signed build. Unrelated to the domain, easy to forget.
-- **Apple — moved onto the permanent URL.** Portal + backend + build config all verified; the
-  Android `intent://` bounce bug is the only thing left. Detail in `apple-login.md`.
-  > **Found while doing it:** prod had **no `APPLE_CLIENT_IDS` at all** (503 on every attempt).
-  > It lived only in the local `.env` and was never copied to the box — the same "prod `.env`
-  > lags local" trap `deploy-aws.md` warns about. Now set, backup `.env.bak-20260731-preapple`.
-
-### 🔲 Cutover — only after the new APK is confirmed on a phone
-
-Deliberately **not** done yet, in this order:
-
-- [ ] Install `nowlii-https.v0.2.apk`, confirm login + quests + a voice call all work
-- [ ] Flip the HTTPS block in `~/backend/.env` (`BEHIND_TLS_PROXY`, `SECURE_SSL_REDIRECT`,
-      `SESSION/CSRF_COOKIE_SECURE`, HSTS — see `nowli-backend/.env.example`) and add the
-      nginx HTTP→HTTPS redirect
-      > ⚠️ `SECURE_SSL_REDIRECT=True` redirects **every** insecure request, including direct
-      > `:8000` ones — it would break the old APK the moment it is set. Hence: new APK first.
-- [ ] Close 8000/8001 in the security group
-- [ ] Then a **release** build becomes possible for the first time (cleartext no longer needed;
-      still needs the upload keystore — see `deploy-aws.md`)
-
-**This is what unblocks a real release build.** A release APK cannot use cleartext HTTP, so
-today it cannot reach the backend at all — see `deploy-aws.md`.
+While the call is open, three things fixed yesterday are worth a glance on real hardware,
+since the emulator's silence made every summary a degenerate one:
+the **mood face** (should follow what the summary actually says), the **"Save reflection"**
+wording, and the **call screen pulse**.
 
 ---
 
-## 🔲 On-device testing (nothing was tested on a phone today)
+## 🔲 Then, in rough order of value
 
-Install `nowlii-prod.v0.1.apk` (`nowli-frontend-app/build/app/outputs/flutter-apk/`).
-
-### Scheduled calls — brand new, never run on hardware
-- [ ] Quest ~6 min out with **Enable call** → reminder arrives 5 min before, naming the
-      quest and its time ("…at 16:30 starts in 5 minutes")
-- [ ] Tap it from a **locked screen**, and again from a **cold start** → lands on the call
-- [ ] Burn both calls, then let a scheduled one come due → notification offers tomorrow, and
-      the Today card shows **locked** + **Move to tomorrow**
-- [ ] 1 call left + one scheduled later → swiping on Home warns first
-- [ ] Deny exact-alarm permission → reminder still arrives (a little late), no crash
-- [ ] Reboot with a reminder pending → it survives
-
-### Today's other fixes
-- [ ] **Delete My Account** really deletes — then confirm the same email can sign up again
-- [ ] Privacy Policy link opens nowlii.com from sign-up **and** Settings → Privacy
-- [ ] Nowlii says the call is nearly up ~10 s before the extension card appears
-- [ ] Screen stays awake through a call, including after switching apps and back
-
-### Carried over, still never verified on a device
-- [ ] The money flow: fresh signup → trial → subscription screen → Pro screen → subscribe →
-      force the paywall by backdating `trial_started_at` 8 days
-- [ ] Voice: male/female matches the avatar; summary saves → **Call History**
-- [ ] Insights: productive **hour** is real; "Yes, it's my rest day" un-reds the calendar
+- [x] ~~See the other five companions on a screen.~~ Done 08-14, all six.
+- [x] ~~Reminders drop to inexact alarms after every restart.~~ Fixed 08-14.
+- [ ] **The last of the 320dp sweep: the call and voice-check screens.** Everything else is
+      done. These two cannot be judged here — swiping to talk starts a real, billable call,
+      and the emulator routes no audio anyway — so they belong to the phone test. Candidates
+      from a static read: `popup_speaking` / `popup_your_share_you` (`width: 335`),
+      `popup_error` / `popup_processing` (`324.39`).
+- [ ] **Re-verify the lapsed state on a device.** Covered by backend tests and exercised on
+      2026-08-04, but the QA account is mid-trial, so repeating it means editing prod
+      subscription data.
+- [ ] **The stranded-call prompt has never been seen** — reaching it costs a real call.
 
 ---
 
-## 🔲 After that, in order
+## ⛔ Waiting on you (not code)
 
-- [ ] **Terms of Service** — does not exist. Both links are commented out with `TODO(legal)`
-      (`sign_up.dart`, `privacy_data_screen.dart`). Publish it, set
-      `ApiConstants.termsOfServiceUrl`, uncomment. **P0 — the listing needs it.**
-- [ ] **Tighten the token lifetimes** once the new APK is confirmed on devices:
-      `JWT_ACCESS_MINUTES=60`, `JWT_REFRESH_DAYS=90` are already the defaults in code, so
-      this is only a check that prod is not overriding them.
-- [ ] **Email from a real sender.** Currently a personal Gmail app password. Now that
-      `nowlii.com` exists: `noreply@nowlii.com` via Amazon SES (already on AWS), which needs
-      SPF/DKIM records — worth doing in the same GoDaddy session as the A records above.
-- [ ] **Release keystore** → then a signed build that actually works (needs HTTPS first)
-- [ ] **Real payments (IAP)** — the biggest remaining product gap; `activate` is a mock and
-      `verify-receipt` a 501 stub, so anyone can "subscribe" for free
-- [ ] Merge `feat/realtime-voice-call` → `main` (16 commits ahead)
+- [ ] **Trial-ending reminders do not exist.** The trial screen promises a reminder on day 5
+      and day 6; nothing anywhere sends either. Pick one:
+      **local notifications** (recommended — the mechanism exists and is proven, no backend,
+      works offline; lost if the app is deleted) or a **backend job** (survives reinstall;
+      needs cron on the box and there is no scheduler today). **P0 — blocks the listing.**
+- [ ] **Terms of Service** still does not exist. **P0 — the listing needs it.**
+- [ ] **Upload keystore does not exist** — blocks a Play-acceptable build. It is the app's
+      permanent signing identity; decide who creates it.
+- [ ] **Which markets at launch** — Stripe vs store IAP. Everything in payments waits on it.
+      Researched in `subscriptions-iap.md`; do not re-research.
+- [ ] **Decide: the app-icon tile on two popups.** `all_quests_done_popup` and
+      `missed_talks_popup` used to show the companion on an indigo rounded square. Now that
+      the served art is transparent and unclipped, only the character shows. Restore the tile
+      (one line per site) or keep it as is?
+- [ ] **`waving` is shipped but unused.** The fourth pose has no slot. Candidates: the
+      swipe-to-talk reminder, the paywall companion, the two popups above.
+- [ ] **Two zone colours unconfirmed** — Stretch zone `#3D87F5`, Power move `#D53D40`. Send a
+      Figma link with the zone chips *selected* (a page root returns "nothing selected").
+      It is one constant now: `utils/color_palette/zone_colors.dart`.
+- [ ] **"Your moves" covers 2 of 4 zones** — a week of Stretch or Elevated shows 0 and 0.
+      Redesign the card, or map the missing zones onto the two rings?
+- [ ] **Companion name suggestions** are placeholder (`companion_name_suggestions.dart`).
+- [ ] **Your dev machine is nearly full** — 8 GB of 559 GB on 08-06, and several APK builds
+      have landed since.
 
 ---
 
 ## ⚠️ Standing notes
 
-- **After ever rotating `SECRET_KEY` again: tell everyone to sign out and back in.** Today's
-  rotation invalidated every token and the installed build had no 401 recovery, so it sat
-  there failing silently. That recovery now exists, but the advice still saves confusion.
-- Rollback images on the box: `:backup-20260730`. **Images roll back; migrations do not.**
-- Paywall escape hatches: `SUBSCRIPTION_ENFORCED=False`, or `SUBSCRIPTION_UNLIMITED_USERS`.
+### Running on a small screen
+- One AVD (`Medium_Phone_API_36.1`, 411dp). Drive it to other widths rather than making new
+  ones: `adb shell wm size 840x1867` + `wm density 420` = **exactly 320.0dp** (840 ÷ 2.625);
+  `945x2100` = 360dp; `984x2187` = 375dp; `adb shell wm size reset` + `wm density reset`
+  restores it. 320 is a **logical** width — the physical panel is 840px.
+- **Check the emulator's clock before suspecting auth.** Twice now, clock skew on this
+  machine has masqueraded as a credentials failure. `adb shell settings put global auto_time 1`.
+- **Do not swipe vertically over the home screen to scroll** — it catches the swipe-to-talk
+  control and starts a real, billable call.
+- **A `flutter run` can clear app storage and sign you out.** It did once on 08-12 and not on
+  the four rebuilds either side. Recovery is three taps: the QA Google account is on the
+  emulator, so **Have an account? → Continue with Google → p.pavle16**.
+- **Driving the call screen by `adb`:** "Mark as done" only registers on the circle itself
+  (≈`686 1537` at 320dp), and it opens a "Wrap up already?" dialog whose "Yes, I'm done" sits
+  at ≈`409 1207`. Snackbars live ~1s before the screen navigates — capture them with a burst
+  of `screencap`, not one delayed shot.
+- Install without a full rebuild: `adb install -r build/app/outputs/flutter-apk/app-debug.apk`.
+
+### Deploy / backend
+- **Compose service on the box is `backend`, not `web`.** `exec web …` answers "service is
+  not running" and reads like an outage.
+- **`-f docker-compose.prod.yml` is required** on the box — a bare `docker compose build` in
+  `~/backend` fails with "no configuration file provided".
+- Env changes take effect on container **create**, not restart — always `up -d`.
+- **Production logs 500s now.** `docker logs nowlii-backend` holds tracebacks.
+- **HTTPS is live**: `https://api.nowlii.com`, `https://ai.nowlii.com`. Cert to 2026-10-29.
+- As of 2026-08-12 the deployed backend is **byte-identical to committed `HEAD`** — there is
+  nothing waiting to deploy.
+
+### Accounts, money, data
+- ⚠️ **Both QA allowlists are ACTIVE on production** — both set to `p.pavle16`, restored at
+  the end of 08-12 so the phone test is not blocked when the trial expires. That account
+  therefore has **unlimited entitlement and unlimited voice calls**, so it will neither meet
+  the paywall nor stop at 2 calls a day, and **every call still bills OpenAI** — the limit
+  that used to cap the spend is gone. **Empty them again the moment the phone test is done.**
+- **To empty:** set both to blank in `~/backend/.env` and `up -d`. **Do NOT "restore" them by
+  deleting the lines** — `settings.py` defaults both to `"pavle"`, a username dead since the
+  account was recreated on 08-06, so deleting them yields an allowlist matching nobody. They
+  match on **username**. Backups on the box: `.env.bak-20260812-before-allowlist-restore`
+  and `.env.bak-20260812-eod-before-restore` are both the *empty* state.
+- Off the allowlist, real calls cost ~$0.25 each and the daily limit is 2.
+- **The QA account** is `p.pavle16@gmail.com` = prod user **id 51**, username `p.pavle16`.
+  Its trial had **1 day left on 08-12**, so it meets the paywall around 08-13.
+- ⚠️ **The emulator is not signed in as that account.** On 08-14 it was `pavlegdn`, whose
+  entitlement had lapsed — the paywall on every write — while its sparks were unlimited, so
+  only one of the two allowlists was reaching it. It was put on a plan through the paywall
+  (free; `activate` is still a mock), so **that account now carries a real Subscription row
+  on production** — worth remembering the next time someone wants to test the lapsed state.
+- **Existing scheduled calls keep their old (wrong) instants** until their quest is saved
+  again or their phone reports a timezone.
+
+### Code
 - `flutter` is not on PATH in tool shells — use `C:\src\flutter\bin\flutter.bat`.
-- Disk filled to 0 bytes mid-session today. `nowli-frontend-app/build` alone was 4.2 GB and
-  `~/.gradle` 12 GB; both are regenerable if space runs short again.
-- Longer-term backlog in `future-checklist.md`; today's detail in
-  `daily-reports/2026-07-30.md`.
+- **`flutter analyze lib` has a standing baseline of 10 warnings.** Diff against it rather
+  than reading the count. 0 errors. **262 tests** pass.
+- **Never key companion art off `predefined_option`.** Production ids are `2, 3, 4, 6, 10,
+  12`; the id says nothing about which character a row is. Resolution order is the
+  `avatar_logo` filename → preset `nowlii_name` → id. Never the displayed name, which the
+  user can change. **Do not rename the S3 files** until the backend has a stable `slug`.
+- Backend tests: use module labels (`Apps.users.tests`). A bare `manage.py test` **errors**.
+- **`AUTH_USER_MODEL` is never set** — production runs Django's stock `auth.User`.
+- The emulator cannot route host audio, so the mic, the voice check and the AI call cannot be
+  judged there. Those need a phone.
+- **Figma MCP hits a per-seat call limit.** ~45 calls on 08-12 without hitting it. A page root
+  (`node-id=0-1`) returns "nothing selected" and its metadata can exceed the token limit —
+  drill into a named frame instead.
+- Longer-term backlog in `future-checklist.md`.
+
+---
+
+## 🔲 The cutover — only after a real phone test
+
+Not the emulator. Each of these breaks any pre-HTTPS build the moment it lands.
+
+- [ ] Flip the HTTPS block in `~/backend/.env`: `SECURE_SSL_REDIRECT`,
+      `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_HSTS_SECONDS` (ramp
+      3600 → 31536000, **not** straight to a year — HSTS is effectively irreversible for the
+      duration it advertises)
+- [ ] nginx HTTP→HTTPS redirect (the cert was issued `--no-redirect` on purpose)
+- [ ] Close 8000/8001 in the AWS security group
+- [ ] Then a **release** build becomes possible — needs the upload keystore and the **release
+      SHA-1 registered in Google Cloud `274971792537`**, or Google login dies with
+      `DEVELOPER_ERROR`

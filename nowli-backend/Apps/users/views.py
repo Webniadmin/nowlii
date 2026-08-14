@@ -169,6 +169,40 @@ class NowliiPredefinedOptionViewSet(viewsets.ModelViewSet):
 # ------------------------------------------------------------------------------
 # PROFILE
 # ------------------------------------------------------------------------------
+class ClearAIMemoryView(APIView):
+    """POST /api/profiles/clear-ai-memory/ — delete everything the AI remembers about me.
+
+    Backs the "Clear All AI Memory" button, which until now showed "cleared successfully"
+    and deleted nothing.
+
+    What goes: the AI's *interpretations* — per-call summaries, emotion and low-mood
+    snapshots, and the cached weekly/monthly insight text. Those are the whole of what the
+    companion knows about someone across calls; nowli-ai's own sessions are in-memory and end
+    with the call.
+
+    What deliberately stays: the ``VoiceCall`` rows themselves. They are the ledger the daily
+    limit is counted from, so deleting them would hand every user an unlimited supply of
+    calls. Clearing a memory must not also clear a quota.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from Apps.insights.models import InsightCache
+        from Apps.voice_calls.models import (
+            CallEmotionSnapshot, CallLowMoodSnapshot, CallSummary,
+        )
+
+        user = request.user
+        deleted = {
+            "summaries": CallSummary.objects.filter(user=user).delete()[0],
+            "emotion_snapshots": CallEmotionSnapshot.objects.filter(user=user).delete()[0],
+            "low_mood_snapshots": CallLowMoodSnapshot.objects.filter(user=user).delete()[0],
+            "insight_caches": InsightCache.objects.filter(user=user).delete()[0],
+        }
+        logger.info("Cleared AI memory for user=%s | %s", user.pk, deleted)
+        return Response({"detail": "AI memory cleared.", "deleted": deleted})
+
+
 @method_decorator(name='list', decorator=swagger_auto_schema(
     operation_summary="List all profiles",
     operation_description="Get a list of all profile entries.",
@@ -556,7 +590,17 @@ class GoogleLoginAPI(APIView):
                 client_id,
             )
         except ValueError:
+            # A token we can read and reject: wrong audience, expired, bad signature.
             return Response({'error': 'Invalid Google token.'}, status=status.HTTP_401_UNAUTHORIZED)
+        except Exception:
+            # Everything else is OUR problem, not the caller's — most likely Google's
+            # signing certificates could not be fetched. It used to leave the view as a
+            # bare 500 the phone reported as "server error" and nothing recorded why.
+            logger.exception('Google id_token verification failed unexpectedly')
+            return Response(
+                {'error': 'Could not verify your Google account right now. Please try again.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         email = idinfo.get('email')
         if not email or not idinfo.get('email_verified', False):
@@ -566,18 +610,38 @@ class GoogleLoginAPI(APIView):
             )
 
         User = get_user_model()
-        user, created = User.objects.get_or_create(
-            email=User.objects.normalize_email(email),
-            defaults={'is_active': True},
-        )
-        if created:
-            # OAuth user has no local password.
-            user.set_unusable_password()
-            user.save(update_fields=['password'])
-        elif not user.is_active:
-            # A Google-verified email is trusted, so activate a previously-pending account.
-            user.is_active = True
-            user.save(update_fields=['is_active'])
+        try:
+            # Mirrors the Apple flow below. Creating the row from the email alone left
+            # `username` empty, and the active user model requires a unique one — so the
+            # first Google signup ever took the empty username and every later one collided
+            # with it, 500ing for that account on every attempt while existing accounts (who
+            # already had a username) signed in fine.
+            email = User.objects.normalize_email(email)
+            user = User.objects.filter(email=email).first()
+            created = False
+            if user is None:
+                base = (email.split('@')[0] or 'google')[:140]
+                username = base
+                n = 0
+                while User.objects.filter(username=username).exists():
+                    n += 1
+                    username = f"{base}{n}"[:150]
+                user = User.objects.create_user(username=username, email=email)  # unusable password
+                user.is_active = True
+                user.save()
+                created = True
+            elif not user.is_active:
+                # A Google-verified email is trusted, so activate a previously-pending account.
+                user.is_active = True
+                user.save(update_fields=['is_active'])
+        except Exception:
+            # The token was good, so the account is who they say they are — say which email
+            # tripped it, since this is the half of the flow that can differ per account.
+            logger.exception('Google login could not create or load the account for %s', email)
+            return Response(
+                {'error': 'Could not sign you in. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         refresh = RefreshToken.for_user(user)
         return Response({

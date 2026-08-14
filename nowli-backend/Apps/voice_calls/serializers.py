@@ -26,6 +26,11 @@ class ScheduledCallSerializer(serializers.ModelSerializer):
     quest_id = serializers.IntegerField(source='quest.pk', read_only=True)
     quest_title = serializers.CharField(source='quest.task', read_only=True, default='')
     call_id = serializers.IntegerField(source='call.pk', read_only=True, default=None)
+    # ISO-8601 explicitly, overriding the project-wide DRF ``DATETIME_FORMAT``
+    # ("%d-%m-%Y %H:%M:%S"). That format is neither parseable by the client nor
+    # offset-bearing, and this value is UTC — the app schedules a local notification from
+    # it, so reading it as local time put every reminder out by the device's offset.
+    scheduled_for = serializers.DateTimeField(format='iso-8601', read_only=True)
 
     class Meta:
         model = ScheduledCall
@@ -42,7 +47,14 @@ class CallSummarySerializer(serializers.ModelSerializer):
     """Read-only view of a saved call summary (for a user's call history / progress)."""
 
     call_id = serializers.IntegerField(source='call.pk', read_only=True)
-    started_at = serializers.DateTimeField(source='call.started_at', read_only=True)
+    # ISO-8601 for the same reason as ScheduledCallSerializer: the project-wide
+    # DATETIME_FORMAT is not parseable by the client, so every receipt date came through
+    # as null and the dates simply vanished from the screen.
+    started_at = serializers.DateTimeField(
+        source='call.started_at', format='iso-8601', read_only=True,
+    )
+    created_at = serializers.DateTimeField(format='iso-8601', read_only=True)
+    note_updated_at = serializers.DateTimeField(format='iso-8601', read_only=True)
     duration_seconds = serializers.IntegerField(source='call.duration_seconds', read_only=True)
 
     class Meta:
@@ -50,6 +62,8 @@ class CallSummarySerializer(serializers.ModelSerializer):
         fields = [
             'call_id', 'started_at', 'duration_seconds',
             'mood_detected', 'focus_topic', 'energy_shift', 'next_step',
-            'dominant_emotion', 'top_emotions', 'language', 'total_turns',
+            'dominant_emotion', 'top_emotions', 'words_circled', 'tiny_question',
+            'note', 'note_updated_at',
+            'language', 'total_turns',
             'created_at',
         ]

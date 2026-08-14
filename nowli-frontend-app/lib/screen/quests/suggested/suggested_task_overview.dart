@@ -6,6 +6,7 @@ import 'package:nowlii/themes/create_qutes.dart';
 import 'package:nowlii/models/quest_suggestion_model.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:intl/intl.dart';
+import 'package:nowlii/utils/color_palette/zone_colors.dart';
 
 class SuggestedTaskOverview extends StatefulWidget {
   final QuestSuggestion? suggestion;
@@ -30,20 +31,7 @@ class _SuggestedTaskOverviewState extends State<SuggestedTaskOverview> {
   String get taskDescription => widget.suggestion?.description ?? 
       "You're having a 5-minute call with your Bestie Fizzy during this task.";
   
-  Color get zoneColor {
-    switch (taskZone.toLowerCase()) {
-      case 'soft steps':
-        return const Color(0xFFA0E871);
-      case 'stretch zone':
-        return const Color(0xFFFFB84D);
-      case 'power move':
-        return const Color(0xFFFF6B6B);
-      case 'elevated':
-        return const Color(0xFF9B59B6);
-      default:
-        return const Color(0xFFA0E871);
-    }
-  }
+  Color get zoneColour => zoneColor(taskZone);
 
   Future<void> _addQuest() async {
     if (_isCreating) return; // Prevent double tap
@@ -261,7 +249,7 @@ class _SuggestedTaskOverviewState extends State<SuggestedTaskOverview> {
               child: Padding(
                 padding: EdgeInsets.all(8 * s),
                 child: Image.asset(
-                  Assets.svgIcons.clearAllAIMemoryPng.path,
+                  Assets.svgIcons.clearAllAIMemory.path,
                   fit: BoxFit.contain,
                 ),
               ),
@@ -276,7 +264,7 @@ class _SuggestedTaskOverviewState extends State<SuggestedTaskOverview> {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 16 * s, vertical: 6 * s),
       decoration: BoxDecoration(
-        color: zoneColor,
+        color: zoneColour,
         borderRadius: BorderRadius.circular(20 * s),
       ),
       child: Text(

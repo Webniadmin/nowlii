@@ -19,11 +19,18 @@ class AppRoutespath {
   static const String nowliHowToUse = "/nowliHowToUse";
   static const String avatarLogo = "/avatarLogo";
   static const String avatarLogoAndName = "/avatarLogoAndName";
+  // Steps 7 and 8: what the product deliberately will not do (two calls a day)
+  // and what the user gets back afterwards.
+  static const String limitedByDesign = "/limitedByDesign";
+  static const String tonightsReceipt = "/tonightsReceipt";
   static const String popupSpeking = "/popupSpeking";
   static const String procrastinationScreen = "/procrastinationScreen";
   static const String aiVoice = "/aiVoice";
   static const String callSummary = "/callSummary";
-  static const String callHistory = "/callHistory";
+  // The receipt library and one receipt. (Was `callHistory`; the screen it pointed at is
+  // superseded and now lives in lib/experimental/.)
+  static const String receipts = "/receipts";
+  static const String receiptDetail = "/receiptDetail";
   static const String popPoSahre = "/popPoSahre";
   static const String swipeToTalkLoading = '/swipeToTalkLoading';
   static const String emotionShareScreen = '/emotionShareScreen';

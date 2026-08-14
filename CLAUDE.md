@@ -33,6 +33,7 @@ The three projects are developed and run independently; there is no root-level b
   - `subtask_generator` — AI-generated subtasks. `POST /api/subtasks/generate/`.
   - `insights` — AI weekly reflections + quest suggestions. `GET /api/insights/`.
   - `voice_calls` — AI voice-call records, the per-user daily limit (2/day, derived by counting today's rows — no counter, no cron), per-call emotion/summary snapshots, and **`ScheduledCall`**. A `post_save` signal on `Quests` (in `voice_calls/signals.py`) creates/moves/cancels the scheduled call whenever a quest's `enable_call`/date/time changes — quests know nothing about calls. **A scheduled call never reserves quota**; `missed` is derived on read, not stored.
+- **Timezones (since 2026-08-05):** `Quests.select_a_date`/`select_a_time` are **naive wall-clock** fields holding what the user tapped. Anything turning them into an instant, or deciding which calendar day something belongs to, MUST read the user's zone via **`Apps/users/timezones.py`** (`user_timezone`, `user_localdate`) — never `timezone.get_current_timezone()` or `timezone.localdate()`. `TIME_ZONE` is UTC, so the server's clock is nobody's: reading these fields in it made every call reminder fire late by the user's whole offset, and reset the daily spark limit at 02:00 for anyone at +02:00. The zone is `Profile.timezone`, an **IANA name** reported by the phone (an offset is only true on the day it was measured). A blank or unknown zone falls back to the server's, which is what pre-existing rows rely on. Saving a profile re-derives that user's pending `ScheduledCall`s.
 - **AI provider abstraction**: `Apps/insights/ai_client.py` (and the parallel logic in `subtask_generator`) auto-selects a provider by which API key is set, in priority order **Anthropic → OpenAI → Google** (`get_active_provider()`). Prompts instruct the model to return raw JSON; `_parse()` strips ``` fences before `json.loads`. When touching AI code, keep all three provider callers (`_call_claude`, `_call_chatgpt`, `_call_gemini`) in sync.
 - **Auth**: SimpleJWT with `Bearer` scheme; access & refresh tokens both live 31 days; refresh rotation + blacklist enabled. Default DRF permission is `IsAuthenticated` (since 2026-07-30 — it was `AllowAny`), but every view still declares its own `permission_classes`; keep doing that rather than relying on the default.
 - **Production guards** (`settings.py`): with `DEBUG=False` the app **refuses to start** on a weak `SECRET_KEY`. All HTTPS-dependent settings (`BEHIND_TLS_PROXY`, `SECURE_SSL_REDIRECT`, `SESSION/CSRF_COOKIE_SECURE`, HSTS) are env switches defaulting **off**, because production is still plain HTTP — do not "fix" them to on without TLS in front, it locks the admin out. See `.env.example`.
@@ -80,7 +81,52 @@ FastAPI app **"Emotion AI — Human Friend System"** (v4.2). This is the `:8001`
   - `aiBaseUrl` (`:8001`) — the FastAPI AI/voice service in **`nowli-ai/`** (`/api/v1/session/new`, `/api/v1/chat-stream`, `/api/v1/detect-emotion`, `/api/v1/chat/summary`). Used by `lib/services/ai_call_service.dart`.
 - **Layers**: `lib/api/` (auth + profile controllers/services/models), `lib/services/` (feature services: quests, insights, streak, AI call, audio streaming, speech), `lib/models/` (data models), `lib/screen/` (feature UI modules), `lib/widget/` + `lib/custom_code/` (reusable UI), `lib/themes/` + `lib/utlis/color_palette/` (styling).
 - **Voice/AI**: `speech_to_text` + `flutter_tts` for the talking companion; audio streaming to the `:8001` server.
-- **Scheduled call reminders**: `lib/services/call_reminder_service.dart` is the only file that touches `flutter_local_notifications`. Everything else calls `sync()`, which rebuilds all pending reminders from the backend — call it after login, after a quest changes, and **after every call ends** (that last one is what keeps the out-of-calls wording accurate). Requires **core library desugaring** in `android/app/build.gradle.kts`; the build fails without it. Never declare `USE_EXACT_ALARM` (Play restricts it to alarm/calendar apps) — `SCHEDULE_EXACT_ALARM` with an inexact fallback is the supported path.
+- **Scheduled call reminders**: `lib/services/call_reminder_service.dart` is the only file that touches `flutter_local_notifications`. Everything else calls `sync()`, which rebuilds all pending reminders from the backend — call it after login, after a quest changes, and **after every call ends** (that last one is what keeps the out-of-calls wording accurate). "After a quest changes" includes **editing** one: `await` the push to the edit screen and `sync()` on a true result, or the reminder silently keeps pointing at the old time. Requires **core library desugaring** in `android/app/build.gradle.kts`; the build fails without it. Never declare `USE_EXACT_ALARM` (Play restricts it to alarm/calendar apps) — `SCHEDULE_EXACT_ALARM` with an inexact fallback is the supported path.
+- **The companion avatar (since 2026-08-11):** never hardcode a character image. Use
+  **`lib/widget/nowlii_avatar.dart`** (`NowliiAvatar(size:)`), backed by
+  **`lib/services/companion_avatar.dart`**, which resolves the user's pick: cached
+  `Profile.avatar_logo` (S3 URL) → bundled art for that character → default.
+  **Which character that is comes from the `avatar_logo` filename** (`…/nowlii_logos/zee.png`
+  → `zee`), then the preset `nowlii_name`, and only then the `predefined_option` id.
+  **Never key art off the id**: production serves ids `2, 3, 4, 6, 10, 12` — the table has
+  been reseeded, so they are neither 1-based nor contiguous — and the old `(id - 1) % 6`
+  picked the wrong character for five of the six, collapsing 4/10 and 6/12 onto one slot
+  each. It hid for months because it only fed the offline fallback tile and the QA account
+  is Zee, the one id the arithmetic gets right. **Never key art off the displayed name
+  either** — the user is invited to rename the companion, and that bug has shipped once. State is hydrated inside `StorageService`'s profile
+  read/write/clear — the one place every profile passes through — so screens never fetch or
+  refresh it themselves. The six bundled tiles are **opaque** (only E/fizzy is transparent),
+  which is why `circle` defaults to true; pass `borderRadius:` for the app-icon-style slots.
+  **Poses (since 2026-08-12):** pass `pose:` for a slot that held a *specific* picture —
+  `CompanionPose.sleeping` (out of sparks), `.reading` (home quest card), `.speaking` (voice
+  check, the speaking popups, the live call), `.waving` (shipped, unclaimed). The art is
+  `assets/companions/<option id>_<pose>.png`, 6 × 4, transparent, and is **always bundled,
+  never the profile URL**: the backend stores one neutral picture per companion, so asking S3
+  for a sleeping one returns the standing one and the slot goes quietly back to being wrong.
+  `pose` defaults to `.neutral`, which *is* the profile URL — the pre-pose behaviour, still
+  right for the profile tile and the pickers. Adding art: drop the file in, the path is
+  derived; `test/companion_pose_test.dart` fails if one is missing or the folder falls out of
+  `pubspec.yaml`. Two traps found importing them: **character 3 authors sleeping and speaking
+  in the opposite columns** to the other five, and **character 5's sleeping frame also holds
+  an awake copy** — the Figma column position is not the pose, so verify by looking.
+- **Text scaling (since 2026-08-11):** `lib/core/responsive/responsive_text.dart` is wired into
+  **`MaterialApp.router`'s own `builder:`** in `main.dart` and overrides `MediaQuery.textScaler`
+  for the whole app. At 375 and up nothing changes; below that type shrinks in proportion down
+  to 0.85 at 320, and the OS font-size slider is clamped to 0.85–1.15. It has to hang off
+  MaterialApp's builder, not `ScreenUtilInit`'s — the app inserts a fresh `MediaQuery` from the
+  view, so an override placed above it is discarded. This exists because ~900 of ~930 font sizes
+  are raw literals rather than `.sp`, and `textScaler` is the only lever that reaches all of them
+  without touching 118 files. It scales **text only** — fixed paddings, `SizedBox` widths and
+  hard container heights are unaffected, so a `Text` in a `Row` with no `Flexible` still overflows
+  and needs local `maxLines`/`Flexible`/`FittedBox`.
+  **Do not "simplify" it to `TextScaler.linear(someFactor)`.** Since Android 14 the platform
+  scaler is non-linear — body text grows with the accessibility slider while headings stay put —
+  and collapsing it to one number throws that away. Measured on an emulator at `font_scale=1.3`:
+  sampling the platform scaler at a heading size reports ~1.0, so the naive factor applied **no**
+  enlargement anywhere, silently breaking large-text accessibility. The current code clamps the
+  platform scaler (keeping its curve) and multiplies by the width fit via `_FittedTextScaler`.
+  Verified at 320/360/375/411dp × OS font 1.0/1.3.
+- **Zone colours** live in **`lib/utils/color_palette/zone_colors.dart`** (`zoneColor`, `zoneTextColor`, `zoneColorHex`) and nowhere else. There were five copies and only Soft steps agreed across them, so the same quest changed colour from screen to screen. Lookup is case-insensitive because the suggestion endpoints lower-case the zone name while the quest endpoints do not.
 
 ### Gotchas (this codebase is under active, messy development)
 - `lib/core/` **imports were historically written as `core%20/…`** (a trailing space in the folder name that existed on the original Linux dev box). This broke the build on Windows (which strips the trailing space), so all imports were rewritten to plain `core/`. If you pull code from the original machine, re-check for reintroduced `core%20/` imports.
@@ -88,7 +134,9 @@ FastAPI app **"Emotion AI — Human Friend System"** (v4.2). This is the `:8001`
 - Base URLs in `api_constant.dart` come from compile-time `String.fromEnvironment` (`BASE_URL`, `AI_BASE_URL`), defaulting to `localhost`. For non-local backends pass them at run time, e.g. `flutter run --dart-define-from-file=dart_defines.json` (template: `dart_defines.example.json`; real file is git-ignored).
 
 ## References
-- **`docs/next-phase.md` — START HERE next session.** Prioritized plan of the upcoming work (cleanup tasks first, then Google/Apple OAuth and mobile-device builds), with files-to-touch and gotchas for each.
+- **`docs/daily-checklist.md` — START HERE.** The single active list for the current working day: what to do first, what is blocked on the user, and the standing gotchas that bite every session. Updated during the day; reset each morning, with the previous day written up in `docs/daily-reports/`.
+- `docs/future-checklist.md` — everything consciously deferred, by priority (P0 blocks the store listing).
+- **`docs/next-phase.md`** — the longer arc behind the daily list, with files-to-touch and gotchas per task.
 - `docs/running-locally.md` — verified first-run/setup procedure (toolchain install + per-service commands). Read before trying to run anything.
 - `docs/architecture.md` — how the three services connect, data/auth flow, ports, per-service directories and env vars.
 - `docs/project-status.md` — current state: what's complete, what's unfinished, and a dated session log.

@@ -75,7 +75,7 @@ class _AvatarLogoState extends State<AvatarLogo> {
               padding: const EdgeInsets.all(16.0),
               child: AnimatedOnboardingTopbar(
                 currentStep: 5,
-                totalSteps: 6,
+                totalSteps: kOnboardingTotalSteps,
                 backRoute: "/nowliHowToUse",
                 skipRoute: "/avatarLogoAndName",
                 isSmallDevice: isSmallDevice,
@@ -181,7 +181,7 @@ class _AvatarLogoState extends State<AvatarLogo> {
             //   textStyle: AppsTextStyles.letsStartNext.copyWith(fontSize: 36),
             // ),
             GestureDetector(
-              onTap: () => context.push("/avatarLogoAndName"),
+              onTap: () => context.go("/avatarLogoAndName"),
               child: Container(
                 width: 354,
                 height: 116,
@@ -265,8 +265,10 @@ class _AvatarLogoState extends State<AvatarLogo> {
           selectedIndex = index;
         });
         
-        // Save avatar logo and name to onboarding data
+        // The id is what actually selects the companion; the logo and name are kept only
+        // so onboarding can show the choice back before the profile exists.
         final onboardingData = OnboardingData();
+        onboardingData.setPredefinedOption(option.id);
         onboardingData.setAvatarLogo(option.avatarLogo);
         onboardingData.setNowliiName(option.name);
       },

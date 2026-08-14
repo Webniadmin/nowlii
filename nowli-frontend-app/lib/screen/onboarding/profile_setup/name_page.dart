@@ -1,5 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:nowlii/themes/text_styles.dart';
+
+/// Per the design spec: letters, spaces and hyphens only — no digits, no symbols.
+///
+/// Unicode-aware on purpose (`\p{L}`, not `A-Za-z`): the app ships Español and the
+/// companion names are user-authored, so "José" and "Đorđe" must survive typing.
+final RegExp _kAllowedNameChars = RegExp(r'[\p{L}\s\-]', unicode: true);
+
+/// The design caps the field at 30 characters.
+const int _kMaxNameLength = 30;
 
 class NamePage extends StatefulWidget {
   final VoidCallback onContinue;
@@ -41,6 +51,16 @@ class _NamePageState extends State<NamePage> {
     _nameController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// The design gates Continue on at least one character. Trimmed, so a name of
+  /// pure spaces does not count — spaces are allowed *inside* a name, not as one.
+  bool get _canContinue => _nameController.text.trim().isNotEmpty;
+
+  void _submit() {
+    if (!_canContinue) return;
+    _focusNode.unfocus();
+    widget.onContinue();
   }
 
   @override
@@ -90,6 +110,13 @@ class _NamePageState extends State<NamePage> {
                 controller: _nameController,
                 focusNode: _focusNode,
                 onChanged: widget.onNameChanged,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _submit(),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(_kAllowedNameChars),
+                  LengthLimitingTextInputFormatter(_kMaxNameLength),
+                ],
                 style: AppsTextStyles.typeSomeThingHere.copyWith(
                   color: const Color(0xFF4542EB),
                 ),
@@ -109,9 +136,11 @@ class _NamePageState extends State<NamePage> {
               width: double.infinity,
               height: 64,
               child: ElevatedButton(
-                onPressed: widget.onContinue,
+                onPressed: _canContinue ? _submit : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4A3AFF),
+                  disabledBackgroundColor:
+                      const Color(0xFF4A3AFF).withValues(alpha: 0.5),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
                   ),
@@ -119,7 +148,9 @@ class _NamePageState extends State<NamePage> {
                 child: Text(
                   "Continue",
                   style: AppsTextStyles.continueButton.copyWith(
-                    color: Colors.white,
+                    color: _canContinue
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.7),
                   ),
                 ),
               ),

@@ -1,3 +1,4 @@
+import 'package:nowlii/services/companion_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -203,7 +204,13 @@ class _EditNameScreenState extends State<EditNameScreen> {
             GestureDetector(
               onTap: _isLoading ? null : _updateAvatarName,
               child: Container(
-                width: 335,
+                // 335 is the design width at 375, and it was hardcoded — so on a
+                // 320 screen the parent clamped it to the full 320 and the button
+                // ran edge to edge with no margin at all, while "Edit Name" right
+                // above it kept its inset. Expressed as a margin instead: still
+                // exactly 335 at the design width, still inset on anything narrower.
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 20),
                 height: 80,
                 padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
                 decoration: ShapeDecoration(
@@ -302,18 +309,34 @@ class _NameSelectionPageState extends State<NameSelectionPage>
       if (widget.avatarOptions.isEmpty) return;
       
       if (widget.currentProfile != null) {
-        final existingName = widget.currentProfile!.customNowliiName ?? 
+        final existingName = widget.currentProfile!.customNowliiName ??
                             widget.currentProfile!.nowliiName ?? '';
-        
+
+        // Which picture to show is decided by the companion's ID, never by its name.
+        //
+        // This screen used to find the avatar by matching the name against the catalogue.
+        // The moment a user renames their companion — which this very screen invites them
+        // to do — nothing matches, the index falls back to 0, and the card shows the first
+        // companion in the list no matter which one they actually have. Changing the form
+        // then appeared to do nothing here even though it had saved correctly.
+        final optionId = widget.currentProfile!.predefinedOption;
+        if (optionId != null) {
+          final byId =
+              widget.avatarOptions.indexWhere((avatar) => avatar.id == optionId);
+          if (byId != -1) setState(() => _currentAvatarIndex = byId);
+        }
+
         if (existingName.isNotEmpty) {
-          // Check if it matches any preset avatar from API
+          // A name that matches a catalogue entry is a preset; anything else is the user's
+          // own wording and belongs in the text field. Either way the picture above is
+          // already settled by the id.
           final matchedIndex = widget.avatarOptions.indexWhere(
             (avatar) => avatar.name.toLowerCase() == existingName.toLowerCase()
           );
-          
+
           if (matchedIndex != -1) {
             setState(() {
-              _currentAvatarIndex = matchedIndex;
+              if (optionId == null) _currentAvatarIndex = matchedIndex;
             });
           } else {
             // It's a custom name
@@ -411,9 +434,10 @@ class _NameSelectionPageState extends State<NameSelectionPage>
                 ),
                 child: Center(
                   child: CharacterWidget(
-                    avatarOption: _showTextField
-                        ? widget.avatarOptions[0]
-                        : widget.avatarOptions[_currentAvatarIndex],
+                    // Always the companion they actually have. Typing a custom name used
+                    // to swap the picture to the first one in the catalogue, which made a
+                    // renamed companion look like a different character.
+                    avatarOption: widget.avatarOptions[_currentAvatarIndex],
                     onEditTap: () async {
                       // Navigate to edit form screen and reload when returning
                       final result = await context.push("/editFrom");
@@ -608,7 +632,10 @@ class CharacterWidget extends StatelessWidget {
                     errorBuilder: (context, error, stackTrace) {
                       print('Error loading image from ${avatarOption.avatarLogo}: $error');
                       return Image.asset(
-                        'assets/svg_images/A.png',
+                        // The bundled art for *this* option, not a hardcoded A.png —
+                        // which used to relabel every companion as milo whenever S3
+                        // failed, in the picker itself.
+                        CompanionIdentity(optionId: avatarOption.id).assetPath,
                         width: 260,
                         height: 210,
                         fit: BoxFit.contain,

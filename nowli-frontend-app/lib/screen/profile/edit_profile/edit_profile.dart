@@ -1,3 +1,4 @@
+import 'package:nowlii/services/companion_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -166,7 +167,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget _buildFallbackAvatarImage() {
     return Center(
       child: Image.asset(
-        'assets/svg_images/A.png',
+        // The companion the user actually picked. This was a hardcoded A.png, so a slow
+        // or failed S3 load showed everybody milo — on the very screen where they had
+        // just chosen someone else.
+        CompanionIdentity(optionId: _currentProfile?.predefinedOption).assetPath,
         width: 60,
         height: 60,
         fit: BoxFit.contain,
@@ -430,7 +434,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
                 // Avatar Card (Nowlii Form)
                 Container(
-                  height: 140,
+                  // minHeight, not height: at 411dp with the OS font slider at its 1.15
+                  // cap the three lines below come to ~1pt more than a fixed 140 allows,
+                  // which is an overflow stripe. Identical to the design whenever the
+                  // content fits, which is every ordinary case.
+                  constraints: const BoxConstraints(minHeight: 140),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: AppColorsApps.babyBlue,
@@ -474,7 +482,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             const SizedBox(height: 4),
                             Flexible(
                               child: Text(
-                                'Pick a new form or \ncustomize your current one',
+                                // No hardcoded newline: the break after "or" is only
+                                // correct at the design width. At 320dp the first half
+                                // already needed two lines, so with maxLines: 2 the
+                                // entire second half vanished and the card read
+                                // "Pick a new form or".
+                                'Pick a new form or customize your current one',
                                 style: GoogleFonts.workSans(
                                   color: const Color(0xFF011F54),
                                   fontSize: 16,
@@ -482,7 +495,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                   height: 1.40,
                                   letterSpacing: -0.50,
                                 ),
-                                maxLines: 2,
+                                // 4, because at 320dp the fixed 100 avatar and the edit
+                                // button leave this column ~120dp and the sentence needs
+                                // four lines to survive. Wider screens never reach it.
+                                maxLines: 4,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),

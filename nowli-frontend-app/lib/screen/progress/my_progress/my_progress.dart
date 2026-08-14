@@ -124,6 +124,11 @@ class _MyProgressState extends State<MyProgress> {
   // its background by tier so it visibly "levels up" as the streak grows.
   static const List<int> _streakMilestones = [3, 7, 14, 30, 60, 90, 120, 180, 365];
 
+  // The streak card used to change colour by tier — blue at a day, peach at a week, gold
+  // at 120. The design gives it one background instead (see _buildStreakCard), so this is
+  // unused. Kept rather than deleted: the tiers are a product idea, not a mistake, and if
+  // they come back this is what they looked like.
+  /*
   LinearGradient _streakGradient(int days) {
     List<Color> colors;
     if (days >= 120) {
@@ -143,6 +148,7 @@ class _MyProgressState extends State<MyProgress> {
       colors: colors,
     );
   }
+  */
 
   Widget _buildStreakCard() {
     // Use streak API data, fallback to insights data
@@ -160,17 +166,37 @@ class _MyProgressState extends State<MyProgress> {
         ? ((streakDays - prevMilestone) / span).clamp(0.0, 1.0)
         : 1.0;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: _streakGradient(streakDays),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisAlignment: MainAxisAlignment.center,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: Stack(
         children: [
+          // The card's own background, from Figma 15:1933 — a peach ground washed to
+          // orange, with two green blooms bleeding off the edges. Positioned.fill so the
+          // decoration takes its size from the content in the stack below.
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFFAE3CE), Color(0xFFFF8F26)],
+                ),
+              ),
+            ),
+          ),
+          // The same flower the home screen uses, tinted to the design's green rather than
+          // shipped a second time: the two SVGs are the identical path, and differ only in
+          // fill.
+          Positioned(left: -307, top: -366, child: _streakBloom()),
+          Positioned(left: -16, top: 201, child: _streakBloom()),
+
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
           SizedBox(
             width: 302,
             child: Text(
@@ -297,7 +323,37 @@ class _MyProgressState extends State<MyProgress> {
             ),
           ),
           */
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  /// One of the two green blooms behind the streak card.
+  ///
+  /// Figma wraps the 431px flower in a 574.594px box and rotates it 64.49° about that
+  /// box's centre; reproduced here rather than pre-rotating, so the two Positioned offsets
+  /// are the design's own numbers and stay comparable to it.
+  Widget _streakBloom() {
+    return IgnorePointer(
+      child: SizedBox(
+        width: 574.594,
+        height: 574.594,
+        child: Center(
+          child: Transform.rotate(
+            angle: 64.49 * pi / 180,
+            child: Assets.svgIcons.homeFlower.svg(
+              width: 431,
+              height: 431,
+              colorFilter: const ColorFilter.mode(
+                Color(0xFFA0E871),
+                BlendMode.srcIn,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -423,6 +479,7 @@ class _MyProgressState extends State<MyProgress> {
     int softSteps = 0;
     int powerMoves = 0;
     int softAssigned = 0;
+    int powerAssigned = 0;
 
     // Real per-zone completed counts from the backend — weekly or monthly zone_progress
     // (both have the same shape). No client-side approximation.
@@ -435,12 +492,15 @@ class _MyProgressState extends State<MyProgress> {
         softAssigned = zone.assigned;
       } else if (zone.zone == 'Power move') {
         powerMoves = zone.completed;
+        powerAssigned = zone.assigned;
       }
     }
 
     // Ring fill = completed / assigned for that zone (real ratio, not a fixed fraction).
     final softFraction =
         softAssigned > 0 ? (softSteps / softAssigned).clamp(0.0, 1.0) : 0.0;
+    final powerFraction =
+        powerAssigned > 0 ? (powerMoves / powerAssigned).clamp(0.0, 1.0) : 0.0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -517,6 +577,7 @@ class _MyProgressState extends State<MyProgress> {
                 softFraction,
                 isPartial: true,
                 trackColor: const Color(0xFFE8EDE0),
+                assigned: softAssigned,
               ),
               _buildMoveCircle(
                 '$powerMoves',
@@ -527,9 +588,12 @@ class _MyProgressState extends State<MyProgress> {
                   colors: [Color(0xFF4542EB), Color(0x004542EB)],
                   stops: [0.0, 1.075],
                 ),
-                powerMoves > 0 ? 1.0 : 0.0,
-                isPartial: false,
-                trackColor: Colors.transparent,
+                // Was `powerMoves > 0 ? 1.0 : 0.0` — one completed Power move out of five
+                // drew a full ring. Same real ratio as the other one.
+                powerFraction,
+                isPartial: true,
+                trackColor: const Color(0xFFE4E4F8),
+                assigned: powerAssigned,
               ),
             ],
           ),
@@ -545,6 +609,7 @@ class _MyProgressState extends State<MyProgress> {
     double sweepFraction, {
     bool isPartial = true,
     Color trackColor = const Color(0xFFE8EDE0),
+    int assigned = 0,
   }) {
     return Column(
       children: [
@@ -572,6 +637,18 @@ class _MyProgressState extends State<MyProgress> {
             fontSize: 14,
             color: Colors.grey.shade700,
             fontWeight: FontWeight.w500,
+          ),
+        ),
+        // The ring shows what was finished. On its own a "0" is indistinguishable from
+        // having no quests at all — which is exactly how a week with two unfinished ones
+        // read. The denominator is the difference between "nothing there" and "not yet".
+        const SizedBox(height: 2),
+        Text(
+          assigned > 0 ? 'of $assigned' : 'none set',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade500,
+            fontWeight: FontWeight.w400,
           ),
         ),
       ],

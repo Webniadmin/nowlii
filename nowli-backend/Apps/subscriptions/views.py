@@ -38,6 +38,7 @@ def _status_payload(user, sub=None, grant_trial: bool = True) -> dict:
         }
     sub = services.sync_trial_expiry(sub)
     sub = services.sync_lifetime(sub)
+    sub = services.sync_step_down_state(sub)
     st = services.compute_status(sub)
     return {
         "subscribed": True,
@@ -58,6 +59,9 @@ def _status_payload(user, sub=None, grant_trial: bool = True) -> dict:
         "trial_ends_at": st["trial_ends_at"],
         "trial_days_total": config.TRIAL_DAYS,
         "trial_used": st["trial_used"],
+        # The app reads this on every launch: while `due` is true the user is being billed
+        # more than the plan promises, and only the device can fix it.
+        "step_down": services.step_down_due(sub),
     }
 
 
@@ -145,6 +149,45 @@ class CancelView(APIView):
             sub.status = Subscription.Status.CANCELLED
             sub.cancelled_at = timezone.localdate()
             sub.save(update_fields=["status", "cancelled_at", "updated_at"])
+        data = _status_payload(request.user, sub=sub)
+        return Response(SubscriptionStatusSerializer(data).data)
+
+
+class ConfirmSwitchView(APIView):
+    """POST /api/subscriptions/confirm-switch/ — the app finished a plan change.
+
+    Body: ``{"store_product_id": "<base plan or Apple product id>"}``.
+
+    The store is the only thing that knows what a user is really being billed; this endpoint
+    is how that fact gets back to us after the device completes a switch the backend asked
+    for. It deliberately accepts **any** product on the ladder rather than only the expected
+    one: if the store put them somewhere unexpected, recording the truth is more useful than
+    rejecting it and keeping a number we know is wrong.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        product = str(request.data.get("store_product_id", "")).strip()
+        if not product:
+            return Response({"detail": "store_product_id is required."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        known = {p.get("google_base_plan") for p in config.PHASES}
+        known |= {p.get("apple_product") for p in config.PHASES}
+        if product not in known:
+            return Response({"detail": f"Unknown store product '{product}'."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        sub = getattr(request.user, "subscription", None)
+        if sub is None:
+            return Response({"detail": "No subscription."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        sub.store_product_id = product
+        sub.save(update_fields=["store_product_id", "updated_at"])
+        # Clears step_down_pending_since when this actually closed the gap.
+        services.sync_step_down_state(sub)
+
         data = _status_payload(request.user, sub=sub)
         return Response(SubscriptionStatusSerializer(data).data)
 

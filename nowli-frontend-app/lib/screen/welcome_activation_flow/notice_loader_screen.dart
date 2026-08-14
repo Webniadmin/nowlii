@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,6 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/api/onboarding_data.dart';
 import 'package:nowlii/api/profile_controller.dart';
 import 'package:nowlii/api/file_helper.dart';
+import 'package:nowlii/core/app_routes/app_routes.dart';
+import 'package:nowlii/services/subscription_service.dart';
+import 'package:nowlii/services/trial_intro_gate.dart';
 
 class NoticeLoaderScreen extends StatefulWidget {
   const NoticeLoaderScreen({super.key});
@@ -18,6 +22,9 @@ class NoticeLoaderScreen extends StatefulWidget {
 class _NoticeLoaderScreenState extends State<NoticeLoaderScreen> {
   final ProfileController _profileController = ProfileController();
 
+  /// Gates both "onboarding is done" and where we navigate next.
+  bool _profileCreated = false;
+
   @override
   void initState() {
     super.initState();
@@ -27,10 +34,7 @@ class _NoticeLoaderScreenState extends State<NoticeLoaderScreen> {
   Future<void> _completeOnboardingAndCreateProfile() async {
     // Get all collected onboarding data
     final onboardingData = OnboardingData();
-    
-    print('\n🎯 ========== CREATING PROFILE WITH ALL DATA ==========');
-    onboardingData.logAllData();
-    
+
     // Create profile with all collected data
     if (onboardingData.isComplete) {
       // Convert avatar logo asset to file if it's an asset path
@@ -38,14 +42,9 @@ class _NoticeLoaderScreenState extends State<NoticeLoaderScreen> {
       File? avatarLogoFile;
       
       if (avatarLogoPath != null && FileHelper.isAssetPath(avatarLogoPath)) {
-        print('📎 Converting avatar asset to file...');
+        // A null result is tolerated: the profile is still created, just
+        // without the bundled image file.
         avatarLogoFile = await FileHelper.assetToFile(avatarLogoPath);
-        
-        if (avatarLogoFile != null) {
-          print('✅ Avatar logo file ready: ${avatarLogoFile.path}');
-        } else {
-          print('⚠️ Failed to convert avatar, will send without file');
-        }
       }
       
       final success = await _profileController.createProfile(
@@ -54,43 +53,73 @@ class _NoticeLoaderScreenState extends State<NoticeLoaderScreen> {
         language: onboardingData.language!,
         voice: onboardingData.voice!,
         profileImage: onboardingData.profileImage,
-        avatarLogo: onboardingData.avatarLogo,  // ✅ Add avatar logo URL
+        avatarLogo: onboardingData.avatarLogo,
+        // The companion the user actually picked. `avatar_logo`/`nowlii_name` above are
+        // read-only server-side, so without this the choice was discarded at signup.
+        predefinedOption: onboardingData.predefinedOption,
         nowliiName: onboardingData.nowliiName,
         customNowliiName: onboardingData.customNowliiName,
         avatarLogoFile: avatarLogoFile,
       );
 
       if (success) {
-        print('✅ Profile created successfully in onboarding!');
-        print('👤 Profile: ${_profileController.profile?.toJson()}');
-        
+        _profileCreated = true;
         // Mark user as new user (for showing tooltips on first home screen visit)
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('is_new_user', true);
-        
-        // Clear onboarding data after successful creation
-        onboardingData.clear();
-      } else {
-        print('❌ Profile creation failed: ${_profileController.errorMessage}');
+
+        // Only safe to discard the answers once they exist on the server.
+        await onboardingData.clear();
+      } else if (kDebugMode) {
+        debugPrint(
+          'Profile creation failed: ${_profileController.errorMessage}',
+        );
       }
-    } else {
-      print('⚠️ Onboarding data incomplete! Missing:');
-      if (onboardingData.name == null) print('  - Name');
-      if (onboardingData.gender == null) print('  - Gender');
-      if (onboardingData.language == null) print('  - Language');
-      if (onboardingData.voice == null) print('  - Voice');
+    } else if (kDebugMode) {
+      debugPrint('Onboarding data incomplete — profile not created');
     }
-    
-    print('======================================================\n');
-    
-    // Mark onboarding as completed
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isFirstTime', false);
-    
-    // Navigate to home after 4 seconds
+
+    // `isFirstTime` used to be cleared unconditionally, including when the
+    // profile call failed or the data was incomplete. That marked the user as
+    // done with onboarding while leaving them without a profile, and nothing in
+    // the app ever sent them back — a permanent dead end. Only record completion
+    // when a profile actually exists.
+    if (_profileCreated) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isFirstTime', false);
+    }
+
     await Future.delayed(const Duration(seconds: 4));
-    if (mounted) {
-      context.push("/homeScreen");
+    if (!mounted) return;
+
+    if (_profileCreated) {
+      // The "Seven days. On us." screen belongs here, at the end of sign-up — the
+      // trial was granted on the account's first authenticated request, so by now it
+      // is already running. The splash carries the same check as a fallback for anyone
+      // who quits before reaching this point.
+      final status = await SubscriptionService().getMyStatus();
+      if (!mounted) return;
+      final showIntro = await claimTrialIntro(status);
+      if (!mounted) return;
+
+      // `go`, not `push`: onboarding is finished, so it should not stay on the
+      // stack underneath home.
+      context.go(showIntro
+          ? AppRoutespath.subscriptionPage
+          : "/homeScreen");
+    } else {
+      // Send them back to the first unanswered step rather than into an app
+      // that has no idea who they are. Their answers survived (they are
+      // persisted), so this resumes rather than restarts.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "We couldn't finish setting up your profile. Let's try that again.",
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      context.go("/onboardingFlow");
     }
   }
 
@@ -139,7 +168,9 @@ class _NoticeLoaderScreenState extends State<NoticeLoaderScreen> {
 
               // Subtitle
               Text(
-                "Fuzzy's here to make today \n a little easier.",
+                // Was hardcoded "Fuzzy" — the user has just named their
+                // companion two screens earlier, so use what they chose.
+                "${OnboardingData().companionName}'s here to make today \n a little easier.",
                 textAlign: TextAlign.center,
                 style: GoogleFonts.poppins(
                   fontSize: 16,

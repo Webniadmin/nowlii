@@ -12,6 +12,16 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
 
 ## P0 — Blocks the store listing
 
+- [ ] **The trial-ending reminders do not exist.** The "SEVEN DAYS. ON US." screen
+      (`subscription_popup.dart`, Figma `1:1558`) promises, in its own timeline, "Day 5 —
+      Trial Status Update" and "Day 6 — Your Call to Continue". Nothing sends either: the only
+      code that schedules a notification is `call_reminder_service.dart` and it handles
+      `ScheduledCall` alone; `Apps/subscriptions/` has no job, cron or email. A user's trial
+      ends in silence and they meet the paywall cold. **Decision needed:** local notifications
+      laid down when the trial starts (recommended — the mechanism exists and is proven, no
+      backend, works offline; lost on reinstall) or a backend job (survives reinstall; needs a
+      scheduler on the box, which does not exist yet).
+
 - [ ] **Terms of Service does not exist.** The document was never written, so both places it
       was referenced now hide the link rather than show dead text: the sign-up screen
       (`lib/screen/auth/sign_up.dart`) and Settings → Privacy (`privacy_data_screen.dart`).
@@ -19,13 +29,15 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
       `ApiConstants.termsOfServiceUrl`, and uncomment the two blocks.
       Privacy Policy is done — https://www.nowlii.com/privacy-policy, live and reachable
       from both screens.
-- [ ] **HTTPS for the API.** Domain is `nowlii.com` (www is a Figma-hosted site behind
-      Cloudflare; the apex parks at a registrar IP). **Blocked on one DNS record:** an
-      `A` record for `api.nowlii.com` → `16.170.191.239`, DNS-only (grey cloud) so
-      Let's Encrypt can answer the HTTP-01 challenge on the box. Once it resolves:
-      nginx + certbot in front of :8000 and :8001, switch `dart_defines.prod.json` to
-      `https://`, then flip the HTTPS block in `~/backend/.env` (see `.env.example`).
-      Until then a **release** build cannot reach the backend at all — see `deploy-aws.md`.
+- [x] ~~**HTTPS for the API.**~~ **Done** — live on `https://api.nowlii.com` and
+      `https://ai.nowlii.com` (nginx + Let's Encrypt, cert to 2026-10-29, auto-renewing), and
+      `dart_defines.prod.json` points at both. What remains is the **cutover**, and it is
+      deliberately held until an APK is proven on a phone, because each step breaks any
+      pre-HTTPS build the instant it lands: flip the HTTPS block in `~/backend/.env`
+      (`SECURE_SSL_REDIRECT`, `SESSION`/`CSRF_COOKIE_SECURE`, `SECURE_HSTS_SECONDS` — ramp
+      3600 → 31536000, not straight to a year), add the nginx HTTP→HTTPS redirect (the cert
+      was issued `--no-redirect` on purpose), then close 8000/8001 in the security group.
+      Tracked in `daily-checklist.md`.
 - [ ] **Release signing keystore** — not created yet; release builds fall back to the debug
       keystore, which Play rejects. Wiring is done (`android/key.properties.example`).
 - [ ] **Real payments** — `activate` is a mock, `verify-receipt` a 501 stub. See P3 below.
@@ -131,10 +143,58 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
 - [ ] **Seed companions as a management command.** The 6 `NowliiPredefinedOption` rows are
       seeded manually; if the SQLite DB resets, avatars break. Make a repeatable
       `manage.py` command. See `running-on-android.md`.
-- [ ] **Reconcile unused `CustomUserModel`.** The app runs on the default `auth.User`; the
-      custom `users.CustomUserModel` is defined but unused — reconcile or remove.
-- [ ] **`editFrom` avatar screen** should send `predefined_option` on update (like the main
-      avatar picker) so the selection persists.
+      **Give the model a stable `slug` while doing it.** There is no field today that
+      identifies *which character* a row is, so the app has to infer it from the
+      `avatar_logo` filename. Production ids are already `2, 3, 4, 6, 10, 12` from earlier
+      reseeding — the id says nothing — and keying art off it shipped the wrong character
+      for five of six companions (found 2026-08-12, fixed client-side in
+      `companion_avatar.dart`). A `slug` the seeder sets would let the client stop parsing
+      URLs; until then, **do not rename the S3 files**.
+- [ ] **Reconcile unused `CustomUserModel`.** `AUTH_USER_MODEL` is never set, so the app runs
+      on the default `auth.User`; `users.CustomUserModel` is migrated and referenced but unused
+      — reconcile or remove. **This cost a production outage on 2026-08-06:** code written as
+      if accounts were email-only created Google users with an empty `username`, which
+      `auth_user` requires to be unique, so every new Google signup after the first 500ed.
+      Anything reading `paid_user` / `current_plan` / `current_period_end` off the user is
+      reading a table nobody writes. One row with `username=''` survives in prod from before
+      the fix — harmless (lookups go by email), but it is why the collisions started.
+- [x] ~~**`editFrom` avatar screen** should send `predefined_option` on update.~~ **Already
+      done** — the screen sends `predefinedOption: selectedOption.id` and carries a comment
+      describing the old `avatar_logo`/`nowlii_name` bug. Verified on the emulator 2026-08-14
+      by switching through all six companions and watching the home card follow.
+      **Note this is the only way to change a companion after signup:** `/avatarLogo`, the
+      main picker, is routed from onboarding alone, so the pencil on Edit Profile → rename
+      screen → its own pencil is the whole path.
+- [x] ~~**Companion poses.**~~ ✅ **Done 2026-08-12** — the art landed and is wired.
+      24 files (`assets/companions/<option id>_<pose>.png`, 6 characters × sleeping /
+      reading / speaking / waving, transparent, 512px, 4.5 MB) imported from Figma
+      `y4Wzcc018iQEfEjm8T0Yjd` node `36:8041`. `NowliiAvatar` takes a `pose:`; 12 of the 17
+      call sites now name one, chosen from the asset each had replaced (`companionSleeping`,
+      `homeQuestBlob` — the one with the book, `Popup_Speaking`, `callStarted`). The other
+      five stay `.neutral`, which is the profile URL and was already correct.
+      Poses are deliberately **bundled-only** — the backend serves one neutral picture per
+      companion, so a pose can never come from S3. Guarded by `test/companion_pose_test.dart`
+      (loads all 24 through `rootBundle`, so a missing file *or* a `pubspec.yaml` slip fails).
+      **Two import traps, if more art arrives:** character 3 authors sleeping and speaking in
+      the opposite columns to the other five, and character 5's sleeping frame also contains
+      an awake copy — column position is not the pose, so look at the pictures.
+      **`waving` is shipped but unclaimed** — no slot asks for it yet.
+      Two things learned doing the widget, still true:
+  - **The served art is transparent; only the bundled fallback tiles are not.** So
+        `NowliiAvatar` draws the served art whole (`BoxFit.contain`, no clip) and applies the
+        circle/rounded clip *only* on the fallback path. Clipping everything with
+        `BoxFit.cover` sliced the character's feet off on the call screen.
+  - **Converting a slot means replacing the picture, not the footprint.** Sizing the
+        out-of-sparks companion as a 95 square rather than the original 78.885 pushed it 16pt
+        into a text column capped at 200, and it ran over the words. Match the dimensions of
+        the art being replaced.
+      **One open decision:** `all_quests_done_popup` and `missed_talks_popup` were app-icon
+      tiles — the character on an indigo rounded square. With transparent art and no clip the
+      tile no longer shows. Restore it (one line per site) or leave the bare character?
+      Not converted, deliberately: `Assets.svgIcons.avatar` in `popup_screen.dart` (a stock
+      photo of a person, not a companion) and `upscalemedia-transformed.png` in
+      `ai_call_remiender.dart` (a page background). `lib/experimental/` was left alone —
+      unrouted.
 - [ ] **`nowli-ai` structure.** Sessions are in-memory only (lost on restart) → add
       persistence. The `routers/` module is a parallel refactor that is **not mounted** —
       either wire it in or delete it. No dependency lockfile — add one.

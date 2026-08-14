@@ -10,8 +10,11 @@ import 'package:nowlii/screen/quests/create_quests/repeat_quest_card/repeat_ques
 import 'package:nowlii/screen/quests/create_quests/select_zone_card/select_zone_card.dart';
 import 'package:nowlii/screen/quests/create_quests/time_picker_card/time_picker_card.dart';
 import 'package:nowlii/screen/quests/create_quests/when_card/when_card.dart';
+import 'package:nowlii/models/scheduled_call.dart';
 import 'package:nowlii/services/call_reminder_service.dart';
+import 'package:nowlii/services/call_slot.dart';
 import 'package:nowlii/services/quest_service.dart';
+import 'package:nowlii/services/voice_call_service.dart';
 import 'package:intl/intl.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
@@ -43,10 +46,59 @@ class _CreateQuestPageState extends State<CreateQuestPage> {
   bool _isListening = false;
   bool _speechAvailable = false;
 
+  // What the day the quest is on can still take. Read once here rather than at save time,
+  // because the point is to stop the user planning a call that can never run — telling
+  // them after they saved would be the same failure with extra steps.
+  int _dailyLimit = 2;
+  int _remainingToday = 2;
+  List<ScheduledCall> _pendingCalls = const [];
+
   @override
   void initState() {
     super.initState();
     _initSpeech();
+    _loadCallAvailability();
+  }
+
+  Future<void> _loadCallAvailability() async {
+    final voiceCalls = VoiceCallService();
+    final quota = await voiceCalls.getQuota();
+    final scheduled = await voiceCalls.getScheduledCalls();
+    if (!mounted) return;
+
+    setState(() {
+      // A quota we could not read leaves the toggle open: withholding a call the user is
+      // entitled to is worse than letting the backend refuse one they are not.
+      if (quota != null) {
+        _dailyLimit = quota.limit;
+        _remainingToday = quota.remaining;
+      }
+      _pendingCalls = scheduled.where((c) => c.isPending).toList();
+    });
+  }
+
+  CallSlotStatus get _callSlot {
+    final now = DateTime.now();
+    return callSlotStatus(
+      questDate: selectedDate,
+      today: DateTime(now.year, now.month, now.day),
+      dailyLimit: _dailyLimit,
+      remainingToday: _remainingToday,
+      pendingOnQuestDate:
+          _pendingCalls.where((c) => c.isOn(selectedDate)).length,
+    );
+  }
+
+  String? get _callBlockedReason {
+    final now = DateTime.now();
+    final isToday = selectedDate.year == now.year &&
+        selectedDate.month == now.month &&
+        selectedDate.day == now.day;
+    return callSlotMessage(
+      _callSlot,
+      dailyLimit: _dailyLimit,
+      isToday: isToday,
+    );
   }
 
   @override
@@ -169,6 +221,13 @@ class _CreateQuestPageState extends State<CreateQuestPage> {
     }
 
     setState(() => _isCreating = true);
+
+    // The card blurs itself out when the day is full, but the day can fill up between
+    // opening this screen and saving, and the toggle is remembered across date changes.
+    // The quest is still created; only the call it could never make is dropped.
+    if (enableCall && _callSlot != CallSlotStatus.open) {
+      enableCall = false;
+    }
 
     final questService = QuestService();
     
@@ -297,6 +356,7 @@ class _CreateQuestPageState extends State<CreateQuestPage> {
                   ),
                   SizedBox(height: 12 * baseScale),
                   EnableCallCard(
+                    blockedReason: _callBlockedReason,
                     onCallEnabledChanged: (bool value) {
                       setState(() => enableCall = value);
                     },

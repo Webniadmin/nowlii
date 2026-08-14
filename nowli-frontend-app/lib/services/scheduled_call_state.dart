@@ -123,3 +123,17 @@ bool wouldStrandAScheduledCall({
   if (remainingCalls != 1) return false;
   return scheduledLaterToday.any((t) => t.isAfter(now));
 }
+
+/// The same wall-clock time, one day later — where a stranded call is offered a new home.
+///
+/// Built from the calendar fields rather than `add(Duration(days: 1))`, which adds 24 hours
+/// and lands an hour out either side of a DST change. A 17:00 call the user planned is a
+/// 17:00 call tomorrow.
+DateTime sameTimeNextDay(DateTime when) => DateTime(
+      when.year,
+      when.month,
+      when.day + 1,
+      when.hour,
+      when.minute,
+      when.second,
+    );

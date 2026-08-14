@@ -7,6 +7,7 @@ from .views import (
     VoiceCallQuotaView,
     VoiceCallStartView,
     VoiceCallSummaryListView,
+    VoiceCallSummaryNoteView,
     VoiceCallSummaryView,
 )
 
@@ -22,4 +23,9 @@ urlpatterns = [
     path('scheduled/<int:pk>/', ScheduledCallDetailView.as_view(), name='scheduled-call-detail'),
     path('<int:pk>/end/', VoiceCallEndView.as_view(), name='voice-call-end'),
     path('<int:pk>/summary/', VoiceCallSummaryView.as_view(), name='voice-call-summary'),
+    path(
+        '<int:pk>/summary/note/',
+        VoiceCallSummaryNoteView.as_view(),
+        name='voice-call-summary-note',
+    ),
 ]

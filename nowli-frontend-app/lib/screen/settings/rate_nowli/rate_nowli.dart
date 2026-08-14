@@ -72,7 +72,7 @@ class RatingPopup extends StatelessWidget {
 
           /// TITLE
           Text(
-            'Rate Nowlli',
+            'Rate Nowlii',
             style: GoogleFonts.workSans(
               color: const Color(0xFF011F54),
               fontSize: 20.sp,
@@ -86,7 +86,7 @@ class RatingPopup extends StatelessWidget {
 
           /// DESCRIPTION
           Text(
-            'Help Nowlli grow with you. Your thoughts mean a lot.',
+            'Help Nowlii grow with you. Your thoughts mean a lot.',
             style: GoogleFonts.workSans(
               color: const Color(0xFF595754),
               fontSize: 16.sp,
@@ -203,7 +203,7 @@ Container(
 
       /// TITLE
       Text(
-        'Rate Nowlli',
+        'Rate Nowlii',
         style: GoogleFonts.workSans(
           color: const Color(0xFF011F54),
           fontSize: 20,
@@ -217,7 +217,7 @@ Container(
 
       /// DESCRIPTION
       Text(
-        'Help Nowlli grow with you. Your thoughts mean a lot.',
+        'Help Nowlii grow with you. Your thoughts mean a lot.',
         style: GoogleFonts.workSans(
           color: const Color(0xFF595754),
           fontSize: 16,

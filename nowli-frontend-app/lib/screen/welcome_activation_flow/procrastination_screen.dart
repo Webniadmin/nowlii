@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -390,12 +391,11 @@ class _ProcrastinationScreenState extends State<ProcrastinationScreen> {
                             fit: BoxFit.cover,
                           ),
                         ),
-                        child: Center(
-                          child: ClipOval(
-                            child: Assets.svgImages.popUpSpekingTwoCarton.image(
-                              width: 120,
-                              height: 120,
-                            ),
+                        // Innermost layer only — the two circles around it are decoration.
+                        child: const Center(
+                          child: NowliiAvatar(
+                            size: 120,
+                            pose: CompanionPose.speaking,
                           ),
                         ),
                       ),

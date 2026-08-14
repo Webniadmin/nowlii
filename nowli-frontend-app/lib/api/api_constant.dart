@@ -49,6 +49,10 @@ class ApiConstants {
   static const String createProfile = '$profilePrefix/';
   static const String getProfile = '$profilePrefix/';
   static const String updateProfile = '$profilePrefix/';
+  // "Clear All AI Memory" — deletes the AI's conclusions about this user (summaries,
+  // emotion/low-mood snapshots, cached insights). Call rows survive: they are the daily
+  // limit's ledger.
+  static const String clearAiMemory = '$profilePrefix/clear-ai-memory/';
   
   // Insights endpoints
   static const String getInsights = '$insightsPrefix/insights/';
@@ -76,6 +80,10 @@ class ApiConstants {
   // Persist a finished call's conversational summary (per user) + list saved summaries.
   static String voiceCallSummary(int id) => '/api/voice-calls/$id/summary/';
   static const String voiceCallSummaries = '/api/voice-calls/summaries/';
+  // The user's own note on a receipt. Its own endpoint so that re-posting the generated
+  // summary cannot overwrite what the user wrote.
+  static String voiceCallSummaryNote(int id) =>
+      '/api/voice-calls/$id/summary/note/';
   // Calls the user planned via a quest's "Enable call" toggle. These are plans, not
   // bookings — they never reserve one of the two daily calls.
   static const String scheduledCalls = '/api/voice-calls/scheduled/';
@@ -90,6 +98,9 @@ class ApiConstants {
   // One GPT-free call at call end: both the emotion breakdown AND the low-mood phrases.
   static String aiCallInsights(String sessionId) =>
       '$aiCallPrefix/conversation/call-insights/$sessionId';
+  // Emotion detection from text and/or audio. Used by the onboarding voice check to
+  // prove the microphone path works end to end before the first real call.
+  static const String aiDetectEmotion = '$aiCallPrefix/detect-emotion';
   
   // Google Sign-In server/web client id — becomes the `id_token` audience the backend
   // verifies. Pass at build/run time (same as the base URLs):

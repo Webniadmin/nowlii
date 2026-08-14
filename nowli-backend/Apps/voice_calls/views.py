@@ -1,3 +1,5 @@
+from datetime import datetime, time, timedelta
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -8,7 +10,8 @@ from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
-from Apps.subscriptions.permissions import HasProAccess
+from Apps.subscriptions.permissions import HasProAccess, HasProAccessOrReadOnly
+from Apps.users.timezones import user_timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -95,6 +98,61 @@ def _persist_low_mood_snapshot(call, data):
 _TOP_EMOTION_KEYS = ('happy', 'motivated', 'angry', 'tired', 'sad')
 
 
+#: Shown back to the user as their own words, so anything that does not look like a
+#: word the user said is dropped rather than cleaned up into something plausible.
+_WORDS_CIRCLED_MAX = 5
+_WORDS_CIRCLED_MAX_CHARS = 32
+
+
+def _clean_words_circled(raw):
+    """Normalise the client's ``words_circled`` list. Never trusts it blindly.
+
+    The app forwards whatever nowli-ai's GPT pass produced, so this re-validates on
+    the way in: wrong types, blanks, and anything long enough to be a sentence are
+    discarded, duplicates collapse case-insensitively, and the list is capped.
+    """
+    if not isinstance(raw, list):
+        return []
+
+    cleaned, seen = [], set()
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        word = item.strip().strip('"').strip("'").strip()
+        if not word or len(word) > _WORDS_CIRCLED_MAX_CHARS:
+            continue
+        key = word.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(word)
+        if len(cleaned) >= _WORDS_CIRCLED_MAX:
+            break
+    return cleaned
+
+
+_TINY_QUESTION_MAX_CHARS = 120
+
+
+def _clean_tiny_question(raw):
+    """Normalise the client's ``tiny_question``. Never trusts it blindly.
+
+    Same reasoning as ``_clean_words_circled``: nowli-ai already sanitises this, but the
+    value reaches us through the app, so a caller could send anything. A receipt line
+    that is not a short question is dropped — the card hides rather than printing a
+    paragraph, or a statement the model slipped in where a question was asked for.
+    """
+    if not isinstance(raw, str):
+        return ''
+
+    question = raw.strip().strip('"').strip("'").strip()
+    if not question or len(question) > _TINY_QUESTION_MAX_CHARS:
+        return ''
+    if '?' not in question:
+        return ''
+    return question
+
+
 def _persist_call_summary(call, data):
     """Store the conversational summary for a call if the app sent one.
 
@@ -135,6 +193,8 @@ def _persist_call_summary(call, data):
             'next_step': nxt,
             'dominant_emotion': str(data.get('dominant_emotion') or '')[:20],
             'top_emotions': top_emotions,
+            'words_circled': _clean_words_circled(data.get('words_circled')),
+            'tiny_question': _clean_tiny_question(data.get('tiny_question')),
             'language': str(data.get('language') or '')[:8],
             'total_turns': total_turns,
         },
@@ -143,14 +203,24 @@ def _persist_call_summary(call, data):
 
 
 def _calls_used_today(user):
-    """Number of voice calls the user has *started* today (server timezone).
+    """Number of voice calls the user has *started* today, on **their** calendar.
 
     The daily limit is derived from this count, so it resets naturally at 00:00 with no
     counter and no scheduled job. Counting by ``started_at`` (creation) rather than by
     completion means a force-quit mid-call still consumes one of the daily calls.
+
+    The day is the user's, not the server's. The server runs on UTC, so ``started_at__date``
+    reset a Belgrade user's sparks at 02:00 their time and handed them back two hours of the
+    previous evening. The window is built from the user's midnight and compared as instants,
+    which is also the only form the database can use an index for.
     """
-    today = timezone.localdate()
-    return VoiceCall.objects.filter(user=user, started_at__date=today).count()
+    tz = user_timezone(user)
+    today = timezone.now().astimezone(tz).date()
+    start = datetime.combine(today, time.min, tzinfo=tz)
+    end = start + timedelta(days=1)
+    return VoiceCall.objects.filter(
+        user=user, started_at__gte=start, started_at__lt=end
+    ).count()
 
 
 def _is_unlimited_user(user):
@@ -366,6 +436,15 @@ class VoiceCallSummaryView(APIView):
                     type=openapi.TYPE_OBJECT,
                     description='5-category split: happy/motivated/angry/tired/sad.',
                 ),
+                'words_circled': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_STRING),
+                    description="The user's own repeated words, verbatim.",
+                ),
+                'tiny_question': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='One short question printed on the receipt.',
+                ),
                 'language': openapi.Schema(type=openapi.TYPE_STRING),
                 'total_turns': openapi.Schema(type=openapi.TYPE_INTEGER),
             },
@@ -386,13 +465,81 @@ class VoiceCallSummaryView(APIView):
         return Response(CallSummarySerializer(summary).data, status=code)
 
 
+class VoiceCallSummaryNoteView(APIView):
+    """`PATCH /api/voice-calls/<id>/summary/note/` — the user's own note on a receipt.
+
+    Separate from the summary upsert above because the two have opposite owners: that one
+    is written by the app from generated content at call end, this one is written by the
+    user, later, and must never be clobbered by a re-post of the summary.
+
+    An empty string is a valid value — it is how a note gets deleted.
+    """
+
+    permission_classes = [IsAuthenticated, HasProAccess]
+
+    #: Long enough for a real reflection, short enough that the column is not an open door.
+    MAX_NOTE_LENGTH = 2000
+
+    @swagger_auto_schema(
+        operation_summary="Add, edit or clear the note on a call receipt",
+        tags=['Voice calls'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={'note': openapi.Schema(type=openapi.TYPE_STRING)},
+            required=['note'],
+        ),
+        responses={200: CallSummarySerializer, 404: 'No summary for this call'},
+    )
+    def patch(self, request, pk):
+        # Filtering on the user here is what makes another account's receipt a 404 rather
+        # than something this endpoint will happily annotate.
+        summary = get_object_or_404(CallSummary, call_id=pk, user=request.user)
+
+        if 'note' not in request.data:
+            return Response(
+                {'detail': "Field 'note' is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        note = request.data.get('note')
+        if note is None:
+            note = ''
+        if not isinstance(note, str):
+            return Response(
+                {'detail': "Field 'note' must be a string."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        note = note.strip()
+        if len(note) > self.MAX_NOTE_LENGTH:
+            return Response(
+                {
+                    'detail': f'Note is too long (max {self.MAX_NOTE_LENGTH} characters).',
+                    'max_length': self.MAX_NOTE_LENGTH,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        summary.note = note
+        # Cleared notes carry no timestamp — "edited just now" under an empty note reads
+        # as though something was saved.
+        summary.note_updated_at = timezone.now() if note else None
+        summary.save(update_fields=['note', 'note_updated_at'])
+
+        return Response(CallSummarySerializer(summary).data)
+
+
 class VoiceCallSummaryListView(APIView):
     """`GET /api/voice-calls/summaries/` — the current user's saved call summaries.
+
+    Readable after a lapse: these receipts are the record of conversations the user already
+    had and paid for. Making a new call is what stops (VoiceCallStartView), and so is
+    editing a receipt's note (VoiceCallSummaryNoteView) — that is still a write.
 
     Newest first, for the user's call history and to review progress over time.
     """
 
-    permission_classes = [IsAuthenticated, HasProAccess]
+    permission_classes = [IsAuthenticated, HasProAccessOrReadOnly]
 
     @swagger_auto_schema(
         operation_summary="My saved AI voice-call summaries",

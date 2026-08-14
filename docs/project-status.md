@@ -1,6 +1,213 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-07-30 (evening)_
+_Last reviewed: 2026-08-12 (evening)_
+
+## Completed this session (2026-08-12)
+
+_Full detail in `daily-reports/2026-08-12.md`. Frontend and docs only — no backend or
+`nowli-ai` code changed, and production was verified byte-identical to committed `HEAD`._
+
+- **The companion poses landed and are wired.** 6 characters × 4 poses (sleeping, reading,
+  speaking, waving) in `assets/companions/`, transparent, imported from Figma. `NowliiAvatar`
+  takes a `pose:` and 12 of 17 call sites name one — chosen from the asset each had replaced,
+  not guessed. Poses are **bundled-only**: the backend serves one neutral picture per
+  companion, so a pose can never come from S3. Closes the P4 item that had been waiting on
+  art since 08-11. `waving` ships unused.
+- **The avatar→art mapping had been wrong for five of the six companions.** Art was chosen by
+  `(predefined_option - 1) % 6`, but production serves ids `2, 3, 4, 6, 10, 12` — the table
+  was reseeded, so the ids are neither 1-based nor contiguous — and 4/10 and 6/12 collapsed
+  onto one slot each. It hid for months because it only fed the offline fallback tile, and
+  because the QA account is Zee, the single id the arithmetic gets right. Poses read it on
+  every draw, so it was about to become visible on the home screen. Now resolved from the
+  `avatar_logo` filename → preset `nowlii_name` → id, and asserted against the real
+  production ids in tests. **The S3 filenames are now load-bearing** until the backend has a
+  stable slug.
+- **The call screen stopped appearing to pulse whole.** The 08-11 swap put a disc-only asset
+  where the *entire composition* (character + disc + two halos in one image) used to be,
+  leaving an empty band that exposed the faint pulsing gradients. The original widget is
+  restored verbatim — every ring number, the 240 box, the 1.05 scale — with only the picture
+  changed, via a new `callStartedEmpty.png` rebuilt from the two existing assets. A first
+  attempt that made the rings responsive was re-designing rather than restoring, and was
+  reverted.
+- **The summary tells the truth now.** "Mood detected" was a fixed `Icons.mood`; nine mood
+  faces (SVG) now follow the mood. Trap found by running it: `dominant_emotion` reports
+  `happy: 100.0` whenever `nowli-ai` has no scores, so the sentence is read first and the
+  bucket is the backstop. And "Save reflection" no longer answers "Nothing to save yet" over
+  a summary that had already been saved on load.
+- **A 320dp sweep** across seven screens against the live backend: zero `RenderFlex`
+  overflows, three pre-existing defects fixed — Edit Profile's hardcoded `\n` that silently
+  ate half a sentence, the paywall's fixed-height timeline rows with nothing flexible in
+  them, and a truncated trial CTA. Also: the receipt footer showed a fixed orange character
+  on every receipt, and the profile name used a 52pt display size in a pill 25dp too narrow
+  for it.
+- Verified: `flutter analyze lib` 10 warnings (the standing baseline), 0 errors;
+  **262 tests pass**, up from 251.
+
+_Previously reviewed: 2026-08-11 (evening)_
+
+## Completed this session (2026-08-11)
+
+_Full detail in `daily-reports/2026-08-11.md`. **Nothing committed** — 25 modified files and 3
+new ones are in the working tree awaiting review. No deploy; the backend was not touched._
+
+- **Text no longer breaks the layout on narrow phones.** Only ~27 of ~930 font sizes use
+  `.sp`; the rest are literals across 118 files, so the fix is one `MediaQuery.textScaler`
+  override rather than 900 edits — `lib/core/responsive/responsive_text.dart`, hung off
+  `MaterialApp.router`'s own `builder:` (above it, the app's own `MediaQuery` discards it).
+  375pt and up is untouched, shrinking in proportion to 0.85 at 320. The OS font-size slider,
+  previously unbounded, is clamped to 0.85–1.15. **It deliberately does not use
+  `TextScaler.linear`:** since Android 14 the platform scaler is non-linear, and flattening it
+  to one factor applied *no* enlargement at all for users on large-text settings — caught by
+  measuring on a device, not by review. A local pass then fixed the spots scaling cannot save:
+  a `Text` in a `Row` with no `Flexible` overflows rather than wraps.
+- **The companion follows the user's pick everywhere.** Previously a user who chose one of six
+  characters met a fixed orange one on the home card, in calls and in every popup.
+  `lib/widget/nowlii_avatar.dart` + `lib/services/companion_avatar.dart` resolve cached S3 URL
+  → bundled `A–F.png` by `predefined_option` id → default, hydrated inside `StorageService`'s
+  profile read/write/clear so no screen has to refresh it. 17 sites across 14 files converted.
+  Two live bugs fixed on the way: `ProfileModel.toJson()` dropped `predefined_option`, so the
+  cached profile lost the id the offline fallback depends on; and two profile screens fell back
+  to a hardcoded `A.png`, showing every user milo. **Still blocked on art** — per-character
+  poses do not exist, so pose-specific slots show the right companion in a neutral pose.
+- **A "Google login returns 401" report was not a bug.** The emulator's clock was 6 days behind
+  with `auto_time=0`, so Play Services served a cached ID token that had expired 143 hours
+  earlier and the backend rejected it correctly. Second time clock skew on this machine has
+  looked like an auth failure.
+
+## Completed this session (2026-08-05)
+
+_Full detail in `daily-reports/2026-08-05.md`. Fourteen commits, all pushed; backend deployed
+through `8c0d52e`; `nowlii-prod-v0.1.apk` built against the live HTTPS backend._
+
+- **Every call reminder was firing late by the user's whole UTC offset.** Quests store naive
+  wall-clock fields and the instant was built in the *server's* zone, which is UTC — a call
+  set for 11:20 in Belgrade became 11:20 UTC and reached the phone as 13:20. The quest card
+  said so out loud: "Call scheduled for 13:20" under a quest set for 11:20. The phone now
+  reports its IANA zone (`Profile.timezone`, migration `users.0019`); an offset would have
+  been wrong by December. `_calls_used_today` moved to the user's day too — two sparks were
+  resetting at 02:00 their time.
+- **Editing a quest never rebuilt its reminder.** `today.dart` and `scheduled.dart` pushed the
+  edit screen without awaiting it, so neither the list reload nor `CallReminderService.sync()`
+  ran. Proven with `dumpsys`: the armed alarms were the same objects to the millisecond. The
+  edit screen also never received the quest's own time, and `TimePickerCard` silently rejected
+  the API's `"09:58:00"` because it only parsed two-part strings.
+- **Reminder delivery proven end to end for the first time** — two notifications read out of
+  `dumpsys notification`, the second for a quest whose time had just been edited.
+- **A day that cannot take a call stops offering one.** The Enable-call card blurs with the
+  reason named, keyed to the quest's day rather than today; and swiping to talk now offers a
+  stranded scheduled call the same time tomorrow.
+- **Five screens stopped disagreeing with themselves**: the Insights month grid put every mark
+  on the wrong weekday (and printed no dates at all); the completion banner called every tick
+  the first and claimed a streak that had not been earned; the progress bar drew a pill at
+  zero; five separate zone colour tables disagreed on three of four zones; and the time picker
+  reported a stale "now" that produced "You can't schedule a quest in the past".
+- **The membership screen stopped selling to people who had already bought** — a subscriber on
+  Spark month 1 was shown "READY TO CONTINUE?" over a button offering to charge them again.
+
+## Completed on 2026-08-04
+
+_Full detail in `daily-reports/2026-08-04.md`. **Nothing is committed** — the whole day is on
+one machine, and production is running backend code shipped from the working tree._
+
+- **Yesterday's backend reached production** (`users.0016/0017/0018` + the nowli-ai
+  personalization changes), verified inside the running container rather than from the deploy
+  log. Restricted Topics then survived a cold restart on the emulator.
+- **The paywall could not take money from anyone on a trial.** `/subscriptions/me/` reports
+  `subscribed: true` for anyone with a Subscription row — including every trial user — and the
+  Pro screen read that as "already paying", rendering a permanently disabled CTA. The screen
+  quoted a price with a dead button underneath it.
+- **A lapsed plan no longer closes the app** (client decision, mid-session). Reads survive,
+  writes answer 402, and a once-per-launch dialog says so. Insights still serves the user's
+  own numbers but skips the AI generation — the statistics are theirs, the paragraphs are the
+  paid part. Three defects surfaced only on the device: splash still hard-redirected to the
+  paywall, the quota 402 was mistaken for "quota unknown" (leaving the home card on
+  "Checking your sparks…" forever), and the copy promised a tomorrow that brings nothing back.
+- **Four screens reported success they had not achieved.** Changing the companion sent a
+  read-only URL instead of `predefined_option` and announced "Avatar updated successfully!";
+  the same defect at signup meant **every new account got the default companion and its
+  voice**; the naming screen picked the character by matching its *name*, so renaming it —
+  which that screen invites — showed a different character; and the Power-moves ring drew full
+  for any single completion.
+- **"Your moves" was dynamic but unreadable** — it showed only completions, so "0" was
+  indistinguishable from having no quests. Each ring now carries its denominator.
+- **Design:** Spark is now the opening row of the paywall timeline (badged NEXT); the profile
+  card names the actual plan and stage instead of a flat "Nowlii Pro"; home is restored to the
+  original design with the hero card, "Todays progress" and the orange quest list, with the
+  green closing card taking the hero slot once the day's sparks are spent.
+- Verified: 169 backend tests, 180 Flutter tests, `flutter analyze` 0 errors. Twelve existing
+  tests asserted the old behaviour and were rewritten — three of them had been proving the
+  entitlement bypass with a **GET** that is now open to everyone, so they would have passed
+  against a broken gate.
+
+> ⚠️ **Both QA allowlists are empty on production** at the user's request, so the test account
+> now hits the real trial, the real paywall and the real 2-calls-a-day limit — and real calls
+> cost real money.
+
+_Previously reviewed: 2026-08-03 (evening)_
+
+## Completed this session (2026-08-03)
+
+_Full detail in `daily-reports/2026-08-03.md`. 18 commits on `feat/design-implementation`;
+the 08-01 batch is deployed, **today's backend work is not**._
+
+- **The money flow was finally exercised**, against production with a real account rather
+  than mocks. Expired trial → 402 on every feature endpoint while subscriptions and profile
+  stay open; the paywall holds (✕ inert, back exits the app, relaunch returns to it);
+  subscribing restores access; every price stage turns green in turn and past the year
+  **Graduated is the current plan at $0.00**.
+- **Neither store can sell this plan.** A Google Play offer allows **two** pricing phases and
+  an Apple introductory offer **one**, so the four-step ladder needs four products per store
+  plus a plan change **only a device can perform** — no store has a server-side plan change.
+  The backend now notices when a subscriber falls behind and the admin can find them, but the
+  hazard is inherent to that path.
+- **Stripe is the alternative and is less work**, not more: subscription schedules express the
+  phased price natively. Linking out from the app is now permitted in the US, EU, South Korea
+  and Japan — and nowhere else. Recorded in `subscriptions-iap.md`; the decision is gated on
+  which markets launch first.
+- **AI Personalization was three-quarters theatre.** Restricted Topics saved nowhere, the
+  privacy switch wrote to a preference nothing read, and "Clear All AI Memory" reported
+  success while deleting nothing. All three are real now, stored on the account, and the
+  topics are folded into the call persona — the first per-user change to what the AI says.
+- **Female is the default voice**, existing accounts included. Español and "Rate Nowlii" are
+  blurred and inert rather than hidden. Four screens were pointing at an asset whose filename
+  contains a `?` and had been rendering broken on every platform.
+- **The Pro screen shows a subscriber where they are** rather than what they would pay — the
+  opening stage had been missing from its own timeline. Also fixed: Settings → "Nowlii Pro"
+  opened the free-trial pitch, so a paying subscriber was offered a trial.
+
+> ⚠️ **Still no real money**, still no upload keystore, still no Terms of Service. The
+> payments decision (Stripe vs store IAP) now gates the rest of that work.
+
+_Previously reviewed: 2026-08-03 (morning)_
+
+## Completed this session (2026-08-01, committed 2026-08-03)
+
+_Full detail in `daily-reports/2026-08-01.md`. Five commits on `feat/design-implementation`;
+**nothing deployed, nothing seen on a device**._
+
+- **The updated design reached the three screens after onboarding**: the **home screen**, the
+  **receipt** a call leaves behind, and the **paywall**.
+- **Sparks.** The daily AI-call allowance now uses the product's word for it, counted in one
+  place so the home card, swipe button and call header cannot drift. Unlimited QA accounts
+  (`limit: -1`) and an unknown quota are handled explicitly — the first would otherwise read
+  "Spark 1 of -1", and the second would make a failed fetch look like an empty allowance.
+- **A receipt library.** Numbered receipts, a note the user writes and edits (its own endpoint,
+  so re-posting the generated summary cannot overwrite it), a `tiny_question` from the existing
+  GPT pass at no extra cost, and PDF export via the share sheet. Migrations `voice_calls.0007`,
+  `0008`.
+- **The paywall shows dated price steps** instead of month ranges, anchored to `started_at` for
+  a subscriber and to today for someone deciding, with month arithmetic that clamps rather than
+  rolling the 31st into the month after next.
+- **Two silent bugs fixed.** DRF's project-wide `DATETIME_FORMAT` has no offset, so receipt
+  dates arrived as `null` and **every scheduled-call reminder was out by the device's offset**.
+  And the voice check's ✕ called a bare `Navigator.pop` on a screen reached with `go`, leaving
+  the user on a black screen — one tap off the redesigned onboarding path.
+- Verified: `flutter analyze` 0 errors, 160 Flutter tests (11 new files), 107 backend tests.
+
+> ⚠️ **The device test is now six days overdue** and is the only thing between this work and a
+> release build. The backend is three migrations behind production.
+
+_Previously reviewed: 2026-07-30 (evening)_
 
 ## Completed this session (2026-07-30)
 

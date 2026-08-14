@@ -6,6 +6,7 @@ left than they have planned.
 """
 from datetime import time, timedelta
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -14,8 +15,10 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from Apps.quests.models import Quests
+from Apps.users.models import Profile
 
-from .models import ScheduledCall, VoiceCall
+from .models import CallSummary, ScheduledCall, VoiceCall
+from .views import VoiceCallSummaryNoteView, _clean_tiny_question, _clean_words_circled
 
 User = get_user_model()
 
@@ -25,6 +28,14 @@ def _make_user(username, **extra):
         username=username, email=f'{username}@example.com',
         password='pw-for-tests-123', **extra,
     )
+
+
+def _in_timezone(user, zone):
+    """Give [user] a profile reporting [zone], the way the app does on every load."""
+    profile, _ = Profile.objects.get_or_create(user=user)
+    profile.timezone = zone
+    profile.save()
+    return user
 
 
 def _quest(user, *, enable_call=True, days_ahead=0, at=time(16, 0), task='Go for a walk'):
@@ -121,6 +132,156 @@ class ScheduledCallSignalTests(TestCase):
         scheduled = ScheduledCall.objects.get(quest=quest)
         self.assertNotEqual(scheduled.scheduled_for, original)
         self.assertEqual(timezone.localtime(scheduled.scheduled_for).hour, 18)
+
+    def test_the_time_is_read_on_the_users_clock_not_the_servers(self):
+        """The bug this suite exists to keep out.
+
+        The server runs on UTC. A call set for 11:20 by a phone in Belgrade used to be
+        stored as 11:20 UTC and came back to that phone as 13:20 — every reminder late by
+        the user's whole offset. The wall-clock time the user picked has to survive the
+        round trip *in their zone*.
+        """
+        _in_timezone(self.user, 'Europe/Belgrade')
+
+        quest = _quest(self.user, days_ahead=1, at=time(11, 20))
+        scheduled = ScheduledCall.objects.get(quest=quest)
+
+        local = scheduled.scheduled_for.astimezone(ZoneInfo('Europe/Belgrade'))
+        self.assertEqual((local.hour, local.minute), (11, 20))
+        # And on the server's own clock it is *not* 11:20 — which is the whole point.
+        self.assertEqual(timezone.localtime(scheduled.scheduled_for).hour, 9)
+
+    def test_every_zone_gets_the_time_its_user_picked(self):
+        """Not just the one we happened to test in."""
+        for zone, utc_hour in [
+            ('Europe/Belgrade', 9),      # +02:00 in August
+            ('America/New_York', 15),    # -04:00
+            ('Asia/Tokyo', 2),           # +09:00
+            ('UTC', 11),
+        ]:
+            with self.subTest(zone=zone):
+                user = _in_timezone(
+                    _make_user(f'traveller-{zone.replace("/", "-")}'), zone
+                )
+
+                quest = _quest(user, days_ahead=1, at=time(11, 20))
+                scheduled = ScheduledCall.objects.get(quest=quest)
+
+                local = scheduled.scheduled_for.astimezone(ZoneInfo(zone))
+                self.assertEqual((local.hour, local.minute), (11, 20))
+                self.assertEqual(
+                    timezone.localtime(scheduled.scheduled_for).hour, utc_hour
+                )
+
+    def test_a_winter_quest_uses_winter_time(self):
+        """Why the zone is stored by name and not as an offset.
+
+        Belgrade is +02:00 in August and +01:00 in December. An offset captured today would
+        put a December call an hour out; a zone name resolves per date.
+        """
+        _in_timezone(self.user, 'Europe/Belgrade')
+
+        quest = Quests.objects.create(
+            user=self.user, task='Winter walk', zone='Soft steps',
+            select_a_date='2026-12-15', select_a_time=time(11, 20), enable_call=True,
+        )
+        scheduled = ScheduledCall.objects.get(quest=quest)
+
+        local = scheduled.scheduled_for.astimezone(ZoneInfo('Europe/Belgrade'))
+        self.assertEqual((local.hour, local.minute), (11, 20))
+        self.assertEqual(scheduled.scheduled_for.astimezone(ZoneInfo('UTC')).hour, 10)
+
+    def test_the_local_date_is_the_users_day(self):
+        """A late call in a zone ahead of UTC still belongs to the day the user is in."""
+        _in_timezone(self.user, 'Asia/Tokyo')  # +09:00
+
+        quest = _quest(self.user, days_ahead=1, at=time(1, 0))
+        scheduled = ScheduledCall.objects.get(quest=quest)
+
+        # 01:00 in Tokyo is 16:00 the previous day in UTC. The server's date would say
+        # yesterday; the user's says today, and the daily limit follows the user.
+        self.assertEqual(scheduled.local_date, quest.select_a_date)
+        self.assertNotEqual(
+            timezone.localtime(scheduled.scheduled_for).date(), scheduled.local_date
+        )
+
+    def test_a_call_planned_before_the_zone_was_known_is_corrected(self):
+        """Nothing is lost by having scheduled a call on the wrong clock.
+
+        The quest still holds the wall-clock time the user picked, so the instant can be
+        computed again the moment the phone reports its zone. This is why the fix is a
+        profile save and not a data migration: at deploy time no profile has a zone yet.
+        """
+        quest = _quest(self.user, days_ahead=1, at=time(11, 20))
+        before = ScheduledCall.objects.get(quest=quest).scheduled_for
+        # Planned on the server's clock, because that is all there was.
+        self.assertEqual(timezone.localtime(before).hour, 11)
+
+        _in_timezone(self.user, 'Europe/Belgrade')
+
+        after = ScheduledCall.objects.get(quest=quest).scheduled_for
+        self.assertNotEqual(after, before)
+        self.assertEqual(
+            after.astimezone(ZoneInfo('Europe/Belgrade')).hour, 11,
+            msg='the call should now be 11:20 on the user\'s clock',
+        )
+
+    def test_the_correction_reaches_every_pending_call(self):
+        """Not just the most recent one."""
+        quests = [
+            _quest(self.user, days_ahead=d, at=time(h, 0), task=f'q{d}')
+            for d, h in [(1, 9), (2, 14), (3, 20)]
+        ]
+
+        _in_timezone(self.user, 'Europe/Belgrade')
+
+        for quest, hour in zip(quests, [9, 14, 20]):
+            local = ScheduledCall.objects.get(quest=quest).scheduled_for.astimezone(
+                ZoneInfo('Europe/Belgrade')
+            )
+            self.assertEqual(local.hour, hour, msg=f'{quest.task} moved to {local.hour}')
+
+    def test_the_correction_leaves_history_alone(self):
+        """A call that already happened is a record, not a plan."""
+        quest = _quest(self.user, days_ahead=1, at=time(11, 20))
+        scheduled = ScheduledCall.objects.get(quest=quest)
+        scheduled.status = ScheduledCall.Status.COMPLETED
+        scheduled.save(update_fields=['status'])
+        before = scheduled.scheduled_for
+
+        _in_timezone(self.user, 'Europe/Belgrade')
+
+        scheduled.refresh_from_db()
+        self.assertEqual(scheduled.scheduled_for, before)
+
+    def test_one_users_zone_does_not_move_another_users_calls(self):
+        other = _make_user('bystander')
+        other_quest = _quest(other, days_ahead=1, at=time(11, 20))
+        untouched = ScheduledCall.objects.get(quest=other_quest).scheduled_for
+
+        _in_timezone(self.user, 'Asia/Tokyo')
+
+        self.assertEqual(
+            ScheduledCall.objects.get(quest=other_quest).scheduled_for, untouched
+        )
+
+    def test_a_profile_with_no_zone_behaves_exactly_as_before(self):
+        """Every row that existed before this field did relies on the old reading."""
+        self.assertFalse(Profile.objects.filter(user=self.user).exists())
+
+        quest = _quest(self.user, days_ahead=1, at=time(16, 0))
+        scheduled = ScheduledCall.objects.get(quest=quest)
+
+        self.assertEqual(timezone.localtime(scheduled.scheduled_for).hour, 16)
+
+    def test_an_unknown_zone_falls_back_rather_than_losing_the_quest(self):
+        """A bad zone should cost a correct reminder time, never the ability to save."""
+        _in_timezone(self.user, 'Mars/Olympus_Mons')
+
+        quest = _quest(self.user, days_ahead=1, at=time(16, 0))
+        scheduled = ScheduledCall.objects.get(quest=quest)
+
+        self.assertEqual(timezone.localtime(scheduled.scheduled_for).hour, 16)
 
     def test_turning_the_toggle_off_cancels_the_call(self):
         quest = _quest(self.user, days_ahead=1)
@@ -363,3 +524,287 @@ class ScheduledCallDetailTests(TestCase):
         self.client.force_authenticate(user=self.other)
         response = self.client.patch(self.url, {'cancel': True}, format='json')
         self.assertEqual(response.status_code, 404)
+
+
+class WordsCircledTests(TestCase):
+    """"Words you circled around" — the user's own words, handed back to them.
+
+    Because they are presented as verbatim quotes, anything that does not look
+    like something a person said is dropped rather than tidied into shape.
+    """
+
+    def test_a_normal_list_survives_intact(self):
+        self.assertEqual(
+            _clean_words_circled(['should', 'later', 'honestly']),
+            ['should', 'later', 'honestly'],
+        )
+
+    def test_non_list_input_yields_nothing(self):
+        for junk in (None, 'should', 42, {'a': 1}):
+            self.assertEqual(_clean_words_circled(junk), [])
+
+    def test_non_string_entries_are_dropped(self):
+        self.assertEqual(_clean_words_circled(['should', 7, None, 'later']),
+                         ['should', 'later'])
+
+    def test_blank_entries_are_dropped(self):
+        self.assertEqual(_clean_words_circled(['should', '   ', '', 'later']),
+                         ['should', 'later'])
+
+    def test_a_whole_sentence_is_rejected(self):
+        """Guards against the model writing prose instead of quoting a word."""
+        sentence = 'you kept saying you should do it later on in the evening'
+        self.assertEqual(_clean_words_circled(['should', sentence]), ['should'])
+
+    def test_duplicates_collapse_case_insensitively_keeping_the_first(self):
+        self.assertEqual(_clean_words_circled(['Should', 'should', 'SHOULD']),
+                         ['Should'])
+
+    def test_the_list_is_capped(self):
+        many = [f'word{i}' for i in range(20)]
+        self.assertEqual(len(_clean_words_circled(many)), 5)
+
+    def test_surrounding_quotes_are_stripped(self):
+        # The UI adds its own quotation marks; doubling them looks like a bug.
+        self.assertEqual(_clean_words_circled(['"should"', "'later'"]),
+                         ['should', 'later'])
+
+
+class CallSummaryWordsPersistenceTests(TestCase):
+    """The words have to survive the round trip, since nowli-ai forgets them."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='wordsuser', email='words@example.com', password='pw-for-tests-123',
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.call = VoiceCall.objects.create(user=self.user)
+
+    def _save(self, payload):
+        return self.client.post(
+            reverse('voice_calls:voice-call-summary', args=[self.call.pk]), payload, format='json',
+        )
+
+    def test_words_are_stored_and_returned(self):
+        response = self._save({
+            'mood_detected': 'You sounded tired.',
+            'focus_topic': 'We talked a lot about work.',
+            'energy_shift': 'You started out flat.',
+            'next_step': 'Rest tonight!',
+            'words_circled': ['should', 'later', 'honestly'],
+        })
+        self.assertIn(response.status_code, (200, 201))
+
+        summary = CallSummary.objects.get(call=self.call)
+        self.assertEqual(summary.words_circled, ['should', 'later', 'honestly'])
+
+    def test_a_summary_without_words_is_still_saved(self):
+        """A short call has no pattern — that must not block the summary."""
+        response = self._save({
+            'mood_detected': 'You sounded tired.',
+            'focus_topic': 'We talked a lot about work.',
+            'energy_shift': 'You started out flat.',
+            'next_step': 'Rest tonight!',
+        })
+        self.assertIn(response.status_code, (200, 201))
+        self.assertEqual(CallSummary.objects.get(call=self.call).words_circled, [])
+
+    def test_junk_from_the_model_is_not_persisted(self):
+        self._save({
+            'mood_detected': 'You sounded tired.',
+            'focus_topic': 'We talked a lot about work.',
+            'energy_shift': 'You started out flat.',
+            'next_step': 'Rest tonight!',
+            'words_circled': 'should, later',
+        })
+        self.assertEqual(CallSummary.objects.get(call=self.call).words_circled, [])
+
+
+class CallReceiptNoteTests(TestCase):
+    """The note is the one field on a receipt the user writes themselves.
+
+    Everything else is generated at call end, which is exactly what makes this risky: the
+    app re-posts the summary whenever the summary screen is shown, and that must not take
+    the user's own words with it.
+    """
+
+    def setUp(self):
+        self.user = _make_user('noteuser')
+        self.other = _make_user('notestranger')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.call = VoiceCall.objects.create(user=self.user)
+        self.summary = CallSummary.objects.create(
+            call=self.call,
+            user=self.user,
+            mood_detected='You sounded tired.',
+            focus_topic='Work came up a lot.',
+            energy_shift='You started out flat.',
+            next_step='Rest tonight!',
+        )
+
+    def _url(self, call_id=None):
+        return reverse(
+            'voice_calls:voice-call-summary-note', args=[call_id or self.call.pk],
+        )
+
+    def _patch(self, payload, url=None):
+        return self.client.patch(url or self._url(), payload, format='json')
+
+    def test_a_note_is_saved_and_returned(self):
+        response = self._patch({'note': 'Felt better after this one.'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['note'], 'Felt better after this one.')
+
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, 'Felt better after this one.')
+        self.assertIsNotNone(self.summary.note_updated_at)
+
+    def test_editing_replaces_the_note(self):
+        self._patch({'note': 'First thought.'})
+        self._patch({'note': 'Actually, second thought.'})
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, 'Actually, second thought.')
+
+    def test_an_empty_note_clears_it_and_its_timestamp(self):
+        self._patch({'note': 'Something.'})
+        response = self._patch({'note': ''})
+        self.assertEqual(response.status_code, 200)
+
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, '')
+        # "edited just now" under an empty note would read as though something was saved.
+        self.assertIsNone(self.summary.note_updated_at)
+
+    def test_whitespace_only_counts_as_clearing(self):
+        self._patch({'note': 'Something.'})
+        self._patch({'note': '   \n  '})
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, '')
+
+    def test_resaving_the_summary_keeps_the_note(self):
+        """The whole reason the note has its own endpoint."""
+        self._patch({'note': 'Do not lose me.'})
+
+        self.client.post(
+            reverse('voice_calls:voice-call-summary', args=[self.call.pk]),
+            {
+                'mood_detected': 'You sounded tired.',
+                'focus_topic': 'Work came up a lot.',
+                'energy_shift': 'You started out flat.',
+                'next_step': 'Rest tonight!',
+            },
+            format='json',
+        )
+
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, 'Do not lose me.')
+
+    def test_another_users_receipt_is_not_found(self):
+        self.client.force_authenticate(user=self.other)
+        self.assertEqual(self._patch({'note': 'mine now'}).status_code, 404)
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, '')
+
+    def test_a_call_with_no_summary_is_not_found(self):
+        bare_call = VoiceCall.objects.create(user=self.user)
+        self.assertEqual(
+            self._patch({'note': 'hello'}, url=self._url(bare_call.pk)).status_code, 404,
+        )
+
+    def test_a_missing_note_field_is_rejected(self):
+        # Distinct from an empty string, which deliberately means "delete it".
+        self.assertEqual(self._patch({}).status_code, 400)
+
+    def test_a_non_string_note_is_rejected(self):
+        self.assertEqual(self._patch({'note': {'text': 'nope'}}).status_code, 400)
+
+    def test_an_over_long_note_is_rejected(self):
+        too_long = 'x' * (VoiceCallSummaryNoteView.MAX_NOTE_LENGTH + 1)
+        self.assertEqual(self._patch({'note': too_long}).status_code, 400)
+        self.summary.refresh_from_db()
+        self.assertEqual(self.summary.note, '')
+
+    def test_a_note_at_the_limit_is_accepted(self):
+        at_limit = 'x' * VoiceCallSummaryNoteView.MAX_NOTE_LENGTH
+        self.assertEqual(self._patch({'note': at_limit}).status_code, 200)
+
+    def test_the_note_appears_in_the_receipts_list(self):
+        self._patch({'note': 'Shows up in the list.'})
+        response = self.client.get(reverse('voice_calls:voice-call-summaries'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]['note'], 'Shows up in the list.')
+
+
+class TinyQuestionTests(TestCase):
+    """The receipt prints this verbatim, so a non-question must never reach the card."""
+
+    def test_a_short_question_is_kept(self):
+        self.assertEqual(
+            _clean_tiny_question("What's the first click?"), "What's the first click?",
+        )
+
+    def test_surrounding_quotes_are_stripped(self):
+        self.assertEqual(_clean_tiny_question('"What is next?"'), 'What is next?')
+
+    def test_a_statement_is_dropped(self):
+        # The model was asked for a question; a sentence means it did something else.
+        self.assertEqual(_clean_tiny_question('You should open the file.'), '')
+
+    def test_a_paragraph_is_dropped(self):
+        rambling = 'What is the first click? ' + ('and then what happens ' * 20)
+        self.assertEqual(_clean_tiny_question(rambling), '')
+
+    def test_junk_types_are_dropped(self):
+        for junk in (None, 42, ['What?'], {'q': 'What?'}):
+            self.assertEqual(_clean_tiny_question(junk), '')
+
+    def test_empty_stays_empty(self):
+        # An honest "nothing to ask here" — the card hides.
+        self.assertEqual(_clean_tiny_question('   '), '')
+
+
+class TinyQuestionPersistenceTests(TestCase):
+    """It has to survive the round trip, since nowli-ai forgets the session."""
+
+    def setUp(self):
+        self.user = _make_user('tinyq')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.call = VoiceCall.objects.create(user=self.user)
+
+    def _save(self, extra):
+        payload = {
+            'mood_detected': 'You sounded tired.',
+            'focus_topic': 'Work came up a lot.',
+            'energy_shift': 'You started out flat.',
+            'next_step': 'Open the file.',
+        }
+        payload.update(extra)
+        return self.client.post(
+            reverse('voice_calls:voice-call-summary', args=[self.call.pk]),
+            payload, format='json',
+        )
+
+    def test_it_is_stored_and_returned(self):
+        response = self._save({'tiny_question': "What's the first click?"})
+        self.assertIn(response.status_code, (200, 201))
+        self.assertEqual(
+            CallSummary.objects.get(call=self.call).tiny_question,
+            "What's the first click?",
+        )
+
+    def test_a_summary_without_one_is_still_saved(self):
+        response = self._save({})
+        self.assertIn(response.status_code, (200, 201))
+        self.assertEqual(CallSummary.objects.get(call=self.call).tiny_question, '')
+
+    def test_a_statement_from_the_model_is_not_persisted(self):
+        self._save({'tiny_question': 'Just open the file.'})
+        self.assertEqual(CallSummary.objects.get(call=self.call).tiny_question, '')
+
+    def test_it_appears_in_the_receipts_list(self):
+        self._save({'tiny_question': 'What is the first click?'})
+        response = self.client.get(reverse('voice_calls:voice-call-summaries'))
+        self.assertEqual(response.data[0]['tiny_question'], 'What is the first click?')

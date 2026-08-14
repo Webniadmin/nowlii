@@ -178,6 +178,10 @@ class $AssetsImagesGen {
   /// File path: assets/images/arow.png
   AssetGenImage get arow => const AssetGenImage('assets/images/arow.png');
 
+  /// File path: assets/images/beforeLisentingLogo.png
+  AssetGenImage get beforeLisentingLogo =>
+      const AssetGenImage('assets/images/beforeLisentingLogo.png');
+
   /// File path: assets/images/blu_cross.png
   AssetGenImage get bluCross =>
       const AssetGenImage('assets/images/blu_cross.png');
@@ -235,6 +239,10 @@ class $AssetsImagesGen {
 
   /// File path: assets/images/left.png
   AssetGenImage get left => const AssetGenImage('assets/images/left.png');
+
+  /// File path: assets/images/listeningLogo.png
+  AssetGenImage get listeningLogo =>
+      const AssetGenImage('assets/images/listeningLogo.png');
 
   /// File path: assets/images/love.png
   AssetGenImage get love => const AssetGenImage('assets/images/love.png');
@@ -303,12 +311,20 @@ class $AssetsImagesGen {
   AssetGenImage get swaptoFuzi =>
       const AssetGenImage('assets/images/swapto fuzi.png');
 
+  /// File path: assets/images/top_emotions_emojis.png
+  AssetGenImage get topEmotionsEmojis =>
+      const AssetGenImage('assets/images/top_emotions_emojis.png');
+
   /// File path: assets/images/twintytwo.png
   AssetGenImage get twintytwo =>
       const AssetGenImage('assets/images/twintytwo.png');
 
   /// File path: assets/images/two.png
   AssetGenImage get two => const AssetGenImage('assets/images/two.png');
+
+  /// File path: assets/images/when_feeling_low_icon.png
+  AssetGenImage get whenFeelingLowIcon =>
+      const AssetGenImage('assets/images/when_feeling_low_icon.png');
 
   /// File path: assets/images/white_plus.png
   AssetGenImage get whitePlus =>
@@ -355,6 +371,7 @@ class $AssetsImagesGen {
     today,
     untitled,
     arow,
+    beforeLisentingLogo,
     bluCross,
     callEnding,
     carton,
@@ -372,6 +389,7 @@ class $AssetsImagesGen {
     greatJob,
     january,
     left,
+    listeningLogo,
     love,
     nowli,
     one,
@@ -391,8 +409,10 @@ class $AssetsImagesGen {
     star,
     sun,
     swaptoFuzi,
+    topEmotionsEmojis,
     twintytwo,
     two,
+    whenFeelingLowIcon,
     whitePlus,
   ];
 }
@@ -496,12 +516,8 @@ class $AssetsSvgIconsGen {
       const AssetGenImage('assets/svg_icons/CalendarBlank.png');
 
   /// File path: assets/svg_icons/Clear All AI Memory.png
-  AssetGenImage get clearAllAIMemoryPng =>
+  AssetGenImage get clearAllAIMemory =>
       const AssetGenImage('assets/svg_icons/Clear All AI Memory.png');
-
-  /// File path: assets/svg_icons/Clear All AI Memory?.png
-  AssetGenImage get clearAllAIMemoryPng_ =>
-      const AssetGenImage('assets/svg_icons/Clear All AI Memory?.png');
 
   /// File path: assets/svg_icons/Clock.png
   AssetGenImage get clock => const AssetGenImage('assets/svg_icons/Clock.png');
@@ -529,10 +545,6 @@ class $AssetsSvgIconsGen {
   /// File path: assets/svg_icons/Delete My Account.png
   AssetGenImage get deleteMyAccount =>
       const AssetGenImage('assets/svg_icons/Delete My Account.png');
-
-  /// File path: assets/svg_icons/Delete Your Account?.png
-  AssetGenImage get deleteYourAccount =>
-      const AssetGenImage('assets/svg_icons/Delete Your Account?.png');
 
   /// File path: assets/svg_icons/EMOTIONAL SUPPORT.svg
   SvgGenImage get emotionalSupport =>
@@ -674,10 +686,6 @@ class $AssetsSvgIconsGen {
   AssetGenImage get rateNowliw =>
       const AssetGenImage('assets/svg_icons/RateNowliw.png');
 
-  /// File path: assets/svg_icons/Ready to make today count?.png
-  AssetGenImage get readyToMakeTodayCount =>
-      const AssetGenImage('assets/svg_icons/Ready to make today count?.png');
-
   /// File path: assets/svg_icons/Restricted Topics.png
   AssetGenImage get restrictedTopics =>
       const AssetGenImage('assets/svg_icons/Restricted Topics.png');
@@ -795,6 +803,10 @@ class $AssetsSvgIconsGen {
   SvgGenImage get backIconSvg =>
       const SvgGenImage('assets/svg_icons/back_icon.svg');
 
+  /// File path: assets/svg_icons/bell_simple_slash.svg
+  SvgGenImage get bellSimpleSlash =>
+      const SvgGenImage('assets/svg_icons/bell_simple_slash.svg');
+
   /// File path: assets/svg_icons/bk_popup_Choose mood.png
   AssetGenImage get bkPopupChooseMood =>
       const AssetGenImage('assets/svg_icons/bk_popup_Choose mood.png');
@@ -826,6 +838,10 @@ class $AssetsSvgIconsGen {
   AssetGenImage get cleanHouse =>
       const AssetGenImage('assets/svg_icons/clean house.png');
 
+  /// File path: assets/svg_icons/companion_sleeping.png
+  AssetGenImage get companionSleeping =>
+      const AssetGenImage('assets/svg_icons/companion_sleeping.png');
+
   /// File path: assets/svg_icons/contactSupport.png
   AssetGenImage get contactSupport =>
       const AssetGenImage('assets/svg_icons/contactSupport.png');
@@ -855,9 +871,41 @@ class $AssetsSvgIconsGen {
   /// File path: assets/svg_icons/happy.png
   AssetGenImage get happy => const AssetGenImage('assets/svg_icons/happy.png');
 
+  /// File path: assets/svg_icons/home_check.svg
+  SvgGenImage get homeCheck =>
+      const SvgGenImage('assets/svg_icons/home_check.svg');
+
+  /// File path: assets/svg_icons/home_fire.svg
+  SvgGenImage get homeFire =>
+      const SvgGenImage('assets/svg_icons/home_fire.svg');
+
+  /// File path: assets/svg_icons/home_flower.svg
+  SvgGenImage get homeFlower =>
+      const SvgGenImage('assets/svg_icons/home_flower.svg');
+
+  /// File path: assets/svg_icons/home_plus.svg
+  SvgGenImage get homePlus =>
+      const SvgGenImage('assets/svg_icons/home_plus.svg');
+
+  /// File path: assets/svg_icons/home_quest_blob.png
+  AssetGenImage get homeQuestBlob =>
+      const AssetGenImage('assets/svg_icons/home_quest_blob.png');
+
+  /// File path: assets/svg_icons/home_swipe_sparkle.svg
+  SvgGenImage get homeSwipeSparkle =>
+      const SvgGenImage('assets/svg_icons/home_swipe_sparkle.svg');
+
+  /// File path: assets/svg_icons/home_user.svg
+  SvgGenImage get homeUser =>
+      const SvgGenImage('assets/svg_icons/home_user.svg');
+
   /// File path: assets/svg_icons/insightCheckBox.png
   AssetGenImage get insightCheckBox =>
       const AssetGenImage('assets/svg_icons/insightCheckBox.png');
+
+  /// File path: assets/svg_icons/insights_sparkle.svg
+  SvgGenImage get insightsSparkle =>
+      const SvgGenImage('assets/svg_icons/insights_sparkle.svg');
 
   /// File path: assets/svg_icons/joyfull.png
   AssetGenImage get joyfull =>
@@ -889,6 +937,34 @@ class $AssetsSvgIconsGen {
   AssetGenImage get onBordingPlus =>
       const AssetGenImage('assets/svg_icons/on_bording_Plus.png');
 
+  /// File path: assets/svg_icons/paywall_arrow_right.svg
+  SvgGenImage get paywallArrowRight =>
+      const SvgGenImage('assets/svg_icons/paywall_arrow_right.svg');
+
+  /// File path: assets/svg_icons/paywall_chart.svg
+  SvgGenImage get paywallChart =>
+      const SvgGenImage('assets/svg_icons/paywall_chart.svg');
+
+  /// File path: assets/svg_icons/paywall_close.svg
+  SvgGenImage get paywallClose =>
+      const SvgGenImage('assets/svg_icons/paywall_close.svg');
+
+  /// File path: assets/svg_icons/paywall_companion.png
+  AssetGenImage get paywallCompanion =>
+      const AssetGenImage('assets/svg_icons/paywall_companion.png');
+
+  /// File path: assets/svg_icons/paywall_mic.svg
+  SvgGenImage get paywallMic =>
+      const SvgGenImage('assets/svg_icons/paywall_mic.svg');
+
+  /// File path: assets/svg_icons/paywall_receipt.svg
+  SvgGenImage get paywallReceipt =>
+      const SvgGenImage('assets/svg_icons/paywall_receipt.svg');
+
+  /// File path: assets/svg_icons/paywall_sparkle.svg
+  SvgGenImage get paywallSparkle =>
+      const SvgGenImage('assets/svg_icons/paywall_sparkle.svg');
+
   /// File path: assets/svg_icons/peacefull.png
   AssetGenImage get peacefull =>
       const AssetGenImage('assets/svg_icons/peacefull.png');
@@ -918,6 +994,18 @@ class $AssetsSvgIconsGen {
   /// File path: assets/svg_icons/questTab.png.png
   AssetGenImage get questTabPng =>
       const AssetGenImage('assets/svg_icons/questTab.png.png');
+
+  /// File path: assets/svg_icons/receipt_close.svg
+  SvgGenImage get receiptClose =>
+      const SvgGenImage('assets/svg_icons/receipt_close.svg');
+
+  /// File path: assets/svg_icons/receipt_fizzy.png
+  AssetGenImage get receiptFizzy =>
+      const AssetGenImage('assets/svg_icons/receipt_fizzy.png');
+
+  /// File path: assets/svg_icons/receipt_icon.svg
+  SvgGenImage get receiptIcon =>
+      const SvgGenImage('assets/svg_icons/receipt_icon.svg');
 
   /// File path: assets/svg_icons/sad.png
   AssetGenImage get sad => const AssetGenImage('assets/svg_icons/sad.png');
@@ -949,6 +1037,14 @@ class $AssetsSvgIconsGen {
   /// File path: assets/svg_icons/sign_un_back_scrren..svg
   SvgGenImage get signUnBackScrren =>
       const SvgGenImage('assets/svg_icons/sign_un_back_scrren..svg');
+
+  /// File path: assets/svg_icons/spark_clock.svg
+  SvgGenImage get sparkClock =>
+      const SvgGenImage('assets/svg_icons/spark_clock.svg');
+
+  /// File path: assets/svg_icons/spark_sun.svg
+  SvgGenImage get sparkSun =>
+      const SvgGenImage('assets/svg_icons/spark_sun.svg');
 
   /// File path: assets/svg_icons/star.png
   AssetGenImage get star => const AssetGenImage('assets/svg_icons/star.png');
@@ -996,8 +1092,7 @@ class $AssetsSvgIconsGen {
     buttonCalendar,
     buttonRegular,
     calendarBlank,
-    clearAllAIMemoryPng,
-    clearAllAIMemoryPng_,
+    clearAllAIMemory,
     clock,
     clockBlack,
     dAILYMOMENTSPng,
@@ -1005,7 +1100,6 @@ class $AssetsSvgIconsGen {
     dailyTips,
     dailyTalksWithFuzzy,
     deleteMyAccount,
-    deleteYourAccount,
     emotionalSupport,
     editProfilIcon,
     editProfilePng,
@@ -1042,7 +1136,6 @@ class $AssetsSvgIconsGen {
     realCompany,
     rateNowlli,
     rateNowliw,
-    readyToMakeTodayCount,
     restrictedTopics,
     settingProfile,
     shareMySuccess,
@@ -1073,6 +1166,7 @@ class $AssetsSvgIconsGen {
     awosome,
     backIconPng,
     backIconSvg,
+    bellSimpleSlash,
     bkPopupChooseMood,
     blue,
     bottomFirstYourComplate,
@@ -1081,6 +1175,7 @@ class $AssetsSvgIconsGen {
     checkCircle01PasswprdUpdate,
     chevronBackward,
     cleanHouse,
+    companionSleeping,
     contactSupport,
     empty,
     exlometory,
@@ -1089,7 +1184,15 @@ class $AssetsSvgIconsGen {
     googleIcon,
     graph,
     happy,
+    homeCheck,
+    homeFire,
+    homeFlower,
+    homePlus,
+    homeQuestBlob,
+    homeSwipeSparkle,
+    homeUser,
     insightCheckBox,
+    insightsSparkle,
     joyfull,
     mean,
     messages,
@@ -1098,6 +1201,13 @@ class $AssetsSvgIconsGen {
     nowliHowToUse,
     nowlnLogo,
     onBordingPlus,
+    paywallArrowRight,
+    paywallChart,
+    paywallClose,
+    paywallCompanion,
+    paywallMic,
+    paywallReceipt,
+    paywallSparkle,
     peacefull,
     plush,
     popupSpwakingCross,
@@ -1106,6 +1216,9 @@ class $AssetsSvgIconsGen {
     push,
     questComapltedSatrt,
     questTabPng,
+    receiptClose,
+    receiptFizzy,
+    receiptIcon,
     sad,
     seeting,
     selateQuest,
@@ -1114,6 +1227,8 @@ class $AssetsSvgIconsGen {
     signInGoole,
     signInPageIcon,
     signUnBackScrren,
+    sparkClock,
+    sparkSun,
     star,
     startLetsGo,
     sun,

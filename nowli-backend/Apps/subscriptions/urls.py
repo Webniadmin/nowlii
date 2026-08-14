@@ -6,6 +6,7 @@ from .views import (
     StartTrialView,
     ActivateView,
     CancelView,
+    ConfirmSwitchView,
     VerifyReceiptView,
 )
 
@@ -15,5 +16,6 @@ urlpatterns = [
     path("start-trial/", StartTrialView.as_view(), name="subscription-start-trial"),
     path("activate/", ActivateView.as_view(), name="subscription-activate"),
     path("cancel/", CancelView.as_view(), name="subscription-cancel"),
+    path("confirm-switch/", ConfirmSwitchView.as_view(), name="subscription-confirm-switch"),
     path("verify-receipt/", VerifyReceiptView.as_view(), name="subscription-verify-receipt"),
 ]

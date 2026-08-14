@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/api/onboarding_data.dart';
 import 'package:nowlii/api/nowlii_options_api.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
+import 'package:nowlii/screen/onboarding/onboarding_features/companion_name_suggestions.dart';
 import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 import 'package:nowlii/widget/animated_onboarding_topbar.dart';
@@ -44,9 +45,9 @@ class _AvatarLogoAndNameState extends State<AvatarLogoAndName> {
               padding: const EdgeInsets.all(16.0),
               child: AnimatedOnboardingTopbar(
                 currentStep: 6,
-                totalSteps: 6,
+                totalSteps: kOnboardingTotalSteps,
                 backRoute: "/avatarLogo",
-                skipRoute: "/popupSpeking",
+                skipRoute: "/limitedByDesign",
                 isSmallDevice: isSmallDevice,
                 isMediumDevice: isMediumDevice,
                 screenWidth: screenWidth,
@@ -62,30 +63,37 @@ class _AvatarLogoAndNameState extends State<AvatarLogoAndName> {
                 children: [
                   NameSelectionPage(
                     selectedName: _selectedName,
-                    onNameSelected: (name) {
+                    // The page tells us which kind of name this is. It used to be
+                    // guessed here against a hardcoded list
+                    // (['KNOTTY','BLOOBY','FUZZY',…]) that never matched the real
+                    // companions (milo/bloop/gumo/knotty/fizzy/zee), so *every*
+                    // suggested name was filed as a custom one.
+                    onNameSelected: (name, isCustom) {
                       setState(() {
                         _selectedName = name;
                       });
-                      
-                      // Save to onboarding data
+
                       final onboardingData = OnboardingData();
-                      // Check if it's a custom name or default avatar name
-                      final avatarNames = ['KNOTTY', 'BLOOBY', 'FUZZY', 'SNOOZY', 'GRUMPY', 'SLEEPY'];
-                      if (avatarNames.contains(name)) {
-                        // Default avatar name
-                        onboardingData.setNowliiName(name);
-                      } else {
-                        // Custom typed name
+                      if (isCustom) {
                         onboardingData.setCustomNowliiName(name);
+                      } else {
+                        onboardingData.setNowliiName(name);
                       }
                     },
                   ),
                 ],
               ),
             ),
+            // Disabled until there is a usable name. `_selectedName` is cleared by
+            // the page whenever validation fails, so this covers both the empty
+            // field and the too-short / too-long cases.
             GestureDetector(
-              onTap: () => context.push("/popupSpeking"),
-              child: Container(
+              onTap: _selectedName.trim().isEmpty
+                  ? null
+                  : () => context.go("/limitedByDesign"),
+              child: Opacity(
+                opacity: _selectedName.trim().isEmpty ? 0.5 : 1.0,
+                child: Container(
                 width: 334,
                 height: 116,
                 padding: const EdgeInsets.only(
@@ -149,6 +157,7 @@ class _AvatarLogoAndNameState extends State<AvatarLogoAndName> {
                     ),
                   ],
                 ),
+                ),
               ),
             ),
             const SizedBox(height: 30),
@@ -160,9 +169,17 @@ class _AvatarLogoAndNameState extends State<AvatarLogoAndName> {
 }
 
 // ─────────────────────────────────────────────
+/// Companion-name length limits, from the design spec.
+const int kCompanionNameMin = 2;
+const int kCompanionNameMax = 12;
+
 class NameSelectionPage extends StatefulWidget {
   final String selectedName;
-  final Function(String) onNameSelected;
+
+  /// `isCustom` distinguishes a name the user typed from one we suggested — the
+  /// backend stores them in different columns (`custom_nowlii_name` vs
+  /// `nowlii_name`), so the caller must not have to guess.
+  final void Function(String name, bool isCustom) onNameSelected;
 
   const NameSelectionPage({
     super.key,
@@ -185,6 +202,12 @@ class _NameSelectionPageState extends State<NameSelectionPage>
   bool _showNameDisplay = true;
   List<NowliiOption> avatars = [];
   bool isLoading = true;
+
+  /// Which suggested name is showing for the current companion (see `_rotateName`).
+  int _suggestionIndex = 0;
+
+  /// Live validation message for the typed name; null when there is nothing wrong.
+  String? _nameError;
 
   @override
   void initState() {
@@ -256,42 +279,91 @@ class _NameSelectionPageState extends State<NameSelectionPage>
       }
     }
     
-    widget.onNameSelected(avatars[_currentAvatarIndex].name);
+    _suggestionIndex = 0;
+    widget.onNameSelected(_currentSuggestion, false);
   }
 
-  void _rotateAvatar() {
-    if (avatars.isEmpty) return;
-    
+  /// Names we can offer for the companion the user picked on the previous screen.
+  ///
+  /// The companion's own name always leads, so the first thing shown matches what
+  /// they just chose.
+  List<String> get _suggestionsForCurrentCompanion {
+    if (avatars.isEmpty) return const [];
+    final companion = avatars[_currentAvatarIndex].name;
+    final extras = kCompanionNameSuggestions[companion.toLowerCase()] ?? const [];
+    return [companion, ...extras];
+  }
+
+  String get _currentSuggestion {
+    final pool = _suggestionsForCurrentCompanion;
+    if (pool.isEmpty) return '';
+    return pool[_suggestionIndex % pool.length];
+  }
+
+  /// The ↻ control cycles *names for the chosen companion*.
+  ///
+  /// It used to advance `_currentAvatarIndex`, i.e. silently swap the companion
+  /// itself — undoing the choice made one screen earlier, on a screen whose only
+  /// job is naming.
+  void _rotateName() {
+    if (_suggestionsForCurrentCompanion.length < 2) return;
+
     setState(() {
-      _currentAvatarIndex = (_currentAvatarIndex + 1) % avatars.length;
+      _suggestionIndex =
+          (_suggestionIndex + 1) % _suggestionsForCurrentCompanion.length;
       _showTextField = false;
       _nameController.clear();
+      _nameError = null;
     });
-    widget.onNameSelected(avatars[_currentAvatarIndex].name);
+    widget.onNameSelected(_currentSuggestion, false);
     _bounceController.forward(from: 0);
-    
-    // Save avatar logo to onboarding data
-    final onboardingData = OnboardingData();
-    onboardingData.setAvatarLogo(avatars[_currentAvatarIndex].avatarLogo);
-    onboardingData.setNowliiName(avatars[_currentAvatarIndex].name);
   }
 
   void _showCustomNameInput() {
     setState(() {
       _showTextField = true;
+      _nameError = null;
     });
   }
 
+  /// Real-time validation, per the design: min 2, max 12.
+  ///
+  /// An empty field shows no error — the user has not typed anything wrong yet,
+  /// they simply have not finished. Continue stays disabled either way.
+  String? _validateCompanionName(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty) return null;
+    if (value.length < kCompanionNameMin) {
+      return 'A little longer — at least $kCompanionNameMin characters.';
+    }
+    if (value.length > kCompanionNameMax) {
+      return 'That is a bit long — $kCompanionNameMax characters max.';
+    }
+    return null;
+  }
+
+  /// Whether the flow may advance: either a suggested name is showing, or the
+  /// typed one passes validation.
+  bool get canContinue {
+    if (!_showTextField) return _currentSuggestion.isNotEmpty;
+    final value = _nameController.text.trim();
+    return value.length >= kCompanionNameMin &&
+        value.length <= kCompanionNameMax;
+  }
+
   void _onCustomNameChanged(String value) {
-    if (value.trim().length >= 2 && value.trim().length <= 12) {
-      widget.onNameSelected(value.trim());
+    final trimmed = value.trim();
+    setState(() {
+      _nameError = _validateCompanionName(value);
+    });
+
+    if (_nameError == null && trimmed.isNotEmpty) {
+      widget.onNameSelected(trimmed, true);
       _bounceController.forward(from: 0);
-      
-      // Save custom name to onboarding data
-      final onboardingData = OnboardingData();
-      onboardingData.setCustomNowliiName(value.trim());
-    } else if (value.trim().isEmpty) {
-      widget.onNameSelected('');
+    } else {
+      // Nothing valid to carry forward — clear it so a half-typed name cannot
+      // leak into the profile if the user taps on regardless.
+      widget.onNameSelected('', true);
     }
   }
 
@@ -374,18 +446,21 @@ class _NameSelectionPageState extends State<NameSelectionPage>
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    avatars[_currentAvatarIndex].name,
+                    _currentSuggestion,
                     style: AppsTextStyles.signupText28,
                   ),
                   const SizedBox(width: 16),
-                  GestureDetector(
-                    onTap: _rotateAvatar,
-                    child: Image.asset(
-                      Assets.svgIcons.buttonRegular.path,
-                      width: 66,
-                      height: 44,
+                  // Hidden when there is only the companion's own name to show —
+                  // a control that visibly does nothing is worse than no control.
+                  if (_suggestionsForCurrentCompanion.length > 1)
+                    GestureDetector(
+                      onTap: _rotateName,
+                      child: Image.asset(
+                        Assets.svgIcons.buttonRegular.path,
+                        width: 66,
+                        height: 44,
+                      ),
                     ),
-                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -430,7 +505,9 @@ class _NameSelectionPageState extends State<NameSelectionPage>
               TextField(
                 controller: _nameController,
                 textAlign: TextAlign.center,
-                maxLength: 12,
+                // Deliberately NOT `maxLength: 12`. A hard cap silently swallows
+                // the 13th keystroke, so the over-length error the design draws
+                // could never appear. Let them type past it and say so instead.
                 autofocus: true,
                 style: const TextStyle(
                   fontSize: 24,
@@ -446,6 +523,44 @@ class _NameSelectionPageState extends State<NameSelectionPage>
                 ),
                 onChanged: _onCustomNameChanged,
               ),
+              if (_nameError != null) ...[
+                const SizedBox(height: 8),
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: ShapeDecoration(
+                      color: const Color(0xFFFFE4E4),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.error_outline,
+                          size: 18,
+                          color: Color(0xFFC0362C),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            _nameError!,
+                            style: GoogleFonts.workSans(
+                              color: const Color(0xFFC0362C),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Center(
                 child: SizedBox(
@@ -456,12 +571,13 @@ class _NameSelectionPageState extends State<NameSelectionPage>
                       setState(() {
                         _showTextField = false;
                         _showNameDisplay = true;
-                        if (_nameController.text.trim().isEmpty) {
-                          widget.onNameSelected(
-                            avatars[_currentAvatarIndex].name,
-                          );
-                        }
+                        _nameError = null;
+                        _nameController.clear();
                       });
+                      // Going back to suggestions discards whatever was typed, so
+                      // restore the suggested name — otherwise a half-typed custom
+                      // name stays selected behind a screen that no longer shows it.
+                      widget.onNameSelected(_currentSuggestion, false);
                     },
                     icon: const Icon(Icons.close, size: 18),
                     label: Text(

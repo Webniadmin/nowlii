@@ -46,7 +46,7 @@ class DeleteAccountDialog extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Image.asset(
-                Assets.svgIcons.deleteYourAccount.path,
+                Assets.svgIcons.deleteMyAccount.path,
                 width: 40,
                 height: 40,
               ),
@@ -72,7 +72,7 @@ class DeleteAccountDialog extends StatelessWidget {
             const SizedBox(height: 12),
 
             const Text(
-              'Nowlli will forget everything it knows about you - and personalization will reset.',
+              'Nowlii will forget everything it knows about you - and personalization will reset.',
               style: TextStyle(
                 fontSize: 14,
                 color: Color(0xFF6B7280),

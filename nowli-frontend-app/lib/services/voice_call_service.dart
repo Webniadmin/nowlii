@@ -176,6 +176,8 @@ class VoiceCallService {
     required String nextStep,
     String? dominantEmotion,
     Map<String, double>? topEmotions,
+    List<String>? wordsCircled,
+    String? tinyQuestion,
     String? language,
     int? totalTurns,
   }) async {
@@ -192,6 +194,8 @@ class VoiceCallService {
               'next_step': nextStep,
               if (dominantEmotion != null) 'dominant_emotion': dominantEmotion,
               if (topEmotions != null) 'top_emotions': topEmotions,
+              if (wordsCircled != null) 'words_circled': wordsCircled,
+              if (tinyQuestion != null) 'tiny_question': tinyQuestion,
               if (language != null) 'language': language,
               if (totalTurns != null) 'total_turns': totalTurns,
             }),
@@ -199,6 +203,43 @@ class VoiceCallService {
           .timeout(const Duration(seconds: 10));
     } catch (e) {
       print('❌ saveSummary error: $e');
+    }
+  }
+
+  /// Save (or clear) the user's own note on a call receipt.
+  ///
+  /// Sent to its own endpoint rather than folded into [saveSummary], because that one is
+  /// re-posted whenever the summary screen is shown and would carry the user's words away
+  /// with it. An empty string is how a note gets deleted.
+  ///
+  /// Returns the saved text on success and null on failure, so the caller can tell the
+  /// user it did not save instead of showing a note that only exists on screen.
+  Future<String?> saveReceiptNote({
+    required int callId,
+    required String note,
+  }) async {
+    try {
+      final token = await _getToken();
+      final response = await http
+          .patch(
+            Uri.parse('$_base${ApiConstants.voiceCallSummaryNote(callId)}'),
+            headers: _headers(token),
+            body: jsonEncode({'note': note}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded['note']?.toString() ?? '';
+        }
+        return note;
+      }
+      print('⚠️ saveReceiptNote status: ${response.statusCode} — ${response.body}');
+      return null;
+    } catch (e) {
+      print('❌ saveReceiptNote error: $e');
+      return null;
     }
   }
 

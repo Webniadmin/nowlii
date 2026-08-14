@@ -160,8 +160,9 @@ class NowliiPredefinedOption(models.Model):
     name = models.CharField(max_length=50, unique=True, help_text="The unique name of the Nowlii character (e.g., 'Sparky')")
     avatar_logo = models.ImageField(upload_to='nowlii_logos/', null=True, blank=True, help_text="The avatar image/logo for this Nowlii character")
     # Voice/gender for this companion — drives the AI voice-call voice when the user picks it.
-    # There is no per-avatar gender concept beyond this; default is Male.
-    voice = models.CharField(max_length=10, choices=VOICE_CHOICES, default='Male',
+    # There is no per-avatar gender concept beyond this. Female is the product default, so a
+    # companion added without a deliberate choice speaks in the voice the app leads with.
+    voice = models.CharField(max_length=10, choices=VOICE_CHOICES, default='Female',
                              help_text="Voice used for this companion's AI call (Male/Female).")
 
     def __str__(self):
@@ -189,6 +190,16 @@ class Profile(models.Model):
         ('Female', 'Female'),
     ]
 
+    # The canonical Restricted Topics list. It lives here rather than in the app because the
+    # app offers it, the backend stores it and nowli-ai puts it in a prompt — three copies of
+    # the same list drift, and the one that drifts silently is the prompt.
+    RESTRICTED_TOPIC_CHOICES = [
+        'Health or medical discussions',
+        'Relationship advice',
+        'Emotionally heavy or distress topics',
+        'Sensitive news / politics',
+    ]
+
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile', null=True, blank=True)
     name = models.CharField(max_length=50, blank=True, null=True)
     gender = models.CharField(max_length=150, choices=GENDER_CHOICES, blank=True, null=True)
@@ -201,10 +212,32 @@ class Profile(models.Model):
     custom_nowlii_name = models.CharField(max_length=50, blank=True, null=True)
     
     language = models.CharField(max_length=50, choices=LANGUAGE_CHOICES, default='English', blank=True, null=True)
-    voice = models.CharField(max_length=50, choices=VOICE_CHOOSE, default='Male', blank=True, null=True)
+    # Female by default: it is the voice the app presents first, and the one a user who
+    # never opens the selector will hear. Overridden when a companion carries its own voice
+    # (see save()) or when the user picks one in AI Personalization.
+    voice = models.CharField(max_length=50, choices=VOICE_CHOOSE, default='Female', blank=True, null=True)
     # Weekday names (e.g. ["Sunday"]) the user marked as intentional rest days. These are
     # excluded from Insights "skipped days" so a deliberate day off isn't nagged as a miss.
     rest_days = models.JSONField(default=list, blank=True)
+    # Topics from AI Personalization → Restricted Topics that this user asked the companion
+    # to stay away from. Sent to nowli-ai when a call starts and folded into the persona, so
+    # this is one of the few settings that changes what the AI actually says.
+    #
+    # "Avoid" means the companion does not *raise* them. It never means refusing someone who
+    # brings up their own distress — see the persona rules in nowli-ai.
+    restricted_topics = models.JSONField(default=list, blank=True)
+    # Whether this user's conversations may be used to improve the AI. Stored server-side
+    # because a privacy choice that lives only on the device is not a choice about anything
+    # the server does.
+    use_data_to_improve = models.BooleanField(default=True)
+    # The IANA zone the user's phone reports (e.g. "Europe/Belgrade"), sent on every profile
+    # load so it follows them when they travel.
+    #
+    # Quests store naive wall-clock times, so something has to say which clock they are on.
+    # It used to be the server's, which is UTC — a call set for 11:20 in Belgrade became
+    # 11:20 UTC and reached the phone as 13:20. Blank means "never reported", and falls back
+    # to the server zone exactly as before. See Apps/users/timezones.py.
+    timezone = models.CharField(max_length=64, blank=True, default='')
 
     def save(self, *args, **kwargs):
         # Handle nowlii name and logo logic

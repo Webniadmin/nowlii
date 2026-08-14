@@ -5,12 +5,27 @@ class PhaseSerializer(serializers.Serializer):
     from_month = serializers.IntegerField()
     to_month   = serializers.IntegerField()
     price      = serializers.FloatField()
+    stage      = serializers.CharField(required=False, allow_blank=True)
 
 
 class PlanScheduleSerializer(serializers.Serializer):
     currency         = serializers.CharField()
     free_after_month = serializers.IntegerField()
+    graduated_stage  = serializers.CharField(required=False, allow_blank=True)
     phases           = PhaseSerializer(many=True)
+
+
+class StepDownSerializer(serializers.Serializer):
+    """What the app must do to keep the user's price in step with the schedule.
+
+    Exists because neither store offers a server-side plan change — the backend can only
+    say what should happen and the device has to carry it out.
+    """
+    due          = serializers.BooleanField()
+    cancel       = serializers.BooleanField()
+    from_product = serializers.CharField(allow_blank=True)
+    to_product   = serializers.CharField(allow_blank=True)
+    to_price     = serializers.FloatField()
 
 
 class SubscriptionStatusSerializer(serializers.Serializer):
@@ -33,3 +48,5 @@ class SubscriptionStatusSerializer(serializers.Serializer):
     trial_ends_at    = serializers.DateField(required=False, allow_null=True)
     trial_days_total = serializers.IntegerField(required=False)
     trial_used       = serializers.BooleanField(required=False)
+    # Present for every caller; `due`/`cancel` are False for anyone it does not apply to.
+    step_down        = StepDownSerializer(required=False)

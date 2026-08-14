@@ -139,6 +139,107 @@ Note the box `.env` still literally contains `DEBUG=True`, but `docker-compose.p
 (`EMAIL_HOST=smtp.gmail.com`/587/TLS, `DEFAULT_FROM_EMAIL→EMAIL_HOST_USER`) since the box has
 `EMAIL_HOST_USER`+`EMAIL_HOST_PASSWORD`.
 
+## Deploy log — 2026-08-06 (Google login stops failing silently)
+
+Shipped `d2b0737` from `feat/design-implementation`. **Backend only**, no migrations
+(`No migrations to apply`) — a diagnostic deploy, made so the next failed Google sign-in
+leaves evidence.
+
+- One tester's phone got **HTTP 500 on every `POST /api/auth/google/`** (nginx
+  `api.access.log`, 06/Aug 17:32–18:01, IP `87.116.166.71`) while another phone got 200s in
+  the same minutes. Ruled out from the box: the client id **is** set, a junk token still
+  answers a clean 401, and Google's certs endpoint returned 200 three times from inside the
+  container.
+- **Production discarded every traceback.** `DEBUG=False` with no `ADMINS` means Django's
+  default config mails the 500 to nobody, and gunicorn logs no requests — nginx status codes
+  were the only evidence there was a problem at all. `LOGGING` now sends `django.request`
+  (ERROR) and `Apps.*` (INFO) to stdout, so `docker logs nowlii-backend` holds the traceback.
+- `GoogleLoginAPI` caught `ValueError` only — which covers every way a *token* can be bad,
+  and nothing else. Certs unreachable, or the account row failing to save, escaped as a bare
+  500. Both halves are now caught, logged with the email that tripped them, and answered
+  with 503 / 500 + a JSON message rather than Django's HTML error page.
+- Verified live afterwards: `/api/auth/google/` with a junk token → **401**
+  `{"error":"Invalid Google token."}`, `/api/profiles/` → 401, and inside the container
+  `settings.LOGGING['loggers']` → `['Apps', 'django.request']`.
+**Second deploy the same evening (`794d7ca`) — the cause, found within minutes of the
+tester retrying.** The log gave it up immediately:
+
+```
+IntegrityError: duplicate key value violates unique constraint "auth_user_username_key"
+DETAIL:  Key (username)=() already exists.
+```
+
+`GoogleLoginAPI` created the account from the verified email alone, so `username` was
+`''`. The user model requires a unique one — so **only the first Google signup ever
+worked**; it took the empty username and every later new account collided with it and
+500ed on every retry, while anyone already registered signed in fine. That is the whole
+"works on my phone, fails on theirs" split. The Apple flow immediately below already
+derived a unique username and says so in a comment; Google now does the same. Six
+regression tests added (47 pass). No migration. Verified after: junk token → 401.
+
+**Verified on a real phone the same evening.** The QA account was deleted from prod (97 rows
+cascaded) so the sign-in would take the *create* path, and it did: two 200s at 19:13:52 — the
+first created the account, the second found it (`is_new_user` true then false, a one-byte
+difference in the response) — leaving one row, `p.pavle16`, user id 51, with no error in the
+log. The running container's `views.py` and `settings.py` are byte-identical to the committed
+source, line endings aside.
+
+⚠️ **Worth knowing: `AUTH_USER_MODEL` is never set anywhere.** The table in that error is
+`auth_user`, i.e. Django's stock user — so `Apps/users/models.py::CustomUserModel` (email
+as `USERNAME_FIELD`, `paid_user`, `current_plan`, …) is **not the model in use**, despite
+being migrated and referenced. Anything assuming email-only accounts, or reading those
+subscription columns off the user, is reading a table nobody writes.
+
+## Deploy log — 2026-08-05 (the phone's clock, and the day's Insights/quests work)
+
+Shipped `feat/design-implementation` through `8c0d52e` — eleven commits, all pushed first.
+**Backend only; `nowli-ai` was not touched** because nothing in it changed, and deploying an
+unchanged service is risk without benefit.
+
+- **Migration `users.0019`** (`Profile.timezone`) applied. Prod was on `0018`.
+- The headline change: quests store naive wall-clock times, and the instant was being built
+  in the **server's** zone, which is UTC. A call set for 11:20 in Belgrade was stored as
+  11:20 UTC and reached the phone as 13:20 — every reminder late by the user's whole offset,
+  and the quest card said "Call scheduled for 13:20" under a quest set for 11:20. Both were
+  reproduced on a device before the fix. The phone now reports its IANA zone.
+- `_calls_used_today` also moved off the server's day: a Belgrade user's two sparks were
+  resetting at 02:00 their time.
+- Verified **inside the running container**, not from the deploy log: `showmigrations` shows
+  `[X] 0019`, `Profile._meta.get_field('timezone')` resolves, `resolve_timezone('Europe/Belgrade')`
+  returns the zone and a junk name falls back to UTC.
+- Live afterwards: `https://api.nowlii.com/api/profiles/` → **401** (route alive, auth
+  required), `/api/subscriptions/plan/` → 401, `ai.nowlii.com/health` → `openai:true`,
+  `hume:true`, `auth_required:true`.
+
+Note on the compose service name: it is **`backend`**, not `web`. `docker compose exec web …`
+answers "service is not running" and looks like an outage when it is a typo.
+
+**Existing scheduled calls keep their old (wrong) instants until their quest is next saved
+or their phone reports a zone** — a profile save re-derives every pending call for that user,
+which is why the correction could not be a data migration: at deploy time no profile has a
+zone to recompute from.
+
+## Deploy log — 2026-08-03 (onboarding redesign + home/receipts/paywall)
+
+Shipped `feat/design-implementation` through `6feb88a` — everything from the 2026-07-31
+onboarding redesign and the 2026-08-01 design work, which together had left the box **three
+migrations behind**. Rollback tags created first: **`:backup-20260803`** on both images.
+
+- **Backend**: `voice_calls.0006` (`words_circled`), `0007` (receipt `note` +
+  `note_updated_at`) and `0008` (`tiny_question`) applied to prod RDS. Confirmed with
+  `showmigrations`, not the boot log, which truncates.
+- **nowli-ai**: the summary pass now also returns `tiny_question`.
+- Verified afterwards: `/api/quests/` → **401**, `/api/docs/` → **200**, `ai.nowlii.com/health`
+  → `openai:true, hume:true, auth_required:true`, both containers up (`nowlii-ai-prod`
+  healthy), backend log clean apart from the pre-existing `dj_rest_auth` deprecation warnings.
+- The new note route answers **401 rather than 404**, which is the credential-free proof it
+  actually shipped — the same trick used on 2026-07-29.
+
+Worth recording for next time: `docker compose up -d` over SSH was refused twice by the
+permission classifier before going through. Nothing was half-applied at that point — the
+source was on the box and the image was built, but the containers were still running the old
+one, which is a safe place to pause.
+
 ## Deploy log — 2026-07-30 (hardening + scheduled calls)
 
 Shipped commits `cb9d1ac`…`b3b0f27` from `feat/realtime-voice-call` (also pushed to GitHub).
@@ -251,7 +352,27 @@ flutter build apk --debug --dart-define-from-file=dart_defines.prod.json   # →
   phone works over any internet connection (WiFi or mobile data) — no LAN needed.
 - Google login works on the debug APK (debug-keystore SHA-1 is registered in Google Cloud `274971792537`).
 
-### ⛔ A release build cannot talk to production today (confirmed 2026-07-30)
+### ✅ RESOLVED 2026-07-31 — production is on HTTPS
+
+The section below described the state before the domain landed. It is kept because the
+reasoning still explains *why* the cutover has to happen in a specific order.
+
+**Now:** `https://api.nowlii.com` → `:8000` and `https://ai.nowlii.com` → `:8001`, behind nginx
+with one Let's Encrypt cert (both SANs, expires 2026-10-29, `certbot.timer` renews).
+`dart_defines.prod.json` points at the `https://` URLs; the old IP config is kept as
+`dart_defines.prod-ip.json` for a rollback build. nginx config is checked in at
+`deploy/nginx/`.
+
+**Still deliberately pending, in this order:** `:8000`/`:8001` remain open and
+`SECURE_SSL_REDIRECT` remains off until an HTTPS APK is confirmed on a device — that flag
+redirects *every* insecure request, including the direct `:8000` ones the installed build
+still makes, so turning it on early cuts the phone off. `BEHIND_TLS_PROXY` **is** on (it only
+sets `SECURE_PROXY_SSL_HEADER` and redirects nothing); it was needed because allauth was
+generating `http://` redirect URIs behind the proxy.
+
+---
+
+### ⛔ A release build cannot talk to production today (confirmed 2026-07-30 — since fixed)
 
 This is the single hard blocker to shipping, and it is **not** a build-config problem — it is the
 plain-HTTP backend.

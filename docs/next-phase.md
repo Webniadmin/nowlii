@@ -8,20 +8,100 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
-## ▶ START HERE (2026-07-31)
+## ▶ START HERE (2026-08-06)
 
-**Two things block everything, and both are outside the code:** the `api`/`ai` A records at
-**GoDaddy** (checked against the authoritative nameservers — `NXDOMAIN`, so the record was
-never saved to that zone; adding it in Figma or Cloudflare has no effect), and **ports 80/443
-in the AWS security group** (confirmed closed, so certbot cannot issue). Exact steps in
-`daily-checklist.md`.
+**Put the APK on a real phone.** `nowlii-prod-v0.1.apk` is built and points at the live HTTPS
+backend; the code is pushed and the backend is deployed. Everything that has stacked up is now
+waiting on one thing, and three parts of the app can only be judged on hardware: the
+microphone, the voice check, and an AI call. The emulator cannot route host audio.
 
-Once those land: nginx + certbot → HTTPS on both subdomains → new APK → close 8000/8001.
-That is what removes the release blocker — a release build cannot use cleartext HTTP, so
-today it cannot reach the backend at all.
+Test the timezone fix there specifically. Yesterday's deploy makes reminders follow the
+**phone's** clock instead of the server's UTC — but only for a phone running the new APK. Set
+a quest for a time and check the card quotes that time, not that time plus your offset.
 
-Nothing was tested on a device on 2026-07-30. Scheduled-call reminders especially can only be
-proven there. Full day detail: `daily-reports/2026-07-30.md`.
+Two decisions are now blocking work rather than merely pending:
+
+- **The trial-ending reminders do not exist.** The "SEVEN DAYS. ON US." screen promises a
+  reminder on day 5 and day 6, in its own timeline. Nothing sends either — no scheduler, no
+  notification, no cron, no email. Local notifications are the recommended path: the mechanism
+  already exists and delivered twice yesterday.
+- **Which markets launch first** — Stripe vs store IAP, unchanged and still gating payments.
+
+What changed yesterday, in one line: every call reminder was firing hours late because the
+server read the user's wall-clock time as UTC, editing a quest never rebuilt its reminder at
+all, and five screens stopped disagreeing with themselves. Detail:
+`daily-reports/2026-08-05.md`; the day's list is `daily-checklist.md`.
+
+---
+
+## ▶ (2026-08-04)
+
+**Two things, in order: deploy yesterday's backend, then decide how payments are taken.**
+The day-by-day list is `daily-checklist.md`; what happened yesterday is
+`daily-reports/2026-08-03.md`.
+
+The backend deploy is not optional for correctness — the app already sends restricted topics
+and calls the clear-AI-memory route, and against production both silently do nothing.
+
+The payments decision is a **business** question, not a technical one: **which markets launch
+first.** Everything else in payments waits on it, and both paths are already researched in
+`subscriptions-iap.md` — do not re-research them. The short version: neither store can express
+the four-step price ladder (Play allows two pricing phases, Apple one), so the store path
+needs a plan change that only a device can perform, while Stripe expresses the ladder natively
+and is less work.
+
+---
+
+## ▶ (2026-08-03)
+
+**Everything below still holds; one more day of work is now stacked behind the same device
+test.** On 2026-08-01 the updated design reached the three screens after onboarding — the
+**home screen** (with the daily allowance renamed to **sparks**), the **receipt library**
+(numbered receipts, a user-written note, PDF export), and the **paywall** (the decreasing
+price shown as dated steps). Five commits, all verified, none deployed and none seen on
+hardware. Full detail: `daily-reports/2026-08-01.md`.
+
+Two fixes in there change what a device test would find, so they matter before the next one:
+
+- **Reminders were firing at the wrong time.** `ScheduledCall.scheduled_for` is UTC, but the
+  project-wide DRF `DATETIME_FORMAT` carries no offset, so the app read it as local — every
+  reminder was out by the device's offset. Receipt dates were arriving as `null` for the same
+  reason. Both serializers now say `iso-8601`.
+- **The voice check's ✕ dropped the user on a black screen.** A bare `Navigator.pop` on the
+  last onboarding screen, which is reached with `go`, popped the only page off the stack.
+
+The backend is now **three migrations** behind production (`voice_calls.0006`, `0007`,
+`0008`), and the app sends those fields regardless. Deploy is step 1, as below.
+
+---
+
+## ▶ (2026-08-01)
+
+**The release blocker is gone.** HTTPS is live on `https://api.nowlii.com` and
+`https://ai.nowlii.com` (nginx + Let's Encrypt on EC2, cert to 2026-10-29, auto-renewing).
+A release build can finally reach production.
+
+**What now gates everything is a single device test.** Four days of work have stacked up
+behind it — the money flow, scheduled-call reminders, the voice call, and the whole onboarding
+redesign have never run on real hardware. Tomorrow is one continuous task, in order:
+
+1. **Deploy phase 4** — it touches the backend (migration `voice_calls.0006`) and `nowli-ai`
+   (summary prompt). Phases 1–3 are frontend-only and ride in the APK.
+2. **Build one APK** against `dart_defines.prod.json` (now `https://`, with Apple defines).
+3. **Get it on a phone and work through the list.**
+
+Only after that: flip `SECURE_SSL_REDIRECT`, add the nginx HTTP→HTTPS redirect, close
+8000/8001. Each of those breaks any pre-HTTPS build the instant it lands, so the installed
+APK is the safety net until the new one is proven.
+
+Step-by-step list, including what to test on the phone: **`daily-checklist.md`**.
+Full detail of what shipped: `daily-reports/2026-07-31.md`.
+
+> **Onboarding was redesigned on 2026-07-31** (`feat/design-implementation`, 4 commits). The
+> flow is now **8 steps**, not 6. Four things it fixed are worth knowing about because they
+> were silent: onboarding could complete **without ever creating a profile** and leave the
+> user permanently stranded; answers were lost if the app was killed mid-flow; the last screen
+> greeted everyone as "Julie"; and the voice check never opened the microphone at all.
 
 ---
 

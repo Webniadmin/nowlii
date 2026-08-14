@@ -10,6 +10,7 @@ import 'package:nowlii/services/quest_service.dart';
 import 'package:nowlii/services/scheduled_call_state.dart';
 import 'package:nowlii/services/voice_call_service.dart';
 import 'package:intl/intl.dart';
+import 'package:nowlii/utils/color_palette/zone_colors.dart';
 
 class Today extends StatefulWidget {
   const Today({super.key});
@@ -253,8 +254,10 @@ class _TodayState extends State<Today> {
               await questService.updateQuestStatus(quest.id, !quest.taskDone);
               _loadTodayQuests();
             },
-            onEdit: () {
-              context.push(
+            onEdit: () async {
+              // Awaited: an edit can move the call, and the reminder for it is local. Not
+              // waiting left the list stale and the reminder pointing at the old time.
+              final changed = await context.push<bool>(
                 AppRoutespath.editQuestPage,
                 extra: {
                   'taskId': quest.id,
@@ -262,6 +265,9 @@ class _TodayState extends State<Today> {
                     'title': quest.task,
                     'zone': quest.zone,
                     'selectADate': quest.selectADate,
+                    // The edit screen reads 'time'; without it the picker opened on the
+                    // current clock and the quest's own time was nowhere on the screen.
+                    'time': quest.selectATime,
                     'enableCall': quest.enableCall,
                     'repeatQuest': quest.repeatQuest,
                     'setAlarm': quest.setAlarm,
@@ -274,6 +280,13 @@ class _TodayState extends State<Today> {
                   },
                 },
               );
+
+              if (changed == true && mounted) {
+                // Rebuild the local reminders before the list: the schedule is what the
+                // user just changed, and it is the half nothing else would catch up on.
+                await CallReminderService.instance.sync();
+                await _loadTodayQuests();
+              }
             },
           ),
         );
@@ -314,33 +327,9 @@ class QuestCard extends StatelessWidget {
     this.remainingCalls = 1,
   });
 
-  Color _getLevelColor(String zone) {
-    switch (zone) {
-      case 'Soft steps':
-        return const Color(0xFFA0E871);
-      case 'Elevated':
-        return const Color(0xFFFF8F26);
-      case 'Stretch zone':
-        return const Color(0xFF3D87F5);
-      case 'Power move':
-        return const Color(0xFFD53D40);
-      default:
-        return const Color(0xFFA0E871);
-    }
-  }
+  Color _getLevelColor(String zone) => zoneColor(zone);
 
-  Color _getTextColor(Color levelColor) {
-    if (levelColor == const Color(0xFFA0E871)) {
-      return const Color(0xFF011F54);
-    } else if (levelColor == const Color(0xFFFF8F26)) {
-      return const Color(0xFF011F54);
-    } else if (levelColor == const Color(0xFF3D87F5)) {
-      return const Color(0xFFEEEEEE);
-    } else if (levelColor == const Color(0xFFD53D40)) {
-      return const Color(0xFFFFFDF7);
-    }
-    return const Color(0xFF011F54);
-  }
+  Color _getTextColor(String zone) => zoneTextColor(zone);
 
   @override
   Widget build(BuildContext context) {
@@ -440,7 +429,7 @@ class QuestCard extends StatelessWidget {
                 child: Text(
                   quest.zone,
                   style: GoogleFonts.workSans(
-                    color: _getTextColor(levelColor),
+                    color: _getTextColor(quest.zone),
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     height: 1.40,
@@ -580,12 +569,16 @@ class QuestCard extends StatelessWidget {
           children: [
             const Icon(Icons.phone, size: 20, color: Colors.white),
             const SizedBox(width: 8),
-            Text(
-              label ?? 'Call Nowlii (5 min)',
-              style: GoogleFonts.workSans(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
+            Flexible(
+              child: Text(
+                label ?? 'Call Nowlii (5 min)',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.workSans(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ],
@@ -638,6 +631,8 @@ class QuestCard extends StatelessWidget {
         alignment: Alignment.center,
         child: Text(
           'Move to tomorrow',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: GoogleFonts.workSans(
             color: const Color(0xFF4542EB),
             fontSize: 15,

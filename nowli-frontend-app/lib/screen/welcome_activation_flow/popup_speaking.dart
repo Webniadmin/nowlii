@@ -1,7 +1,9 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nowlii/api/onboarding_data.dart';
+import 'package:nowlii/services/voice_check_service.dart';
 
 class PopupSpeaking extends StatefulWidget {
   const PopupSpeaking({super.key});
@@ -22,8 +24,15 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
   bool showLetsStart = false;
   
   // Countdown timer
-  int countdownSeconds = 10;
+  static const int _voiceCheckSeconds = 10;
+  int countdownSeconds = _voiceCheckSeconds;
   bool isRecording = false;
+
+  final VoiceCheckService _voiceCheck = VoiceCheckService();
+
+  /// Whether the microphone actually picked up speech. Drives the closing copy so
+  /// we do not thank someone for sharing when nothing was heard.
+  bool _heardSomething = false;
 
   @override
   void initState() {
@@ -63,6 +72,8 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
   void dispose() {
     _pulseController.dispose();
     _rippleController.dispose();
+    _voiceCheck.cancel();
+    _voiceCheck.dispose();
     super.dispose();
   }
 
@@ -71,34 +82,46 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
     _startCountdown();
   }
   
-  void _startCountdown() {
+  /// Runs the voice check for real.
+  ///
+  /// This was a bare countdown: ten seconds of animation with the microphone
+  /// never opened and nothing sent anywhere, so a broken mic or a denied
+  /// permission only showed up during the user's first actual call. It now
+  /// listens, drives the waveform from the live input level, and sends what it
+  /// heard for emotion detection.
+  void _startCountdown() async {
     setState(() {
       isRecording = true;
-      countdownSeconds = 10;
+      countdownSeconds = _voiceCheckSeconds;
     });
-    
-    // Countdown from 10 to 0
-    Future.doWhile(() async {
-      await Future.delayed(Duration(seconds: 1));
-      
+
+    final ready = await _voiceCheck.prepare();
+    if (!mounted) return;
+    if (ready) {
+      await _voiceCheck.startListening(
+        duration: const Duration(seconds: _voiceCheckSeconds),
+        localeId: selectedLanguage == 'Español' ? 'es_ES' : 'en_US',
+      );
+    }
+    // If the mic is unavailable the countdown still runs — the user is not
+    // trapped on this screen over a permission they declined.
+
+    await Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 1));
       if (!mounted || currentScreen != 1) return false;
-      
-      setState(() {
-        countdownSeconds--;
-      });
-      
-      // Continue until countdown reaches 0
+      setState(() => countdownSeconds--);
       return countdownSeconds > 0;
-    }).then((_) {
-      // After countdown completes, show "Let's start!" and navigate
-      if (mounted && currentScreen == 1) {
-        setState(() {
-          isRecording = false;
-          showLetsStart = true;
-        });
-        _typeText("Let's start!");
-      }
     });
+
+    final result = await _voiceCheck.finish();
+    if (!mounted || currentScreen != 1) return;
+
+    setState(() {
+      isRecording = false;
+      showLetsStart = true;
+      _heardSomething = result.heardSomething;
+    });
+    _typeText("Let's start!");
   }
 
   void _typeText(String text) async {
@@ -401,6 +424,20 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
     );
   }
 
+  /// Closing the voice check is a **skip**, not an exit.
+  ///
+  /// This is the last onboarding screen and it is reached with `go`, so there is nothing
+  /// underneath it: a bare `Navigator.pop` popped the only page off the stack, go_router
+  /// asserted, and the user was left on a black screen with no way out. Skipping has to
+  /// land where finishing lands.
+  void _dismissVoiceCheck() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/noticeLoaderScreen');
+    }
+  }
+
   Widget _buildInitialScreen() {
     return SingleChildScrollView(
       child: ConstrainedBox(
@@ -417,7 +454,7 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                 child: Row(
                   children: [
                     GestureDetector(
-                      onTap: () => Navigator.pop(context),
+                      onTap: _dismissVoiceCheck,
                       child: Container(
                         width: 32,
                         height: 32,
@@ -439,7 +476,10 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                 child: Column(
                   children: [
                     Text(
-                      "YOU'RE ALL SET, JULIE!",
+                      // "JULIE" was hardcoded from the mock — every real user
+                      // was greeted by a stranger's name on the last screen of
+                      // onboarding, right after typing their own.
+                      "YOU'RE ALL SET, ${OnboardingData().greetingName.toUpperCase()}!",
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: const Color(0xFF011F54),
@@ -548,12 +588,10 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                               )
                             ],
                           ),
-                          child: Center(
-                            child: Image.asset(
-                              "assets/dea_png/Popup_Speaking.png",
-                              width: 110,
-                              height: 110,
-                              fit: BoxFit.cover,
+                          child: const Center(
+                            child: NowliiAvatar(
+                              size: 110,
+                              pose: CompanionPose.speaking,
                             ),
                           ),
                         ),
@@ -616,8 +654,11 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                 ),
               ),
               SizedBox(height: 30),
+              // Now that the microphone is really used, the copy has to match what
+              // happened — thanking someone for sharing when nothing was heard
+              // makes the whole check feel fake.
               Text(
-                'I hear you.',
+                _heardSomething ? 'I hear you.' : 'All set.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: const Color(0xFF4542EB),
@@ -629,7 +670,9 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
               ),
               SizedBox(height: 15),
               Text(
-                'Thanks for sharing that.',
+                _heardSomething
+                    ? 'Thanks for sharing that.'
+                    : "We can talk when you're ready.",
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: const Color(0x334542EB),
@@ -842,11 +885,9 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                           ),
                           Transform.scale(
                             scale: _pulseAnimation.value * 0.98,
-                            child: Image.asset(
-                              "assets/dea_png/Popup_Speaking.png",
-                              width: 110,
-                              height: 110,
-                              fit: BoxFit.fill,
+                            child: const NowliiAvatar(
+                              size: 110,
+                              pose: CompanionPose.speaking,
                             ),
                           ),
                         ],
@@ -941,7 +982,7 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                 child: Row(
                   children: [
                     GestureDetector(
-                      onTap: () => Navigator.pop(context),
+                      onTap: _dismissVoiceCheck,
                       child: Container(
                         width: 32,
                         height: 32,
@@ -1009,12 +1050,7 @@ class _PopupSpeakingState extends State<PopupSpeaking> with TickerProviderStateM
                           ],
                         ),
                       ),
-                      Image.asset(
-                        "assets/dea_png/Popup_Speaking.png",
-                        width: 110,
-                        height: 110,
-                        fit: BoxFit.fill,
-                      ),
+                      const NowliiAvatar(size: 110, pose: CompanionPose.speaking),
                     ],
                   ),
                 ),

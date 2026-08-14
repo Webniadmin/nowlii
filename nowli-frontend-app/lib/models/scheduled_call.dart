@@ -1,3 +1,5 @@
+import 'package:nowlii/services/api_date.dart';
+
 /// A call the user planned by turning on "Enable call" on a quest.
 ///
 /// Mirrors `ScheduledCall` in the Django `voice_calls` app. `status` is the status the
@@ -30,14 +32,25 @@ class ScheduledCall {
   });
 
   factory ScheduledCall.fromJson(Map<String, dynamic> json) {
-    // The API sends an offset-bearing ISO-8601 instant; toLocal() puts it on the device's
-    // clock, which is the only clock the reminder and the quest card care about.
-    final parsed = DateTime.parse(json['scheduled_for'] as String).toLocal();
+    // Put the instant on the device's clock — the only clock the reminder and the quest
+    // card care about.
+    //
+    // This used to be a bare `DateTime.parse`, on the assumption that the API sent
+    // ISO-8601. It did not: the project-wide DRF DATETIME_FORMAT produced
+    // "02-08-2026 18:00:00", so this threw for every row, the service caught it and
+    // returned an empty list, and planned calls silently did not exist. See parseApiDate.
+    final parsed = parseApiDate(json['scheduled_for']);
+    if (parsed == null) {
+      throw FormatException(
+        'Unparseable scheduled_for: ${json['scheduled_for']}',
+      );
+    }
     return ScheduledCall(
       id: json['id'] as int,
       questId: json['quest_id'] as int?,
       questTitle: (json['quest_title'] ?? '') as String,
       scheduledFor: parsed,
+      // A DateField, which DRF still renders as plain ISO ("2026-08-02").
       localDate: DateTime.parse(json['local_date'] as String),
       status: (json['status'] ?? 'pending') as String,
       callId: json['call_id'] as int?,

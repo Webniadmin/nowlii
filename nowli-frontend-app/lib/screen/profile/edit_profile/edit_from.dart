@@ -87,10 +87,16 @@ class _EditFromState extends State<EditFrom> {
     // Get selected avatar option
     final selectedOption = avatarOptions[selectedIndex];
 
-    // Update profile with avatar URL and nowlii name
+    // The companion is chosen by ID, not by its picture.
+    //
+    // This used to send `avatar_logo` (a URL) and `nowlii_name`, both of which are
+    // **read-only** on the backend serializer — it derives them from `predefined_option`.
+    // So the request returned 200, the server discarded both fields, and the screen
+    // announced "Avatar updated successfully!" while nothing had changed. Picking a new
+    // companion also carries its voice (`Profile.save` adopts it), so sending the wrong
+    // field silently kept the old voice too.
     final success = await _profileController.updateProfile(
-      avatarLogo: selectedOption.avatarLogo,
-      nowliiName: selectedOption.name,
+      predefinedOption: selectedOption.id,
     );
 
     setState(() => _isLoading = false);
@@ -255,7 +261,12 @@ class _EditFromState extends State<EditFrom> {
                     });
                   },
                   child: Container(
-                    width: 335,
+                    // Same as the Update button on the rename screen: 335 is the
+                    // design width at 375, so on a 320 screen it was clamped to
+                    // the full width and lost its inset entirely. A margin keeps
+                    // the design measurement where the design applies.
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(horizontal: 20),
                     height: 80,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 40,

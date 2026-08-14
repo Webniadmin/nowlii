@@ -215,7 +215,17 @@ class AccessGateTests(APITestCase):
     """The paywall itself: trial → full app, expired trial → 402, purchase → back in."""
 
     # One protected endpoint per gated app.
-    GATED = ["/api/quests/", "/api/insights/", "/api/voice-calls/quota/", "/api/subtasks/"]
+    # Shut on every method once the trial is over: each of these costs us money per call.
+    GATED = ["/api/voice-calls/quota/"]
+
+    # A lapsed user keeps reading their own records and loses the ability to add to them,
+    # so these answer GET and refuse writes. See permissions.HasProAccessOrReadOnly.
+    READ_ONLY = [
+        "/api/quests/",
+        "/api/insights/",
+        "/api/subtasks/",
+        "/api/voice-calls/summaries/",   # receipts of calls already had
+    ]
 
     def setUp(self):
         self.u = User.objects.create_user(username="gate", password="x")
@@ -241,7 +251,7 @@ class AccessGateTests(APITestCase):
         sub.save(update_fields=["trial_started_at", "status", "updated_at"])
 
     def test_new_user_can_use_the_app_during_the_trial(self):
-        for url in self.GATED:
+        for url in self.GATED + self.READ_ONLY:
             with self.subTest(url=url):
                 self.assertNotEqual(self.client.get(url).status_code, 402)
 
@@ -251,6 +261,30 @@ class AccessGateTests(APITestCase):
         for url in self.GATED:
             with self.subTest(url=url):
                 r = self.client.get(url)
+                self.assertEqual(r.status_code, 402)
+                self.assertEqual(r.data["detail"].code, "subscription_required")
+
+    def test_expired_trial_still_lets_the_user_read_their_own_records(self):
+        """Lapsing pauses the account; it does not confiscate what is already in it."""
+        self.client.get("/api/subscriptions/me/")
+        self._expire_trial()
+        for url in self.READ_ONLY + ["/api/quests/streak/"]:
+            with self.subTest(url=url):
+                self.assertNotEqual(self.client.get(url).status_code, 402)
+
+    def test_expired_trial_blocks_writing_to_the_records_it_lets_them_read(self):
+        """The read-only opening must not become a way to keep using the app for free."""
+        self.client.get("/api/subscriptions/me/")
+        self._expire_trial()
+        writes = [
+            ("post", "/api/quests/"),
+            ("post", "/api/subtasks/"),
+            ("delete", "/api/quests/bulk-delete/"),
+            ("post", "/api/insights/rest-days/"),
+        ]
+        for method, url in writes:
+            with self.subTest(url=url, method=method):
+                r = getattr(self.client, method)(url, {}, format="json")
                 self.assertEqual(r.status_code, 402)
                 self.assertEqual(r.data["detail"].code, "subscription_required")
 
@@ -266,11 +300,14 @@ class AccessGateTests(APITestCase):
     def test_subscribing_restores_access(self):
         self.client.get("/api/subscriptions/me/")
         self._expire_trial()
-        self.assertEqual(self.client.get("/api/quests/").status_code, 402)
+        # Probed with a write: reading quests survives a lapse, creating one does not.
+        self.assertEqual(self.client.post("/api/quests/", {}, format="json").status_code, 402)
 
         self.client.post("/api/subscriptions/activate/")
         self._next_request()
-        self.assertNotEqual(self.client.get("/api/quests/").status_code, 402)
+        self.assertNotEqual(
+            self.client.post("/api/quests/", {}, format="json").status_code, 402
+        )
 
     def test_unauthenticated_gets_401_not_402(self):
         """Not-logged-in must read as 'log in', never as 'pay us'."""
@@ -281,17 +318,212 @@ class AccessGateTests(APITestCase):
     def test_kill_switch_opens_the_app(self):
         self.client.get("/api/subscriptions/me/")
         self._expire_trial()
-        self.assertNotEqual(self.client.get("/api/quests/").status_code, 402)
+        # A write, not a read: GET survives a lapse for everyone now, so reading would pass
+        # this assertion even if the bypass were broken.
+        self.assertNotEqual(
+            self.client.post("/api/quests/", {}, format="json").status_code, 402
+        )
 
     @override_settings(SUBSCRIPTION_UNLIMITED_USERS=["gate"])
     def test_allowlisted_test_account_bypasses_the_gate(self):
         self.client.get("/api/subscriptions/me/")
         self._expire_trial()
-        self.assertNotEqual(self.client.get("/api/quests/").status_code, 402)
+        # A write, not a read: GET survives a lapse for everyone now, so reading would pass
+        # this assertion even if the bypass were broken.
+        self.assertNotEqual(
+            self.client.post("/api/quests/", {}, format="json").status_code, 402
+        )
 
     def test_staff_bypasses_the_gate(self):
         self.u.is_staff = True
         self.u.save()
         self.client.get("/api/subscriptions/me/")
         self._expire_trial()
-        self.assertNotEqual(self.client.get("/api/quests/").status_code, 402)
+        # A write, not a read: GET survives a lapse for everyone now, so reading would pass
+        # this assertion even if the bypass were broken.
+        self.assertNotEqual(
+            self.client.post("/api/quests/", {}, format="json").status_code, 402
+        )
+
+
+class StepDownTests(APITestCase):
+    """The price ladder is four separate store products and neither store lets a server
+    move a subscriber between them. Everything here is about that gap: noticing it, not
+    inventing it, and not nagging people it does not apply to.
+    """
+
+    def _sub(self, months_ago, product, platform="google"):
+        u = User.objects.create_user(username=f"step{months_ago}{product}", password="x")
+        return Subscription.objects.create(
+            user=u,
+            started_at=date(2026, 1, 10),
+            status=Subscription.Status.ACTIVE,
+            platform=platform,
+            store_product_id=product,
+        )
+
+    def test_product_matches_the_schedule(self):
+        self.assertEqual(services.store_product_for_month(1, "google"), "spark")
+        self.assertEqual(services.store_product_for_month(4, "google"), "rhythm")
+        self.assertEqual(services.store_product_for_month(7, "google"), "independence")
+        self.assertEqual(services.store_product_for_month(12, "google"), "release")
+        self.assertEqual(services.store_product_for_month(4, "apple"), "com.nowlii.pro.rhythm")
+        # Nothing to sell past the ladder.
+        self.assertEqual(services.store_product_for_month(13, "google"), "")
+
+    def test_no_step_while_on_the_right_rung(self):
+        sub = self._sub(0, "spark")
+        due = services.step_down_due(sub, date(2026, 2, 1))   # still month 1
+        self.assertFalse(due["due"])
+
+    def test_a_step_is_due_once_the_month_moves_on(self):
+        sub = self._sub(0, "spark")
+        due = services.step_down_due(sub, date(2026, 4, 10))  # month 4 → tier2
+        self.assertTrue(due["due"])
+        self.assertEqual(due["from_product"], "spark")
+        self.assertEqual(due["to_product"], "rhythm")
+        self.assertEqual(due["to_price"], 14.99)
+
+    def test_a_skipped_rung_goes_straight_to_the_right_one(self):
+        """Someone who did not open the app for six months should not be walked down one
+        rung at a time — they should land on what they should be paying now."""
+        sub = self._sub(0, "spark")
+        due = services.step_down_due(sub, date(2026, 10, 10))  # month 10 → tier4
+        self.assertEqual(due["to_product"], "release")
+
+    def test_past_the_ladder_the_answer_is_cancel_not_switch(self):
+        sub = self._sub(0, "release")
+        due = services.step_down_due(sub, date(2027, 2, 10))   # month 14
+        self.assertFalse(due["due"])
+        self.assertTrue(due["cancel"])
+        self.assertEqual(due["to_product"], "")
+
+    def test_nothing_left_to_cancel_is_not_a_pending_action(self):
+        sub = self._sub(0, "")
+        sub.store_product_id = ""
+        due = services.step_down_due(sub, date(2027, 2, 10))
+        self.assertFalse(due["cancel"])
+
+    def test_a_trial_user_is_never_asked_to_switch(self):
+        u = User.objects.create_user(username="steptrial", password="x")
+        sub = Subscription.objects.create(
+            user=u, started_at=None, trial_started_at=date(2026, 1, 10),
+            status=Subscription.Status.TRIAL, platform=Subscription.Platform.GOOGLE,
+        )
+        self.assertFalse(services.step_down_due(sub, date(2026, 6, 1))["due"])
+
+    def test_mock_subscriptions_are_left_alone(self):
+        """Mock is the test-only platform; there is no store product to move."""
+        sub = self._sub(0, "spark", platform="mock")
+        self.assertFalse(services.step_down_due(sub, date(2026, 6, 1))["due"])
+
+    def test_the_gap_is_recorded_and_then_cleared(self):
+        sub = self._sub(0, "spark")
+        services.sync_step_down_state(sub, date(2026, 4, 10))
+        sub.refresh_from_db()
+        self.assertEqual(sub.step_down_pending_since, date(2026, 4, 10))
+
+        # Seen again later: the date must stay the FIRST day it was noticed, because that
+        # is what says how long they have been overpaying.
+        services.sync_step_down_state(sub, date(2026, 5, 10))
+        sub.refresh_from_db()
+        self.assertEqual(sub.step_down_pending_since, date(2026, 4, 10))
+
+        # The app finally switched them.
+        sub.store_product_id = "rhythm"
+        sub.save(update_fields=["store_product_id"])
+        services.sync_step_down_state(sub, date(2026, 5, 11))
+        sub.refresh_from_db()
+        self.assertIsNone(sub.step_down_pending_since)
+
+
+class ConfirmSwitchEndpointTests(APITestCase):
+    """The device is the only thing that can move a subscriber down the ladder, so this is
+    how the truth gets back to the backend afterwards."""
+
+    def setUp(self):
+        self.u = User.objects.create_user(username="switcher", password="x")
+        self.client.force_authenticate(user=self.u)
+        self.sub = Subscription.objects.create(
+            user=self.u,
+            started_at=date.today() - timedelta(days=100),   # ~month 4 → tier2 is due
+            status=Subscription.Status.ACTIVE,
+            platform=Subscription.Platform.GOOGLE,
+            store_product_id="spark",
+        )
+
+    def test_me_reports_the_step_as_due(self):
+        body = self.client.get("/api/subscriptions/me/").data
+        self.assertTrue(body["step_down"]["due"])
+        self.assertEqual(body["step_down"]["to_product"], "rhythm")
+
+    def test_confirming_the_switch_closes_the_gap(self):
+        response = self.client.post(
+            "/api/subscriptions/confirm-switch/", {"store_product_id": "rhythm"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["step_down"]["due"])
+
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.store_product_id, "rhythm")
+        self.assertIsNone(self.sub.step_down_pending_since)
+
+    def test_reading_the_status_records_that_they_are_overpaying(self):
+        self.client.get("/api/subscriptions/me/")
+        self.sub.refresh_from_db()
+        self.assertIsNotNone(self.sub.step_down_pending_since)
+
+    def test_an_unknown_product_is_rejected(self):
+        response = self.client.post(
+            "/api/subscriptions/confirm-switch/", {"store_product_id": "platinum"}, format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.store_product_id, "spark")
+
+    def test_a_missing_product_is_rejected(self):
+        self.assertEqual(
+            self.client.post("/api/subscriptions/confirm-switch/", {}, format="json").status_code,
+            400,
+        )
+
+    def test_apple_products_are_accepted_too(self):
+        self.sub.platform = Subscription.Platform.APPLE
+        self.sub.store_product_id = "com.nowlii.pro.spark"
+        self.sub.save()
+        response = self.client.post(
+            "/api/subscriptions/confirm-switch/",
+            {"store_product_id": "com.nowlii.pro.rhythm"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["step_down"]["due"])
+
+
+class StageNameTests(APITestCase):
+    """The paywall labels each step. The names live in the backend so the app cannot end up
+    holding a copy that drifts from the schedule it describes."""
+
+    def setUp(self):
+        self.u = User.objects.create_user(username="stages", password="x")
+        self.client.force_authenticate(user=self.u)
+
+    def test_the_plan_carries_the_design_names(self):
+        body = self.client.get("/api/subscriptions/plan/").data
+        self.assertEqual([p["stage"] for p in body["phases"]],
+                         ["Spark", "Rhythm", "Independence", "Release"])
+        self.assertEqual(body["graduated_stage"], "Graduated")
+
+    def test_the_free_stage_is_graduated(self):
+        self.assertEqual(services.phase_for_month(13)["stage"], "Graduated")
+
+    def test_every_paid_phase_has_a_product_on_both_stores(self):
+        """A phase with no product is a phase nobody can be billed for."""
+        for phase in config.PHASES:
+            self.assertTrue(phase["google_base_plan"], phase)
+            self.assertTrue(phase["apple_product"], phase)
+
+    def test_product_ids_are_unique(self):
+        google = [p["google_base_plan"] for p in config.PHASES]
+        apple = [p["apple_product"] for p in config.PHASES]
+        self.assertEqual(len(set(google)), len(google))
+        self.assertEqual(len(set(apple)), len(apple))

@@ -7,6 +7,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/themes/text_styles.dart' show AppsTextStyles;
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 import 'package:nowlii/services/insights_service.dart';
+import 'package:nowlii/services/month_grid.dart';
 import 'package:nowlii/services/personal_notes_service.dart';
 import 'package:nowlii/models/insights_models.dart';
 
@@ -148,9 +149,10 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildAIInsights(),
-                  _buildCallHistoryEntry(),
                   _buildTopEmotions(),
-                  _buildWhenFeelingLow(),
+                  // Keyed so the receipt library can send the user straight here — that
+                  // screen's "See what keeps coming back" promises this aggregate.
+                  Container(key: _lowMoodKey, child: _buildWhenFeelingLow()),
                   _buildWeeklyReflection(),
                   _buildMonthlyOverview(),
                   _buildMilestonesAndAchievements(),
@@ -163,64 +165,29 @@ class _InsightsScreenState extends State<InsightsScreen> {
     );
   }
 
-  // ── Call history entry ────────────────────────────────────────────────────
-  // Tappable card that opens the full list of saved voice-call summaries so the user can
-  // look back and see how they've been progressing over time.
-  Widget _buildCallHistoryEntry() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () => context.push(AppRoutespath.callHistory),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFFEDECFF),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFC3DBFF)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4542EB),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.history, color: Colors.white, size: 26),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Call history',
-                      style: TextStyle(
-                        color: const Color(0xFF011F54),
-                        fontSize: 16,
-                        fontFamily: 'Work Sans',
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Look back on your past calls and progress',
-                      style: TextStyle(
-                        color: const Color(0xFF4C586E),
-                        fontSize: 13,
-                        fontFamily: 'Work Sans',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right, color: Color(0xFF4542EB)),
-            ],
-          ),
-        ),
-      ),
+  // ── Receipt library ───────────────────────────────────────────────────────
+  /// Anchors the "When feeling low, you often say…" section so the receipt library can
+  /// send the user straight to it.
+  final GlobalKey _lowMoodKey = GlobalKey();
+
+  /// Opens the receipt library. It pops with `true` when the user tapped "See what keeps
+  /// coming back", which is a request to be shown the aggregate of those repeated words —
+  /// the section that already lives on this screen.
+  Future<void> _openReceipts() async {
+    final wantsPatterns = await context.push<bool>(AppRoutespath.receipts);
+    if (wantsPatterns != true || !mounted) return;
+
+    // Wait for this screen to be laid out again before measuring the target.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    final target = _lowMoodKey.currentContext;
+    if (target == null) return;
+    await Scrollable.ensureVisible(
+      target,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+      alignment: 0.1,
     );
   }
 
@@ -500,22 +467,29 @@ class _InsightsScreenState extends State<InsightsScreen> {
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: koro,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.auto_awesome,
-                  color: Colors.white,
-                  size: 24,
+              Assets.svgIcons.insightsSparkle.svg(width: 32, height: 32),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Your Insights',
+                  style: AppsTextStyles.extraBold32Centered,
                 ),
               ),
-              const SizedBox(width: 12),
-              Text(
-                'Your AI insights',
-                style: AppsTextStyles.extraBold32Centered,
+              const SizedBox(width: 8),
+              // The receipt library — every past call, kept as its own receipt.
+              GestureDetector(
+                onTap: _openReceipts,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF4542EB),
+                    shape: BoxShape.circle,
+                  ),
+                  child:
+                      Assets.svgIcons.receiptIcon.svg(width: 18, height: 18),
+                ),
               ),
             ],
           ),
@@ -549,12 +523,37 @@ class _InsightsScreenState extends State<InsightsScreen> {
                   style: TextStyle(fontSize: 14, color: Color(0xFF1A1A3E)),
                 ),
                 const SizedBox(height: 16),
-                ...monthly.mostCompletedQuests.take(3).map((quest) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _buildQuestItem(quest.task),
-                  );
-                }).toList(),
+                ...() {
+                  // "The quests you tend to finish the most" — so only the ones actually
+                  // finished more than once. A quest done a single time is not a habit, and
+                  // listing it under that sentence makes the card say something untrue.
+                  // The backend already caps its list at three; capped again here so the
+                  // section cannot grow if that ever changes.
+                  final repeated = monthly.mostCompletedQuests
+                      .where((q) => q.completedCount > 1)
+                      .take(3)
+                      .toList();
+
+                  if (repeated.isEmpty) {
+                    return [
+                      Text(
+                        'Nothing yet — finish a quest more than once and it shows up here.',
+                        style: GoogleFonts.workSans(
+                          color: const Color(0xFF4C586E),
+                          fontSize: 14,
+                          height: 1.4,
+                        ),
+                      ),
+                    ];
+                  }
+
+                  return repeated
+                      .map((quest) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildQuestItem(quest.task),
+                          ))
+                      .toList();
+                }(),
               ],
             ),
           ),
@@ -584,9 +583,12 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 const SizedBox(height: 16),
                 Row(
                   children: [
+                    // Both boxes: padding down from 20 to 12, which is what actually buys
+                    // the width. "Wednesday" — the longest weekday — was wrapping onto a
+                    // second line and pushing the two boxes out of step.
                     Expanded(
                       child: Container(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: koro,
                           borderRadius: BorderRadius.circular(16),
@@ -605,16 +607,25 @@ class _InsightsScreenState extends State<InsightsScreen> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              monthly.mostProductiveDay.isNotEmpty
-                                  ? monthly.mostProductiveDay
-                                  : '—',
-                              style: GoogleFonts.workSans(
-                                color: const Color(0xFFFFFDF7),
-                                fontSize: 28,
-                                fontWeight: FontWeight.w800,
-                                height: 1.20,
-                                letterSpacing: -1,
+                            // scaleDown rather than a smaller fixed size: it keeps the
+                            // design's 26px for "Monday" and only shrinks for the long
+                            // ones — and it holds for a translated weekday too.
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                monthly.mostProductiveDay.isNotEmpty
+                                    ? monthly.mostProductiveDay
+                                    : '—',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: GoogleFonts.workSans(
+                                  color: const Color(0xFFFFFDF7),
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.20,
+                                  letterSpacing: -1,
+                                ),
                               ),
                             ),
                           ],
@@ -624,7 +635,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Container(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: const Color(0xFFD4E7FF),
                           borderRadius: BorderRadius.circular(16),
@@ -643,16 +654,22 @@ class _InsightsScreenState extends State<InsightsScreen> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              monthly.mostProductiveHour.isNotEmpty
-                                  ? monthly.mostProductiveHour
-                                  : '—',
-                              style: GoogleFonts.workSans(
-                                color: const Color(0xFF4542EB),
-                                fontSize: 32,
-                                fontWeight: FontWeight.w800,
-                                height: 1.20,
-                                letterSpacing: -1,
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                monthly.mostProductiveHour.isNotEmpty
+                                    ? monthly.mostProductiveHour
+                                    : '—',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: GoogleFonts.workSans(
+                                  color: const Color(0xFF4542EB),
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.20,
+                                  letterSpacing: -1,
+                                ),
                               ),
                             ),
                           ],
@@ -682,31 +699,39 @@ class _InsightsScreenState extends State<InsightsScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.check_circle,
-                color: const Color(0xFF4CAF50),
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                title,
-                style: GoogleFonts.workSans(
-                  color: const Color(0xFF011F54), // Text-text-default
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  height: 1.40,
-                  letterSpacing: -0.90,
+          Expanded(
+            child: Row(
+              children: [
+                Icon(
+                  Icons.check_circle,
+                  color: const Color(0xFF4CAF50),
+                  size: 24,
                 ),
-              ),
-            ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.workSans(
+                      color: const Color(0xFF011F54), // Text-text-default
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      height: 1.40,
+                      letterSpacing: -0.90,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          Image.asset(
-            Assets.svgIcons.buttonCalendarComplate.path,
-            height: 32,
-            width: 32,
-          ),
+          // The repeat badge reads as a button and does nothing. Kept, not deleted, until
+          // it either gets a tap target or a clearer role.
+          // Image.asset(
+          //   Assets.svgIcons.buttonCalendarComplate.path,
+          //   height: 32,
+          //   width: 32,
+          // ),
         ],
       ),
     );
@@ -714,8 +739,11 @@ class _InsightsScreenState extends State<InsightsScreen> {
 
   Widget _buildPreferredQuestTypes() {
     final preferredTypes = _insightsData!.monthly.preferredQuestTypes;
-    final softStepsPct = preferredTypes.softStepsPct.toStringAsFixed(1);
-    final powerMovesPct = preferredTypes.powerMovesPct.toStringAsFixed(1);
+    // Whole percentages, as the design shows them. At one decimal "100.0%" is wider than
+    // the column it sits in and was being clipped to "100.0" — which reads as a number
+    // with the unit missing rather than a layout that ran out of room.
+    final softStepsPct = preferredTypes.softStepsPct.toStringAsFixed(0);
+    final powerMovesPct = preferredTypes.powerMovesPct.toStringAsFixed(0);
     
     // Calculate width factor for gradient (0.0 to 1.0)
     final softStepsWidthFactor = preferredTypes.softStepsPct / 100;
@@ -1560,7 +1588,11 @@ class _InsightsScreenState extends State<InsightsScreen> {
   Widget _buildCalendarGrid() {
     final calendarStatuses = _getCalendarStatuses();
     final calendarDays = _insightsData?.monthly.calendar ?? [];
-    
+
+    // The 1st of the month has to start in its own weekday's column, or every mark in the
+    // grid sits under the wrong day name.
+    final cells = monthGridCells([for (final d in calendarDays) d.date]);
+
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -1569,20 +1601,21 @@ class _InsightsScreenState extends State<InsightsScreen> {
         mainAxisSpacing: 8,
         crossAxisSpacing: 8,
       ),
-      itemCount: calendarDays.length,
+      itemCount: cells.length,
       itemBuilder: (context, index) {
-        if (index >= calendarStatuses.length) {
-          return _buildDayCircle(
-            DayStatus.empty,
-            index + 1,
-          );
-        }
-        
-        // Extract day number from date (e.g., "2026-04-16" -> 16)
-        final dayNumber = int.tryParse(calendarDays[index].date.split('-').last) ?? (index + 1);
-        
+        final dayIndex = cells[index];
+        // A blank before the 1st: not a day with nothing on it, so it gets no circle.
+        if (dayIndex == null) return const SizedBox.shrink();
+
+        final dayNumber = dayOfMonth(
+          calendarDays[dayIndex].date,
+          fallbackIndex: dayIndex,
+        );
+
         return _buildDayCircle(
-          calendarStatuses[index],
+          dayIndex < calendarStatuses.length
+              ? calendarStatuses[dayIndex]
+              : DayStatus.empty,
           dayNumber,
         );
       },
@@ -1631,9 +1664,19 @@ class _InsightsScreenState extends State<InsightsScreen> {
               : null,
         ),
         child: Center(
+          // A day that carries no mark prints its date instead. Without a number
+          // somewhere in the grid there is nothing to read a ✓ against.
           child: imagePath != null
               ? Image.asset(imagePath, width: 20, height: 20)
-              : null,
+              : Text(
+                  '$day',
+                  style: GoogleFonts.workSans(
+                    color: const Color(0xFFADB2BC),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    height: 1.0,
+                  ),
+                ),
         ),
       ),
     );

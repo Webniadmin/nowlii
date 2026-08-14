@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -18,8 +19,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nowlii/services/profile_service.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:intl/intl.dart';
+import 'package:nowlii/models/call_summary_history.dart';
+import 'package:nowlii/models/scheduled_call.dart';
+import 'package:nowlii/services/call_reminder_service.dart';
+import 'package:nowlii/services/completion_banner.dart';
+import 'package:nowlii/services/home_format.dart';
 import 'package:nowlii/services/scheduled_call_state.dart';
+import 'package:nowlii/services/spark_state.dart';
+import 'package:nowlii/services/spark_state_store.dart';
 import 'package:nowlii/services/voice_call_service.dart';
+import 'package:nowlii/screen/home/sparks/out_of_sparks_card.dart';
+import 'package:nowlii/widget/lapsed_reminder.dart';
+import 'dart:async';
 import 'dart:math';
 
 class HomeScreen extends StatefulWidget {
@@ -38,9 +49,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isLoadingStreak = true;
   List<Quest> _quests = [];
   bool _isLoadingQuests = true;
-  Map<String, int> _questCountByDate = {}; // Date-wise quest count
-  DateTime _selectedDate = DateTime.now(); // Currently selected date
-  List<DateTime> _availableDates = []; // Dates that have quests
+  /// Home now shows today only — the other days live in the Quests tab.
+  final DateTime _selectedDate = DateTime.now();
+
+  /// The most recent call that named a next step, quoted back on the hero card.
+  CallSummaryHistoryItem? _lastSaid;
+
+  /// The user's companion, for copy that addresses them by name. "Fuzzy" was written into
+  /// these notifications from the mock, so every user was congratulated by a companion
+  /// they had not chosen.
+  String get _companionName {
+    final name = _profileData?.companionName.trim() ?? '';
+    return name.isEmpty ? 'Nowlii' : name;
+  }
 
   @override
   void initState() {
@@ -52,8 +73,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _loadProfile();
     _loadStreak();
     _loadQuests();
-    _loadAllQuestsForDates();
+    _loadLastSaid();
     _checkAndShowOnboarding();
+    // How many sparks are left decides whether this screen offers a call at all.
+    SparkStateStore.instance.refresh();
+    // A lapsed plan no longer closes the app, so nothing else here would say it has ended.
+    // Once per launch, on the screen they actually land on.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) maybeShowLapsedReminder(context);
+    });
   }
 
   @override
@@ -69,6 +97,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       // Reload profile when app comes to foreground
       _loadProfile();
+      // The allowance resets at midnight, so an app left open overnight would otherwise
+      // still be showing yesterday's "that's enough for today".
+      SparkStateStore.instance.refresh();
     }
   }
 
@@ -112,62 +143,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _loadQuestsForDate(DateTime date) async {
-    if (mounted) {
-      setState(() {
-        _selectedDate = date;
-        _isLoadingQuests = true;
-      });
-    }
-    
-    final questService = QuestService();
-    final quests = await questService.fetchQuestsByDate(date);
-    
-    if (mounted) {
-      setState(() {
-        _quests = quests;
-        _isLoadingQuests = false;
-      });
-    }
-  }
-
-  Future<void> _loadAllQuestsForDates() async {
-    final questService = QuestService();
-    final allQuests = await questService.fetchAllQuests();
-    
-    if (mounted) {
-      // Group quests by date
-      Map<String, int> countByDate = {};
-      Set<DateTime> uniqueDates = {};
-      
-      for (var quest in allQuests) {
-        final dateStr = quest.selectADate;
-        countByDate[dateStr] = (countByDate[dateStr] ?? 0) + 1;
-        
-        // Parse date and add to unique dates
-        try {
-          final date = DateTime.parse(dateStr);
-          uniqueDates.add(DateTime(date.year, date.month, date.day));
-        } catch (e) {
-          print('Error parsing date: $dateStr');
-        }
+  /// The newest saved call that actually named a next step, for the hero quote.
+  ///
+  /// Skips calls that produced no next step rather than quoting an empty string — a short
+  /// call legitimately leaves nothing to say back.
+  Future<void> _loadLastSaid() async {
+    final summaries = await VoiceCallService().getSummaries();
+    if (!mounted) return;
+    CallSummaryHistoryItem? found;
+    for (final s in summaries) {
+      if (s.nextStep.trim().isNotEmpty) {
+        found = s;
+        break;
       }
-      
-      // Sort dates
-      final sortedDates = uniqueDates.toList()..sort();
-      
-      // Always include today if not already there
-      final today = DateTime.now();
-      final todayDate = DateTime(today.year, today.month, today.day);
-      if (!sortedDates.contains(todayDate)) {
-        sortedDates.insert(0, todayDate);
-      }
-      
-      setState(() {
-        _questCountByDate = countByDate;
-        _availableDates = sortedDates;
-      });
     }
+    setState(() => _lastSaid = found);
   }
 
   Future<void> _checkAndShowOnboarding() async {
@@ -218,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           context,
           NotificationData(
             type: NotificationType.success,
-            title: 'Fuzzy\'s proud of you',
+            title: '$_companionName\'s proud of you',
             subtitle: 'One chat at a time, you\'re getting stronger',
             buttonText: 'See progress',
             displayDuration: const Duration(seconds: 5),
@@ -237,9 +227,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           context,
           NotificationData(
             type: NotificationType.questSuggestion,
-            title: 'Wake up or wind down with Nowlli! 😴🌞',
+            title: 'Wake up or wind down with Nowlii! 😴🌞',
             subtitle:
-                'You can schedule Nowlli for wake-up or bedtime calls! Just create a task, turn on repeat, and Nowlli will call you 10 minutes before — to help you wake up or drift off peacefully. 💕',
+                'You can schedule Nowlii for wake-up or bedtime calls! Just create a task, turn on repeat, and Nowlii will call you 10 minutes before — to help you wake up or drift off peacefully. 💕',
             buttonText: 'Add quest',
             displayDuration: const Duration(seconds: 5),
             onButtonPressed: () {
@@ -271,7 +261,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
-  void _showCompletionDialog() {
+  void _showCompletionDialog({required String title, required String badge}) {
     if (!mounted) return;
     final overlay = Overlay.of(context);
     late OverlayEntry overlayEntry;
@@ -292,7 +282,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
               );
             },
-            child: const CompletionDialog(),
+            child: CompletionDialog(title: title, badge: badge),
           ),
         ),
       ),
@@ -309,9 +299,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: const Color(0xFFFFFEF8),
       body: Stack(
         children: [
+          // Decorative bloom bleeding off the top-left corner, behind everything.
+          Positioned(
+            left: -214,
+            top: -364,
+            child: IgnorePointer(
+              child: Transform.rotate(
+                angle: 80.73 * pi / 180,
+                child: Assets.svgIcons.homeFlower.svg(width: 431, height: 431),
+              ),
+            ),
+          ),
+
           // ── Main scrollable content with RefreshIndicator ──
           RefreshIndicator(
             onRefresh: () async {
@@ -320,7 +322,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 _loadProfile(),
                 _loadStreak(),
                 _loadQuests(),
-                _loadAllQuestsForDates(),
+                _loadLastSaid(),
+                SparkStateStore.instance.refresh(),
               ]);
             },
             color: const Color(0xFF4542EB),
@@ -328,37 +331,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             child: SingleChildScrollView(
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(), // Enable pull-to-refresh even when content is short
-              child: Container(
-                decoration: const BoxDecoration(
-                  image: DecorationImage(
-                    image: AssetImage(
-                      'assets/svg_images/upscalemedia-transformed.png',
-                    ),
-                    fit: BoxFit.cover,
-                    alignment: Alignment.center,
-                  ),
-                ),
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.all(22.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 20),
-                        _buildHeader(),
-                        const SizedBox(height: 24),
-                        _buildProgressCard(),
-                        const SizedBox(height: 24),
-                        _buildDateSection(),
-                        const SizedBox(height: 24),
-                        _buildTodaysPlanHeader(),
-                        const SizedBox(height: 16),
-                        _buildTaskList(),
-                        const SizedBox(height: 24),
-                        _buildSwipeButton(),
-                        const SizedBox(height: 40),
-                      ],
-                    ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 20),
+                      _buildHeader(),
+                      const SizedBox(height: 16),
+                      // Stays at the top, above the restored hero card.
+                      _buildSparksBar(),
+                      const SizedBox(height: 16),
+                      _buildReadyCard(),
+                      const SizedBox(height: 32),
+                      _buildTodaysPlanHeader(),
+                      const SizedBox(height: 16),
+                      _buildQuestList(),
+                      const SizedBox(height: 24),
+                      _buildSwipeButton(),
+                      const SizedBox(height: 40),
+                    ],
                   ),
                 ),
               ),
@@ -446,44 +439,62 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
         ),
         const SizedBox(width: 12),
-        Text(
-          'HI ${(_profileData?.name ?? 'JULIE').toUpperCase()}!',
-          style: TextStyle(
-            color: const Color(0xFF011F54),
-            fontSize: 32,
-            fontFamily: 'Wosker',
-            fontWeight: FontWeight.w400,
-            height: 0.80,
+        // Expanded, and NOT `Flexible` + `Spacer()`: both are flex-1 children, so the
+        // row split the free space evenly between them and the name was clipped to
+        // "HI P…" with half the row standing empty. Expanded takes all the space the
+        // avatar and streak pill leave, which both left-aligns the greeting exactly as
+        // before and keeps a long user-supplied name from overflowing.
+        Expanded(
+          child: Text(
+            // Greet by name once we have one. The old fallback was the mock's "JULIE",
+            // so every user was greeted as someone else until their profile loaded.
+            (_profileData?.name.trim().isNotEmpty ?? false)
+                ? 'HI ${_profileData!.name.trim().toUpperCase()}!'
+                : 'HI THERE!',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: const Color(0xFF011F54),
+              fontSize: 32,
+              fontFamily: 'Wosker',
+              fontWeight: FontWeight.w400,
+              height: 0.80,
+            ),
           ),
         ),
-        const Spacer(),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
+          padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
+          decoration: ShapeDecoration(
             color: const Color(0xFFDFEFFF),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(99),
+              side: const BorderSide(color: Color(0xFFC3DBFF)),
+            ),
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Image.asset(Assets.svgIcons.fire.path, height: 22, width: 22),
-              const SizedBox(width: 6),
+              Assets.svgIcons.homeFire.svg(width: 32, height: 32),
+              const SizedBox(width: 4),
               _isLoadingStreak
                   ? const SizedBox(
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5B7EFF)),
+                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4542EB)),
                       ),
                     )
-                  : Text('$_streakCount', style: AppsTextStyles.fullNameAndEmail),
+                  : Text(
+                      '$_streakCount',
+                      style: GoogleFonts.workSans(
+                        color: const Color(0xFF4542EB),
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                        height: 0.9,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
             ],
           ),
         ),
@@ -491,326 +502,279 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildProgressCard() {
-    final totalTasks = _quests.length;
-    final completedTasks = _quests.where((quest) => quest.taskDone).length;
-    final progress = totalTasks > 0 ? completedTasks / totalTasks : 0.0;
+  /// How many of today's sparks are still available, as pills plus a plain count.
+  ///
+  /// Replaces the old "Ready to make today count?" progress card. It reads from the same
+  /// shared store as the call screen and the swipe button, so the three cannot disagree.
+  Widget _buildSparksBar() {
+    return ValueListenableBuilder<SparkState>(
+      valueListenable: SparkStateStore.instance.state,
+      builder: (context, sparks, _) {
+        // Unlimited accounts have no meaningful number of slots to draw; unknown has no
+        // honest one. Both get the label without the pills.
+        final slots = (sparks.known && !sparks.unlimited) ? sparks.limit : 0;
 
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFD4E3FF), Color(0xFFE8F0FF)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF5B7EFF).withValues(alpha: 0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          decoration: BoxDecoration(
+            color: const Color(0xFFDFEFFF),
+            borderRadius: BorderRadius.circular(12),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
+          child: Row(
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 178,
-                      child: Text(
-                        'Ready to make \n today count?',
-                        style: GoogleFonts.workSans(
-                          color: const Color(0xFF011F54),
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          height: 1.2,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Tiny wins make big shifts.',
-                      style: AppsTextStyles.workSansRegular14,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
+              for (int i = 0; i < slots; i++) ...[
+                Container(
+                  width: 40,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    // Spent slots stay visible so the row keeps its shape and you can see
+                    // what you started the day with.
+                    color: i < sparks.remaining
+                        ? const Color(0xFF4542EB)
+                        : const Color(0x334542EB),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 20),
-              Container(
-                width: 100,
-                height: 100,
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4542EB),
-                  borderRadius: BorderRadius.circular(20),
+                const SizedBox(width: 8),
+              ],
+              Padding(
+                padding: EdgeInsets.only(left: slots > 0 ? 4 : 0),
+                child: Text(
+                  sparksAvailableLabel(
+                    remaining: sparks.remaining,
+                    unlimited: sparks.unlimited,
+                    known: sparks.known,
+                    paused: sparks.paused,
+                  ),
+                  style: GoogleFonts.workSans(
+                    color: const Color(0xFF011F54),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    height: 1.0,
+                  ),
                 ),
-                child: _profileData?.avatarLogo.isNotEmpty == true
-                    ? Image.network(
-                        _profileData!.avatarLogo,
-                        width: 100,
-                        height: 100,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Image.asset(
-                            Assets.svgIcons.avatar.path,
-                            width: 100,
-                            height: 100,
-                            fit: BoxFit.cover,
-                          );
-                        },
-                      )
-                    : Image.asset(
-                        Assets.svgIcons.avatar.path,
-                        width: 100,
-                        height: 100,
-                        fit: BoxFit.cover,
-                      ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            'Todays progress',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.workSans(
-              color: const Color(0xFF011F54),
-              fontSize: 16.sp,
-              fontWeight: FontWeight.w600,
-              height: 1,
-              letterSpacing: -0.50,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            height: 24,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: const Color(0xFFC3DBFF),
-              borderRadius: BorderRadius.circular(25),
-            ),
-            child: Stack(
-              children: [
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 500),
-                      width: constraints.maxWidth * progress,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                          colors: [Color(0xFFDFEFFF), Color(0xFF4542EB)],
-                        ),
-                        borderRadius: BorderRadius.circular(25),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildDateSection() {
-    final now = DateTime.now();
-    
-    // Get day names
-    final List<String> dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    
-    String getDayName(DateTime date) {
-      return dayNames[date.weekday - 1];
-    }
-    
-    String getDateLabel(DateTime date) {
-      final today = DateTime(now.year, now.month, now.day);
-      final tomorrow = today.add(const Duration(days: 1));
-      final dateOnly = DateTime(date.year, date.month, date.day);
-      
-      if (dateOnly == today) {
-        return 'Today';
-      } else if (dateOnly == tomorrow) {
-        return 'Tomorrow';
-      } else {
-        return getDayName(date);
-      }
-    }
-    
-    // Check if date is selected
-    bool isDateSelected(DateTime date) {
-      return DateFormat('yyyy-MM-dd').format(date) == 
-             DateFormat('yyyy-MM-dd').format(_selectedDate);
-    }
-    
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          // Show all available dates
-          for (int i = 0; i < _availableDates.length; i++) ...[
-            GestureDetector(
-              onTap: () => _loadQuestsForDate(_availableDates[i]),
-              child: _buildDateCard(
-                label: getDateLabel(_availableDates[i]),
-                day: _availableDates[i].day,
-                isToday: isDateSelected(_availableDates[i]),
-                hasIndicator: (_questCountByDate[DateFormat('yyyy-MM-dd').format(_availableDates[i])] ?? 0) > 0,
-                indicatorColor: i == 0 ? const Color(0xFF4542EB) : 
-                               i == 1 ? const Color(0xFFFF8F26) : 
-                               const Color(0xFF4542EB),
-              ),
-            ),
-            const SizedBox(width: 12),
-          ],
-          
-          // Plan button
-          GestureDetector(
-            onTap: () async {
-              final result = await context.push(AppRoutespath.createQuestPage);
-              // If quest was created successfully, reload data
-              if (result == true && mounted) {
-                _loadQuests();
-                _loadAllQuestsForDates();
-              }
-            },
-            child: Container(
-              width: 78,
-              height: 84,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF4542EB),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
+  /// The blue hero card: an invitation plus how far today has got.
+  ///
+  /// Restored from the original design. It gives way to the closing card once the day's
+  /// sparks are spent — at that point "ready to make today count?" is the wrong thing to
+  /// ask, and the green card is the designed ending.
+  Widget _buildReadyCard() {
+    return ValueListenableBuilder<SparkState>(
+      valueListenable: SparkStateStore.instance.state,
+      builder: (context, sparks, _) {
+        if (sparks.isSpent) {
+          return OutOfSparksCard(
+            sparks: sparks,
+            nextStep: _lastSaid?.nextStep,
+          );
+        }
+
+        final total = _quests.length;
+        final done = _quests.where((q) => q.taskDone).length;
+        // An empty day has nothing to be a fraction of. The bar keeps its track and simply
+        // does not fill, rather than dividing by zero or implying progress.
+        final progress = total > 0 ? (done / total).clamp(0.0, 1.0) : 0.0;
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFFDFEFFF),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
-                    Icons.add_circle_outline,
-                    color: Color(0xFFFFFDF7),
-                    size: 22,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Ready to make today count?',
+                          style: GoogleFonts.workSans(
+                            color: const Color(0xFF011F54),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            height: 1.2,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Tiny wins make big shifts.',
+                          style: GoogleFonts.workSans(
+                            color: const Color(0xFF4C586E),
+                            fontSize: 14,
+                            height: 1.6,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(width: 16),
+                  Container(
+                    width: 100,
+                    height: 100,
+                    padding: const EdgeInsets.all(9.43),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4542EB),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    // Was a bare Image.network whose error case collapsed to nothing,
+                    // leaving an empty indigo tile whenever S3 was slow or unreachable.
+                    child: const NowliiAvatar(size: 81),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Todays progress',
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF011F54),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  height: 1.0,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+              LayoutBuilder(
+                builder: (context, constraints) => Stack(
+                  children: [
+                    Container(
+                      height: 24,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFC3DBFF),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    Container(
+                      height: 24,
+                      width: progressFillWidth(
+                        progress: progress,
+                        trackWidth: constraints.maxWidth,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFDFEFFF), Color(0xFF4542EB)],
+                        ),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// The last thing the user told their companion, quoted back.
+  ///
+  /// Kept for the moment but no longer in the layout: the restored design leads with the
+  /// hero card above instead.
+  // ignore: unused_element
+  Widget _buildLastSaidCard() {
+    return ValueListenableBuilder<SparkState>(
+      valueListenable: SparkStateStore.instance.state,
+      builder: (context, sparks, _) {
+        if (sparks.isSpent) {
+          return OutOfSparksCard(
+            sparks: sparks,
+            nextStep: _lastSaid?.nextStep,
+          );
+        }
+
+        final said = _lastSaid;
+        // Nothing to quote yet — a new account has no calls behind it, and an empty
+        // bordered card would just be a hole in the layout.
+        if (said == null) return const SizedBox.shrink();
+
+        final when = said.startedAt ?? said.createdAt;
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFEF8),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: const Color(0xFFC3DBFF)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                (when == null ? 'You said' : saidWhenLabel(when)).toUpperCase(),
+                style: GoogleFonts.martianMono(
+                  color: const Color(0xFF4C586E),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 1.32,
+                  height: 1.0,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                '“${said.nextStep.trim()}”',
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF011F54),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w400,
+                  height: 1.35,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Assets.svgIcons.homeCheck.svg(width: 22, height: 22),
+                  const SizedBox(width: 9),
                   Text(
-                    'Plan',
-                    textAlign: TextAlign.center,
+                    'Did it',
                     style: GoogleFonts.workSans(
-                      color: const Color(0xFFFFFDF7),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      height: 1,
+                      color: const Color(0xFF4C586E),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      height: 1.0,
                     ),
                   ),
                 ],
               ),
-            ),
+            ],
           ),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildDateCard({
-    required String label,
-    required int day,
-    required bool isToday,
-    required bool hasIndicator,
-    Color? indicatorColor,
-  }) {
-    return Container(
-      height: 84,
-      width: 78,
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-      decoration: BoxDecoration(
-        color: isToday ? const Color(0xFFDFEFFF) : const Color(0xFFFFFDF7),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isToday ? const Color(0xFF4542EB) : const Color(0xFFC3DBFF),
-          width: isToday ? 2.5 : 1.5,
-        ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.workSans(
-              color: const Color(0xFF011F54),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              height: 1,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '$day',
-            style: GoogleFonts.workSans(
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
-              height: 1,
-              color: const Color(0xFF011F54),
-            ),
-          ),
-          if (hasIndicator) ...[
-            const SizedBox(height: 2),
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: indicatorColor,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ] else ...[
-            const SizedBox(height: 8),
-          ],
-        ],
-      ),
+        );
+      },
     );
   }
 
+  /// "Todays plan" and the way to add to it.
+  ///
+  /// Always today: the day strip is gone from home, and the other days live in the Quests
+  /// tab, so there is no longer another date this could be describing.
   Widget _buildTodaysPlanHeader() {
-    final now = DateTime.now();
-    final isToday = DateFormat('yyyy-MM-dd').format(_selectedDate) == 
-                    DateFormat('yyyy-MM-dd').format(now);
-    final isTomorrow = DateFormat('yyyy-MM-dd').format(_selectedDate) == 
-                       DateFormat('yyyy-MM-dd').format(now.add(const Duration(days: 1)));
-    
-    String headerText;
-    if (isToday) {
-      headerText = 'Todays plan';
-    } else if (isTomorrow) {
-      headerText = 'Tomorrows plan';
-    } else {
-      headerText = '${DateFormat('MMM d').format(_selectedDate)}\'s plan';
-    }
-    
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Flexible(
           child: FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
-              headerText,
-              textAlign: TextAlign.center,
+              'Todays plan',
               style: GoogleFonts.workSans(
                 color: const Color(0xFF011F54),
                 fontSize: 32,
@@ -821,39 +785,41 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
         ),
-        const SizedBox(width: 8),
-        Material(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(24),
+        const SizedBox(width: 16),
+        Expanded(
+          child: GestureDetector(
             onTap: () async {
               final result = await context.push(AppRoutespath.createQuestPage);
               // If quest was created successfully, reload data
               if (result == true && mounted) {
                 _loadQuests();
-                _loadAllQuestsForDates();
               }
             },
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFF5B7EFF), width: 2),
-                borderRadius: BorderRadius.circular(24),
+              height: 44,
+              alignment: Alignment.center,
+              decoration: ShapeDecoration(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                  side: const BorderSide(color: Color(0xFF6A68EF), width: 2),
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add, color: const Color(0xFF5B7EFF), size: 20.sp),
-                  SizedBox(width: 2.sp),
-                  Text(
-                    'Add quest',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.workSans(
-                      color: const Color(0xFF4542EB),
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      height: 0.80,
+                  Assets.svgIcons.homePlus.svg(width: 18, height: 18),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'Add quest',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.workSans(
+                        color: const Color(0xFF4542EB),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        height: 0.8,
+                      ),
                     ),
                   ),
                 ],
@@ -865,144 +831,244 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildTaskList() {
+  /// Today's quests, as the list the original design shows.
+  ///
+  /// Restored from single-card back to a list: home is where the day is planned, and one
+  /// card at a time hid the rest of it.
+  Widget _buildQuestList() {
     if (_isLoadingQuests) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32.0),
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return _questCardShell(title: 'Loading…', subtitle: '', showArt: false);
     }
-
     if (_quests.isEmpty) {
-      final now = DateTime.now();
-      final isToday = DateFormat('yyyy-MM-dd').format(_selectedDate) == 
-                      DateFormat('yyyy-MM-dd').format(now);
-      
-      return Container(
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFFDF7),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFC3DBFF)),
-        ),
-        child: Column(
-          children: [
-            const Icon(
-              Icons.calendar_today_outlined,
-              size: 48,
-              color: Color(0xFF5B7EFF),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              isToday ? 'No quests for today' : 'No quests for this date',
-              style: GoogleFonts.workSans(
-                color: const Color(0xFF011F54),
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Tap "Add quest" to create your first task',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.workSans(
-                color: const Color(0xFF6B7280),
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
+      return _questCardShell(
+        title: 'Nothing planned',
+        subtitle: 'Add a quest to give today a shape.',
+        showArt: true,
       );
     }
-
-    final items = _quests.asMap().entries.map((entry) {
-      final index = entry.key;
-      final quest = entry.value;
-      
-      // Format time for display (convert 24-hour to 12-hour format)
-      String displayTime = quest.zone; // Default to zone if no time
-      if (quest.selectATime != null && quest.selectATime!.isNotEmpty) {
-        try {
-          // Parse time (format: "06:11:00" or "06:11")
-          final timeParts = quest.selectATime!.split(':');
-          if (timeParts.length >= 2) {
-            int hour = int.parse(timeParts[0]);
-            int minute = int.parse(timeParts[1]);
-            
-            // Convert to 12-hour format
-            String period = hour >= 12 ? 'PM' : 'AM';
-            int displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
-            
-            displayTime = '${displayHour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $period';
-          }
-        } catch (e) {
-          print('Error parsing time: $e');
-          displayTime = quest.zone; // Fallback to zone
-        }
-      }
-      
-      return AnimatedTaskItem(
-        key: ValueKey('quest_${quest.id}'),
-        task: TaskItem(
-          quest.task,
-          displayTime, // Show time instead of zone
-          quest.taskDone,
-          questId: quest.id,
-        ),
-        onEdit: () async {
-          final result = await context.push(
-            AppRoutespath.editQuestPage,
-            extra: {
-              'taskId': quest.id,
-              'taskData': {
-                'title': quest.task,
-                'zone': quest.zone,
-                'selectADate': quest.selectADate,
-                'time': quest.selectATime, // Pass time for editing
-                'enableCall': quest.enableCall,
-                'repeatQuest': quest.repeatQuest,
-                'setAlarm': quest.setAlarm,
-                'taskDone': quest.taskDone,
-                'subtasks': quest.subtasks.map((s) => {
-                  'id': s.id,
-                  'title': s.title,
-                  'task_done': s.taskDone,
-                }).toList(),
-              },
-            },
-          );
-          // If quest was updated successfully, reload data
-          if (result == true && mounted) {
-            _loadQuests();
-            _loadAllQuestsForDates();
-          }
-        },
-        onDelete: () => _deleteQuest(index, quest.id),
-        onTomorrow: () => _moveToTomorrow(index, quest.id),
-        onToggle: () => _toggleQuest(index, quest.id),
-      );
-    }).toList();
 
     return Column(
       children: [
-        for (int i = 0; i < items.length; i++) ...[
-          items[i],
-          if (i != items.length - 1) const SizedBox(height: 8),
+        for (int i = 0; i < _quests.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _buildQuestRow(i, _quests[i]),
         ],
       ],
     );
   }
 
+  /// One row of the day: a checkbox, the quest, and the time it is set for.
+  Widget _buildQuestRow(int index, Quest quest) {
+    final done = quest.taskDone;
+    return GestureDetector(
+      onTap: () => _toggleQuest(index, quest.id),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFCF1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFFCB9B)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 21.6,
+              height: 21.6,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: done ? const Color(0xFF4542EB) : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF4542EB), width: 2),
+              ),
+              child: done
+                  ? const Icon(Icons.check, size: 14, color: Color(0xFFFFFEF8))
+                  : null,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                quest.task,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF011F54),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  height: 1.4,
+                  letterSpacing: -0.9,
+                  // A finished quest reads as struck through rather than disappearing, so
+                  // the day still shows what was done.
+                  decoration: done ? TextDecoration.lineThrough : null,
+                ),
+              ),
+            ),
+            if ((quest.selectATime ?? '').isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(
+                _shortTime(quest.selectATime!),
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF595754),
+                  fontSize: 18,
+                  height: 1.4,
+                  letterSpacing: -0.5,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// "14:30:00" → "14:30". The backend serialises seconds the design never shows.
+  String _shortTime(String raw) {
+    final parts = raw.split(':');
+    return parts.length >= 2 ? '${parts[0]}:${parts[1]}' : raw;
+  }
+
+  /// Today's quest, as one card. Superseded by [_buildQuestList]; kept for reference.
+  // ignore: unused_element
+  Widget _buildTodaysQuestCard() {
+    if (_isLoadingQuests) {
+      return _questCardShell(
+        title: 'Loading…',
+        subtitle: '',
+        showArt: false,
+      );
+    }
+
+    if (_quests.isEmpty) {
+      return _questCardShell(
+        title: 'Nothing planned',
+        subtitle: 'Add a quest to give today a shape.',
+        showArt: true,
+      );
+    }
+
+    final next = _quests.firstWhere(
+      (q) => !q.taskDone,
+      orElse: () => _quests.first,
+    );
+    final allDone = _quests.every((q) => q.taskDone);
+    final stepsLeft = next.subtasks.where((s) => !s.taskDone).length;
+
+    return _questCardShell(
+      title: next.task,
+      subtitle: allDone
+          ? 'All done for today'
+          : stepsLeftLabel(
+              // A quest with no subtasks is one step in itself.
+              next.subtasks.isEmpty ? (next.taskDone ? 0 : 1) : stepsLeft,
+            ),
+      showArt: true,
+    );
+  }
+
+  Widget _questCardShell({
+    required String title,
+    required String subtitle,
+    required bool showArt,
+  }) {
+    return Container(
+      width: double.infinity,
+      height: 170,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAE3CE),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Stack(
+        children: [
+          if (showArt)
+            const Positioned(
+              right: 24,
+              bottom: 13,
+              // The user's companion. This was `homeQuestBlob` — the orange character with
+              // the book — so the home card contradicted whatever the user picked.
+              child: NowliiAvatar(
+                size: 96,
+                pose: CompanionPose.reading,
+                opacity: 0.9,
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+            // Keeps the copy clear of the illustration rather than running under
+            // it. This used to be a hard `width: 190`, which is only correct on a
+            // 375 screen — on a 320 the card shrinks but 190 does not, so the
+            // title ran straight under the blob. Reserving the illustration's
+            // column instead keeps the same clearance at every width.
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "TODAY'S QUEST",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.workSans(
+                          color: const Color(0xFF6B3C10),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.72,
+                          height: 1.0,
+                        ),
+                      ),
+                      const SizedBox(height: 13),
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.archivoBlack(
+                          color: const Color(0xFF011F54),
+                          fontSize: 26,
+                          height: 0.9,
+                        ),
+                      ),
+                      if (subtitle.isNotEmpty) ...[
+                        const SizedBox(height: 13),
+                        Text(
+                          subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.workSans(
+                            color: const Color(0xFF4C586E),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w400,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                // Width tuned so the copy keeps exactly the clearance it has in
+                // the 375 design; it then holds proportionally on narrower ones.
+                if (showArt) const SizedBox(width: 89),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSwipeButton() {
-    return SwipeButtonWidget(
-      // Fixed name by design — the swipe-to-talk label always says "Fuzzy" (no longer the
-      // user's dynamic companion name).
-      companionName: 'Fuzzy',
-      // Go straight to the 5-min AI voice call (emotion-share detour removed).
-      onSwipe: _startSpontaneousCall,
+    return ValueListenableBuilder<SparkState>(
+      valueListenable: SparkStateStore.instance.state,
+      builder: (context, sparks, _) => SwipeButtonWidget(
+        // Out of sparks: becomes a closing line instead of a swipe that would only reach
+        // the backend's refusal. Which line depends on why — see [SparkState.paused].
+        spent: sparks.isSpent,
+        paused: sparks.paused,
+        // Go straight to the 5-min AI voice call (emotion-share detour removed).
+        onSwipe: _startSpontaneousCall,
+      ),
     );
   }
 
@@ -1016,6 +1082,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final quota = await voiceCalls.getQuota();
     if (!mounted) return;
 
+    // This read is the freshest thing we have; share it rather than letting the card and
+    // the button keep an older one.
+    if (quota != null) {
+      SparkStateStore.instance
+          .adopt(limit: quota.limit, remaining: quota.remaining);
+    }
+
     // Only fetch the schedule when it could actually matter.
     if (quota != null && quota.remaining == 1) {
       final scheduled = await voiceCalls.getScheduledCalls();
@@ -1025,23 +1098,93 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final today = DateTime(now.year, now.month, now.day);
       final laterToday = scheduled
           .where((c) => c.isPending && c.isOn(today))
-          .map((c) => c.scheduledFor)
-          .toList();
+          .toList()
+        ..sort((a, b) => a.scheduledFor.compareTo(b.scheduledFor));
 
       if (wouldStrandAScheduledCall(
         remainingCalls: quota.remaining,
-        scheduledLaterToday: laterToday,
+        scheduledLaterToday: [for (final c in laterToday) c.scheduledFor],
         now: now,
       )) {
-        laterToday.sort();
-        final next = DateFormat('HH:mm').format(laterToday.first);
-        final callNow = await _confirmSpendingLastCall(next);
+        final next = laterToday.firstWhere((c) => c.scheduledFor.isAfter(now));
+        final callNow = await _confirmSpendingLastCall(
+          DateFormat('HH:mm').format(next.scheduledFor),
+        );
         if (!mounted || !callNow) return;
+
+        // Talking now spends the call that one was counting on. Rather than leave it to
+        // fail at its own hour, offer it the same time tomorrow — rescheduleCall moves the
+        // quest with it, so the plan and the quest never disagree.
+        await _offerToMoveStrandedCall(next);
+        if (!mounted) return;
       }
     }
 
     if (!mounted) return;
     context.push(AppRoutespath.aiVoice);
+  }
+
+  /// Ask whether the call this swipe just stranded should move to tomorrow.
+  ///
+  /// Declining is a real answer, not a postponement: the call stays where it is and shows
+  /// as missed. Nothing here blocks the call the user asked for — a failed move is
+  /// reported and the call goes ahead.
+  Future<void> _offerToMoveStrandedCall(ScheduledCall call) async {
+    final at = DateFormat('HH:mm').format(call.scheduledFor);
+    final quest = call.questTitle.trim();
+    final named = quest.isEmpty ? 'your $at call' : '"$quest"';
+
+    final move = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Move $named to tomorrow?',
+          style: GoogleFonts.workSans(fontWeight: FontWeight.w900),
+        ),
+        content: Text(
+          "Your $at call can't run today now. Nowlii can move it — and the quest "
+          'with it — to $at tomorrow.',
+          style: GoogleFonts.workSans(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Leave it', style: GoogleFonts.workSans()),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              'Move to tomorrow',
+              style: GoogleFonts.workSans(
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF4542EB),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (move != true || !mounted) return;
+
+    final moved = await VoiceCallService()
+        .rescheduleCall(call.id, sameTimeNextDay(call.scheduledFor));
+    if (!mounted) return;
+
+    if (moved) {
+      unawaited(CallReminderService.instance.sync());
+      _loadQuests();
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          moved
+              ? 'Moved to $at tomorrow.'
+              : "Couldn't move it — it stays at $at today.",
+        ),
+      ),
+    );
   }
 
   /// Returns true if the user wants to talk now anyway.
@@ -1106,8 +1249,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (newStatus && mounted) {
       _confettiController.play();
-      _showCompletionDialog();
-      
+
+      final lifetime = await CompletionCounter.record();
+      if (!mounted) return;
+      final completedToday = _quests.where((q) => q.taskDone).length;
+      _showCompletionDialog(
+        title: completionBannerTitle(
+          lifetimeCompletions: lifetime,
+          completedToday: completedToday,
+        ),
+        badge: completionBannerBadge(
+          completedToday: completedToday,
+          totalToday: _quests.length,
+        ),
+      );
+
+
       // Reload streak after completing a quest
       _loadStreak();
       
@@ -1119,7 +1276,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               context,
               NotificationData(
                 type: NotificationType.success,
-                title: 'Fuzzy\'s proud of you',
+                title: '$_companionName\'s proud of you',
                 subtitle: 'One chat at a time, you\'re getting stronger',
                 buttonText: 'See progress',
                 onButtonPressed: () {
@@ -1174,8 +1331,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return;
       }
       
-      // Reload date counts after successful delete
-      _loadAllQuestsForDates();
+      // The day strip is gone; just refresh today.
+      _loadQuests();
       
       if (mounted) {
         NotificationManager().show(
@@ -1223,8 +1380,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       );
     } else {
-      // Reload date counts after successful move
-      _loadAllQuestsForDates();
+      // The day strip is gone; just refresh today.
+      _loadQuests();
     }
   }
 
@@ -1551,7 +1708,13 @@ class _AnimatedTaskItemState extends State<AnimatedTaskItem>
 // Completion Dialog
 // ============================================
 class CompletionDialog extends StatelessWidget {
-  const CompletionDialog({super.key});
+  /// Both lines are passed in rather than written here: the headline was a claim about
+  /// the user's first completion and the badge a claim about their streak, and the widget
+  /// knows neither. See `services/completion_banner.dart`.
+  const CompletionDialog({super.key, required this.title, required this.badge});
+
+  final String title;
+  final String badge;
 
   @override
   Widget build(BuildContext context) {
@@ -1603,10 +1766,10 @@ class CompletionDialog extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Text(
-                            'Boom, your first task completed!',
-                            style: TextStyle(
+                            title,
+                            style: const TextStyle(
                               color: Color(0xFF011F54),
                               fontSize: 20,
                               fontFamily: 'Work Sans',
@@ -1625,9 +1788,9 @@ class CompletionDialog extends StatelessWidget {
                               borderRadius: BorderRadius.circular(999),
                             ),
                           ),
-                          child: const Text(
-                            '+1 streak',
-                            style: TextStyle(
+                          child: Text(
+                            badge,
+                            style: const TextStyle(
                               color: Color(0xFF011F54),
                               fontSize: 12,
                               fontFamily: 'Work Sans',

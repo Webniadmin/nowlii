@@ -10,13 +10,17 @@ import 'package:nowlii/screen/home/swipe_to_talk/voice_check/popup_your_share_yo
 import 'package:nowlii/screen/home/swipe_to_talk/voice_check/popup_speaking.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/voice_check/popup_processing.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/voice_check/popup_error.dart';
+import 'package:nowlii/screen/onboarding/limited_by_design_screen.dart';
 import 'package:nowlii/screen/onboarding/loading_onboarding_nowli.dart';
 import 'package:nowlii/screen/onboarding/nowli_how_to_use.dart';
+import 'package:nowlii/screen/onboarding/tonights_receipt_screen.dart';
 import 'package:nowlii/screen/onboarding/onboarding_features/onboarding_features.dart';
 import 'package:nowlii/screen/onboarding/onboarding_flow_file/onboarding_flow.dart';
 import 'package:nowlii/screen/ai_call/ai_voice.dart';
 import 'package:nowlii/screen/ai_call/call_summary_screen.dart';
-import 'package:nowlii/screen/ai_call/call_history_screen.dart';
+import 'package:nowlii/models/call_summary_history.dart';
+import 'package:nowlii/screen/receipts/receipt_detail_screen.dart';
+import 'package:nowlii/screen/receipts/receipts_screen.dart';
 import 'package:nowlii/screen/ai_call/pop_po_sahre.dart';
 import 'package:nowlii/screen/auth/enter_new_password.dart';
 import 'package:nowlii/screen/auth/password_updated_popup_screen.dart';
@@ -56,14 +60,23 @@ import '../../screen/onboarding/onboarding_features/avatar_logo_name_selection.d
 import '../../screen/onboarding/onboarding_features/avatar_logo_selection.dart';
 
 class AppPages {
-  /// Screens a paywalled user may still reach. Everything else redirects to the Pro screen
-  /// once the free trial is over — they must be able to pay, get help, or sign out.
-  static const List<String> _allowedWhenBlocked = [
-    AppRoutespath.nowliProSubscription, // the paywall itself
-    AppRoutespath.subscriptionPage, // the 7-days-free / billing explainer
-    AppRoutespath.settingsScreen,
-    AppRoutespath.supportScreen,
-    AppRoutespath.supportChatScreen,
+  /// Screens a lapsed user may NOT reach — everything else stays open.
+  ///
+  /// This used to be the other way round: an allowlist of four screens, with the rest of
+  /// the app shut. That treated a lapse as an eviction. A paused account should still show
+  /// the person their own profile, progress and history — those are their records, and they
+  /// are also the best argument for renewing. What closes is what the subscription buys:
+  /// making new quests and talking to the companion.
+  ///
+  /// The backend is the real gate ([HasProAccessOrReadOnly] answers 402 on writes); this
+  /// list only spares the user a screen that would fail the moment they used it.
+  static const List<String> _blockedWhenLapsed = [
+    AppRoutespath.createQuestPage,
+    AppRoutespath.editQuestPage,
+    AppRoutespath.suggestedTaskOverview,
+    AppRoutespath.aiVoice,
+    AppRoutespath.swipeToTalkLoading,
+    AppRoutespath.callSummary,
   ];
 
   static final GoRouter router = GoRouter(
@@ -121,13 +134,12 @@ class AppPages {
           return AppRoutespath.homeScreen;
         }
 
-        // Paywall: once the free trial is over and nothing was bought, the app is closed
-        // until they subscribe. Reads the cached entitlement (refreshed on splash / after
-        // purchase) because a guard cannot wait on the network. The backend enforces this
-        // for real by answering 402 on every gated endpoint.
+        // Paywall: once the free trial is over and nothing was bought, the parts of the app
+        // the subscription pays for close. Reads the cached entitlement (refreshed on
+        // splash / after purchase) because a guard cannot wait on the network. The backend
+        // enforces this for real — see [_blockedWhenLapsed].
         final hasAccess = await SubscriptionService.cachedHasAccess();
-        if (!hasAccess &&
-            !_allowedWhenBlocked.contains(state.matchedLocation)) {
+        if (!hasAccess && _blockedWhenLapsed.contains(state.matchedLocation)) {
           return AppRoutespath.nowliProSubscription;
         }
         return null; // Allow access to requested route
@@ -260,11 +272,10 @@ class AppPages {
       ),
 
       /*  create a quets end here  */
-      /*   on boarding */
-      GoRoute(
-        path: AppRoutespath.onboardingFlow,
-        builder: (context, state) => const OnboardingFlow(),
-      ),
+      // NOTE: `/onboardingFlow` was registered a second time here, without the
+      // `?page=` handling. go_router matches the first registration, so this one
+      // was unreachable — and would have silently ignored the query parameter
+      // had the order ever changed. The live definition is above.
 
       GoRoute(
         path: AppRoutespath.onbordingFetures,
@@ -288,6 +299,14 @@ class AppPages {
       GoRoute(
         path: AppRoutespath.avatarLogoAndName,
         builder: (context, state) => const AvatarLogoAndName(),
+      ),
+      GoRoute(
+        path: AppRoutespath.limitedByDesign,
+        builder: (context, state) => const LimitedByDesignScreen(),
+      ),
+      GoRoute(
+        path: AppRoutespath.tonightsReceipt,
+        builder: (context, state) => const TonightsReceiptScreen(),
       ),
       GoRoute(
         path: AppRoutespath.popupSpeking,
@@ -319,8 +338,26 @@ class AppPages {
         },
       ),
       GoRoute(
-        path: AppRoutespath.callHistory,
-        builder: (context, state) => const CallHistoryScreen(),
+        path: AppRoutespath.receipts,
+        builder: (context, state) => const ReceiptsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutespath.receiptDetail,
+        builder: (context, state) {
+          // The list hands over the receipt it already loaded, plus the serial number it
+          // worked out from the position — deep-linking straight here would have neither,
+          // so a missing payload falls back to the library rather than a blank screen.
+          final extra = state.extra;
+          if (extra is Map &&
+              extra['receipt'] is CallSummaryHistoryItem &&
+              extra['number'] is int) {
+            return ReceiptDetailScreen(
+              receipt: extra['receipt'] as CallSummaryHistoryItem,
+              number: extra['number'] as int,
+            );
+          }
+          return const ReceiptsScreen();
+        },
       ),
       GoRoute(
         path: AppRoutespath.popPoSahre,

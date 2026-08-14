@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/themes/create_qutes.dart';
+import 'package:nowlii/utils/color_palette/zone_colors.dart';
 
 class SelectZoneCard extends StatefulWidget {
   final double scale;
@@ -128,17 +129,21 @@ class _SelectZoneCardState extends State<SelectZoneCard> {
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: 12 * s, vertical: 8 * s),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF89B6F8) : Colors.white,
+          // The chip wears its own zone's colour. It used to go the same blue whichever
+          // zone was picked, so the one screen where the user *chooses* a difficulty was
+          // the one screen that never showed them what that difficulty looks like — and
+          // the badge on the quest they had just made came out a different colour.
+          color: isSelected ? zoneColor(label) : Colors.white,
           borderRadius: BorderRadius.circular(20 * s),
           border: Border.all(
-            color: isSelected ? const Color(0xFF89B6F8) : Colors.blue.shade100,
+            color: isSelected ? zoneColor(label) : Colors.blue.shade100,
           ),
         ),
         child: Text(
           label,
           textAlign: TextAlign.center,
           style: AppTextStylesQutes.workSansSemiBold18.copyWith(
-            color: isSelected ? Colors.white : const Color(0xFF4C586E),
+            color: isSelected ? zoneTextColor(label) : const Color(0xFF4C586E),
             fontSize: 16 * s,
           ),
         ),

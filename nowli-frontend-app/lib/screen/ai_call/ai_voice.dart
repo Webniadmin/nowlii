@@ -1,3 +1,4 @@
+import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:go_router/go_router.dart';
@@ -12,11 +13,15 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:nowlii/services/audio_stream_service.dart';
+import 'package:nowlii/services/call_duration.dart';
 import 'package:nowlii/services/call_reminder_service.dart';
 import 'package:nowlii/services/call_time_announcer.dart';
 import 'package:nowlii/services/realtime_call_service.dart';
+import 'package:nowlii/services/spark_state.dart';
+import 'package:nowlii/services/spark_state_store.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AiVoice extends StatefulWidget {
   /// Optional quest title. When launched from a quest whose "Enable call" flag is on,
@@ -39,8 +44,10 @@ class _AiVoiceState extends State<AiVoice>
   // Call duration policy. The backend is the source of truth for the daily call *count*;
   // these constants govern the in-call *timer* the user sees. Initial 5 minutes, with a
   // single optional +2.5 minute extension → 7.5 minutes maximum.
-  static const Duration _initialDuration = Duration(minutes: 5);
-  static const Duration _extensionDuration = Duration(minutes: 2, seconds: 30);
+  // Shared with the screens that quote these lengths back to the user (trial screen,
+  // onboarding step 7, the quest call button) so they cannot drift apart.
+  static const Duration _initialDuration = kCallInitialDuration;
+  static const Duration _extensionDuration = kCallExtensionDuration;
 
   // The "Add 2.5 minutes" card appears with this much time left.
   static const int _extensionPromptSeconds = 60;
@@ -78,6 +85,10 @@ class _AiVoiceState extends State<AiVoice>
   bool _extensionUsed = false; // the +2.5 min extension can be used at most once
   bool _showStartNotice = false; // "this call lasts up to N minutes" on connect
   bool _showOneMinuteWarning = false; // 1 minute left (offers the extension if unused)
+  // "Wrap up" dismisses that card and lets the call run out normally. Without this flag the
+  // dismissal would not stick: the per-second tick re-sets _showOneMinuteWarning to true on
+  // every tick between 60s and 31s left, so the card would reappear a second later.
+  bool _oneMinuteWarningDismissed = false;
   bool _showThirtySecWarning = false; // 30 seconds left
   // Owns the "when does Nowlii mention the clock" rules (fires once, re-arms on extension).
   // Kept as a separate object so those rules are unit-tested — see call_time_announcer.dart.
@@ -100,6 +111,14 @@ class _AiVoiceState extends State<AiVoice>
   bool _callStarted = false; // realtime: timer started (on Nowlii's first words)
   int? _callId; // server-side VoiceCall id, for the end report
   bool _callEndReported = false;
+
+  // Which of today's sparks this call is, for the header counter. Filled from the `start/`
+  // response (it reports the quota *after* this call was counted), so it costs no extra
+  // request. Stays `unknown` — and the counter stays hidden — if that read gave us nothing.
+  SparkState _sparks = const SparkState.unknown();
+
+  // The companion's name, for the subtitle. Resolved from the profile, never hardcoded.
+  String _companionName = 'Fuzzy';
 
   // AI Call integration
   final AiCallService _aiCallService = AiCallService();
@@ -190,6 +209,12 @@ class _AiVoiceState extends State<AiVoice>
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
 
+    // The subtitle greets the user in their companion's name, so resolve it up front.
+    // Best-effort: the fallback is already a sensible name, so a failed read changes nothing.
+    _resolveCompanionName().then((name) {
+      if (mounted) setState(() => _companionName = name);
+    });
+
     // Gate the call on the backend daily limit before starting anything.
     _authorizeAndBegin();
   }
@@ -245,9 +270,26 @@ class _AiVoiceState extends State<AiVoice>
 
     if (result.outcome == VoiceCallStartOutcome.allowed) {
       _callId = result.callId;
-      setState(() => _authorizing = false);
+      // The start response already carries the fresh allowance — use it for the header
+      // counter and hand it to the shared store so the home screen is right on the way back.
+      final sparks = SparkState(limit: result.limit, remaining: result.remaining);
+      SparkStateStore.instance.adopt(
+        limit: result.limit,
+        remaining: result.remaining,
+      );
+      setState(() {
+        _sparks = sparks;
+        _authorizing = false;
+      });
       _beginCall();
     } else {
+      // A 429 is the backend telling us the allowance is gone — record that, so the home
+      // screen shows the out-of-sparks card on the way back instead of a swipe button that
+      // leads straight to this same refusal. A network error says nothing, so it changes
+      // nothing.
+      if (result.outcome == VoiceCallStartOutcome.limitReached) {
+        SparkStateStore.instance.adopt(limit: result.limit, remaining: 0);
+      }
       setState(() {
         _authorizing = false;
         _callBlocked = true;
@@ -805,16 +847,26 @@ class _AiVoiceState extends State<AiVoice>
     return profile?.voice.trim() ?? '';
   }
 
+  /// Topics the user asked the companion not to raise (Settings → AI Personalization).
+  /// Read from the cached profile so the choice applies to this call even offline; the
+  /// backend folds them into the call persona.
+  Future<List<String>> _resolveRestrictedTopics() async {
+    final profile = await StorageService().getProfileData();
+    return profile?.restrictedTopics ?? const [];
+  }
+
   Future<void> _createAiSession() async {
     try {
       final userName = await _resolveUserName();
       final companionName = await _resolveCompanionName();
       final companionVoice = await _resolveCompanionVoice();
+      final restrictedTopics = await _resolveRestrictedTopics();
       final session = await _aiCallService.createSession(
         userName: userName,
         systemName: companionName,
         language: 'en',
         voice: companionVoice,
+        restrictedTopics: restrictedTopics,
       );
       
       if (session != null) {
@@ -1282,7 +1334,10 @@ class _AiVoiceState extends State<AiVoice>
           _showOneMinuteWarning = false;
         } else if (remaining <= _extensionPromptSeconds) {
           // 1 minute left (offers the one-time extension while it is still unused).
-          _showOneMinuteWarning = true;
+          // This branch runs on *every* tick of the last minute, so it must respect a
+          // "Wrap up" dismissal — otherwise the card the user just closed comes straight
+          // back a second later.
+          _showOneMinuteWarning = !_oneMinuteWarningDismissed;
         }
       });
 
@@ -1415,6 +1470,9 @@ class _AiVoiceState extends State<AiVoice>
       _progressController.duration = _totalDuration;
       // Clear the current warnings; they re-appear relative to the new end time.
       _showOneMinuteWarning = false;
+      // A dismissal belonged to the old ending. The call now runs 2.5 minutes longer, so
+      // the user should still be warned before the real end.
+      _oneMinuteWarningDismissed = false;
       _showThirtySecWarning = false;
       _countdownValue = 0;
     });
@@ -1705,12 +1763,21 @@ class _AiVoiceState extends State<AiVoice>
                   child: IntrinsicHeight(
                     child: Column(
                       children: [
-                        const SizedBox(height: 40),
+                        const SizedBox(height: 17),
+
+                        // "Spark in progress" + which of today's sparks this is.
+                        _buildSparkRow(),
+
+                        const SizedBox(height: 41),
 
                         // Title Section
-                        Text(
-                          _questCompleted ? 'All done ✓' : 'Let\'s talk 💬',
-                          style: AppsTextStyles.black24Uppercase,
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Text(
+                            _callHeadline(),
+                            style: AppsTextStyles.extraBold32Centered,
+                            textAlign: TextAlign.center,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Padding(
@@ -1720,7 +1787,7 @@ class _AiVoiceState extends State<AiVoice>
                                 ? 'Take a deep breath - you did great.\nI\'ll be here when you\'re ready for the next one.'
                                 : _extensionUsed
                                     ? 'New energy — a little more time together!'
-                                    : 'You\'re doing great — keep it going',
+                                    : '$_companionName’s here, you’ve got this',
                             style: AppsTextStyles.regular16l,
                             textAlign: TextAlign.center,
                           ),
@@ -1963,7 +2030,7 @@ class _AiVoiceState extends State<AiVoice>
       animation: _pulseController,
       builder: (context, child) {
         final pulseValue = _pulseController.value;
-        
+
         return Stack(
           alignment: Alignment.center,
           children: [
@@ -2032,16 +2099,26 @@ class _AiVoiceState extends State<AiVoice>
             ),
             
             // Avatar image with scale animation
+            //
+            // Unchanged from the original except for the picture: `callStartedEmpty.png`
+            // is `callStarted.png` with the orange character lifted out and the disc
+            // underneath restored from `popupSpeking` at matching scale — same canvas,
+            // same halos, same disc, same position. The companion is drawn inside at 87,
+            // the height the baked-in character measured in this 240 box, and sits within
+            // the same `Transform.scale` so it breathes with the disc exactly as before.
             Transform.scale(
               scale: 1.0 + (pulseValue * 0.05),
               child: Container(
                 width: 240,
                 height: 240,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   image: DecorationImage(
-                    image: Assets.svgImages.callStarted.image().image,
+                    image: AssetImage('assets/svg_images/callStartedEmpty.png'),
                     fit: BoxFit.cover,
                   ),
+                ),
+                child: const Center(
+                  child: NowliiAvatar(size: 87, pose: CompanionPose.speaking),
                 ),
               ),
             ),
@@ -2052,6 +2129,78 @@ class _AiVoiceState extends State<AiVoice>
   }
 
   // In-call notice card, shared style (same cream card the mute/time popups used).
+  /// The screen's headline. The design shows the quest the call was started for
+  /// ("Answer emails ✉️"). A spontaneous swipe-to-talk call has no quest behind it, so it
+  /// keeps the neutral greeting rather than inventing a title.
+  String _callHeadline() {
+    if (_questCompleted) return 'All done ✓';
+    final quest = widget.questTitle?.trim() ?? '';
+    return quest.isNotEmpty ? quest : 'Let\'s talk 💬';
+  }
+
+  /// Label S from the design system: Work Sans SemiBold 12.
+  static final TextStyle _sparkLabelStyle = GoogleFonts.workSans(
+    color: const Color(0xFF011F54),
+    fontSize: 12,
+    fontWeight: FontWeight.w600,
+    height: 1.0,
+  );
+
+  /// Top row: a live dot and "Spark in progress" on the left, today's counter on the right.
+  ///
+  /// The counter is absent rather than approximate whenever there is nothing true to show —
+  /// an unlimited QA account (`limit: -1`, which would otherwise read "Spark 1 of -1") or a
+  /// quota we could not read. The left label is always honest: a call *is* in progress.
+  Widget _buildSparkRow() {
+    final counter = _sparks.counterLabel;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF3BB64B),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    // The design's 4px halo: a spread with no blur, so it reads as a ring.
+                    BoxShadow(
+                      color: Color(0x3345841C),
+                      spreadRadius: 4,
+                      blurRadius: 0,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 9),
+              Opacity(
+                opacity: 0.75,
+                child: Text('Spark in progress', style: _sparkLabelStyle),
+              ),
+            ],
+          ),
+          if (counter != null)
+            Opacity(
+              opacity: 0.80,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFC3DBFF),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(counter, style: _sparkLabelStyle),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _noticeCard({required Widget child}) {
     return Positioned(
       top: 100,
@@ -2115,47 +2264,165 @@ class _AiVoiceState extends State<AiVoice>
     );
   }
 
-  // 1 minute left. Offers the one-time +2.5 min extension while it is still unused.
+  /// "Wrap up" on the ending-soon toast: close the card and let the call finish on its own
+  /// clock. It deliberately does **not** hang up — the user asked to be left alone for the
+  /// last minute, not cut off — and it does not spend the extension.
+  void _dismissOneMinuteWarning() {
+    setState(() {
+      _showOneMinuteWarning = false;
+      _oneMinuteWarningDismissed = true;
+    });
+  }
+
+  /// One of the two toast buttons. Built from a Container rather than ElevatedButton so the
+  /// 44px height and pill radius are exactly the designed ones, with no material elevation.
+  Widget _toastButton({
+    required String label,
+    required Color background,
+    required VoidCallback onTap,
+    Color? borderColor,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 44,
+          alignment: Alignment.center,
+          decoration: ShapeDecoration(
+            color: background,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(999),
+              side: borderColor == null
+                  ? BorderSide.none
+                  : BorderSide(color: borderColor, width: 2),
+            ),
+          ),
+          child: Text(
+            label,
+            style: GoogleFonts.workSans(
+              color: const Color(0xFF011F54),
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              height: 0.8,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Shown once with a minute to go: take the one-time +2:30, or wave the card away and let
+  /// the call end when it was always going to.
+  ///
+  /// After the extension has been spent there is no second one to offer, so "+2:30"
+  /// disappears and "Wrap up" takes the full width rather than sitting there disabled.
   Widget _buildOneMinuteWarning() {
-    return _noticeCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _noticeTitle('1 minute left'),
-          const SizedBox(height: 12),
-          _noticeBody(_extensionUsed
-              ? 'Your call is wrapping up soon.'
-              : 'Your call is wrapping up. You can add 2.5 more minutes once.'),
-          if (!_extensionUsed) ...[
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _addExtension,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFF8F26),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+    return Positioned(
+      top: 100,
+      left: 20,
+      right: 20,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        decoration: ShapeDecoration(
+          color: const Color(0xFFFFFCF1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          shadows: const [
+            BoxShadow(
+              color: Color(0x140A0D12),
+              blurRadius: 16,
+              offset: Offset(0, 12),
+              spreadRadius: -4,
+            ),
+            BoxShadow(
+              color: Color(0x080A0D12),
+              blurRadius: 6,
+              offset: Offset(0, 4),
+              spreadRadius: -2,
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFAE3CE),
+                shape: BoxShape.circle,
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(Icons.add, size: 18, color: Color(0xFF011F54)),
-                  SizedBox(width: 8),
+              child: Assets.svgIcons.sparkClock.svg(width: 26, height: 26),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    'Add 2.5 minutes',
-                    style: TextStyle(
-                      color: Color(0xFF011F54),
-                      fontSize: 18,
-                      fontFamily: 'Work Sans',
-                      fontWeight: FontWeight.w900,
+                    'Call ending soon!',
+                    style: GoogleFonts.workSans(
+                      color: const Color(0xFF011F54),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      height: 1.2,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _extensionUsed
+                        ? 'About a minute left. This is a good place to stop.'
+                        : 'About a minute left. Take it if you’re mid-thought — '
+                            'otherwise this is a good place to stop.',
+                    style: GoogleFonts.workSans(
+                      color: const Color(0xFF595754),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w400,
+                      height: 1.4,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      if (!_extensionUsed) ...[
+                        _toastButton(
+                          label: '+2:30',
+                          background: const Color(0xFFFF8F26),
+                          onTap: _addExtension,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      _toastButton(
+                        label: 'Wrap up',
+                        background: const Color(0xFFFFFEF8),
+                        borderColor: const Color(0xFFC3DBFF),
+                        onTap: _dismissOneMinuteWarning,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _extensionUsed
+                        ? 'That was this spark’s extension.\n'
+                            'Either way you get your receipt.'
+                        : 'One extension per spark.\n'
+                            'Either way you get your receipt.',
+                    style: GoogleFonts.workSans(
+                      color: const Color(0xFF4C586E),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      height: 1.4,
                     ),
                   ),
                 ],
               ),
             ),
           ],
-        ],
+        ),
       ),
     );
   }

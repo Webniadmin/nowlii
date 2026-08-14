@@ -410,6 +410,37 @@ SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL") or DEFAULT_FROM_EMAIL
 
 
 # ------------------------------------------------------------------------------
+# Logging
+# ------------------------------------------------------------------------------
+# Django's default config only prints to the console when DEBUG is on, and mails
+# tracebacks to ADMINS otherwise. Production runs with DEBUG=False and no ADMINS, so every
+# 500 was thrown away: the phone showed "server error" and the server kept no record of
+# why. Log to stdout instead — Docker captures it, so `docker logs nowlii-backend` has the
+# traceback.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "standard": {
+            "format": "[{asctime}] {levelname} {name}: {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
+        },
+    },
+    "loggers": {
+        # Unhandled exceptions in a view land here, with the traceback attached.
+        "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
+        "Apps": {"handlers": ["console"], "level": "INFO", "propagate": False},
+    },
+}
+
+
+# ------------------------------------------------------------------------------
 # AI voice calls
 # ------------------------------------------------------------------------------
 # Max AI voice calls a single user may start per day. Per-user (never global) and
