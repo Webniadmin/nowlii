@@ -1981,13 +1981,19 @@ class _AiVoiceState extends State<AiVoice>
                         ],
                       ),
                     ),
-                  const SizedBox(height: 40),
+                  // Was 40. Everything below the `Spacer` above the avatar is
+                  // anchored to the bottom, so this gap is what sets how high
+                  // the control row sits — and the row had drifted 17 up from
+                  // where it used to be once the composition above it stopped
+                  // sizing itself off the pulse. 23 puts the three buttons back
+                  // on the line they were on.
+                  const SizedBox(height: 23),
                       ],
                     ),
                   ),
                 ),
               ),
-              
+
               // Start-of-call notice: maximum duration.
               if (_showStartNotice && !_questCompleted)
                 _buildStartNotice(),

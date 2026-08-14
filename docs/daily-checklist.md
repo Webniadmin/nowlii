@@ -85,6 +85,35 @@ Commits `9db9b30`, `8216571`, `c127330`, `299191f`, `184d7ad`.
   Worth knowing: **`Fizzy.png` is the one capitalised filename on S3** — the slug lookup
   lower-cases, so it survives, but nothing else may assume the case.
 
+### The call screen, in three rounds
+
+Worth reading before touching it again, because the first two rounds were wrong.
+
+1. **The pulse fix blanked the whole screen.** A `LayoutBuilder` went into
+   `_buildAvatarWithProgress`, and the column it lives in is inside an
+   `IntrinsicHeight` — see the standing note under Code. No exception, just an empty
+   screen. The width comes from `MediaQuery` now.
+2. **Shrinking the pulse, then deleting it, both missed the cause.** The two pulse rings
+   were plain children of the `Stack`, so their pulse-driven width *was* the Stack's
+   measured size, and the re-measure travelled up through the `Column` and the
+   `IntrinsicHeight`. The layout was moving, not the picture — which is why reducing the
+   amplitude could not help.
+3. **The fix, and it was the user's idea:** the rings sit in `Positioned.fill` →
+   `OverflowBox`, painted but never measured, with the Stack pinned to the progress
+   ring's 280 and `clipBehavior: Clip.none` so the halo can bleed. `Transform.scale` on
+   the disc came back too — a paint transform never touched layout.
+   Verified across three frames half a second apart: only the halo and the disc differ.
+
+Also: the three controls are top-aligned (the "Mark as done" label made its column
+taller, so a centred row lifted its button out of line), and the gap under them is **23,
+not 40** — the row is bottom-anchored by the `Spacer` above the avatar, so that gap is
+what sets its height on the screen.
+
+**The full flow is verified end to end on the emulator:** swipe → call screen → timer →
+"Mark as done" → "Wrap up already?" → the summary, with real generated copy and the
+companion's own name. What still cannot be judged here is audio — the emulator routes no
+microphone, so whether Nowlii actually hears and answers is still the phone test.
+
 ### 🔑 Onboarding is reachable now
 
 `adb shell am start -n com.nowlii.app/.MainActivity -e route /avatarLogo` opens **any**
