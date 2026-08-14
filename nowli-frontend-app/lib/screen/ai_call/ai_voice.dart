@@ -1886,6 +1886,12 @@ class _AiVoiceState extends State<AiVoice>
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        // Top-aligned, so all three circles sit on one line.
+                        // "Mark as done" carries a label under its button, which
+                        // made its column taller than the other two — and with
+                        // the row centring them, the taller column's button was
+                        // pushed up out of line with the mic and the keyboard.
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
@@ -2025,68 +2031,42 @@ class _AiVoiceState extends State<AiVoice>
     );
   }
 
-  /// The width the composition below was drawn at: the outer ring reaches
-  /// 320 + 40 at the top of its pulse.
+  /// The width the composition below was drawn at.
   static const double _callArtExtent = 360.0;
 
+  /// The call composition: progress ring, glow, disc, companion. **Nothing in
+  /// it moves.**
+  ///
+  /// It used to breathe — two radial-gradient rings growing and fading, and a
+  /// `Transform.scale` taking the disc from 1.0 to 1.05 — and it was reported
+  /// as "the whole screen pulses" three times over two days. Every attempt to
+  /// tame it treated the amplitude as the problem. It was not: the composition
+  /// is 82% of the width of a 320dp phone, and *anything* that size changing
+  /// size reads as the screen itself moving. The two gradient rings made it
+  /// worse (they were never meant to be visible at all — `callStarted.png` was
+  /// one opaque image that covered them, until the character was lifted out of
+  /// it on 08-12), but removing them still left the disc breathing, and it
+  /// still looked wrong.
+  ///
+  /// So it is still now. `_pulseController` is left running and disposed as
+  /// before; if a pulse is wanted back, it belongs on something small, or as a
+  /// glow that does not change any size — not as a scale on this.
   Widget _buildAvatarWithProgress(Size size) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Every number in this Stack is absolute, and the largest of them is
-        // wider than a 320dp phone — so on a narrow screen the outer pulse ring
-        // ran past both edges and what breathed was the whole screen rather
-        // than a disc on it. Scaling the composition by how much room there
-        // actually is keeps every proportion exactly as drawn (at 375 and up
-        // `fit` is 1 and nothing changes) while giving the pulse an edge to
-        // stop at. This is the same bargain `ResponsiveText` makes for type.
-        final available =
-            constraints.maxWidth.isFinite ? constraints.maxWidth : size.width;
-        final fit = (available / _callArtExtent).clamp(0.0, 1.0);
+    // Every number in this Stack is absolute and the largest is wider than a
+    // 320dp phone, so the whole thing is scaled to the room there is. At 375
+    // and up `fit` is 1 and not a pixel moves from the design.
+    //
+    // **Measured from `size`, not a `LayoutBuilder`.** An earlier version used
+    // one and blanked the entire call screen: the column this sits in is inside
+    // an `IntrinsicHeight` (see `build`), which asks every child for its
+    // intrinsic height, and a `LayoutBuilder` cannot answer that. The subtree
+    // collapsed and the screen painted nothing — with no exception in the log
+    // to say why. `size` is the screen width, which is what this spans anyway.
+    final fit = (size.width / _callArtExtent).clamp(0.0, 1.0);
 
-        return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        final pulseValue = _pulseController.value;
-
-        return Stack(
+    return Stack(
           alignment: Alignment.center,
           children: [
-            // Outermost pulse ring (animated)
-            if (!_questCompleted)
-              Container(
-                width: (320 + (pulseValue * 40)) * fit,
-                height: (320 + (pulseValue * 40)) * fit,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    center: Alignment.center,
-                    radius: 0.5,
-                    colors: [
-                      _timerColor.withOpacity(0),
-                      _timerColor.withOpacity(0.1 * (1 - pulseValue)),
-                    ],
-                  ),
-                ),
-              ),
-            
-            // Middle pulse ring
-            if (!_questCompleted)
-              Container(
-                width: (300 + (pulseValue * 20)) * fit,
-                height: (300 + (pulseValue * 20)) * fit,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    center: Alignment.center,
-                    radius: 0.5,
-                    colors: [
-                      _timerColor.withOpacity(0),
-                      _timerColor.withOpacity(0.2 * (1 - pulseValue)),
-                    ],
-                  ),
-                ),
-              ),
-            
             // Progress ring
             SizedBox(
               width: 280 * fit,
@@ -2115,39 +2095,33 @@ class _AiVoiceState extends State<AiVoice>
               ),
             ),
             
-            // Avatar image with scale animation
+            // The disc and the companion. `callStartedEmpty.png` is
+            // `callStarted.png` with the orange character lifted out and the
+            // disc beneath rebuilt from `popupSpeking` at matching scale — same
+            // canvas, same halos, same disc, same position. The companion is
+            // drawn inside at 87, the height the baked-in character measured in
+            // this 240 box.
             //
-            // Unchanged from the original except for the picture: `callStartedEmpty.png`
-            // is `callStarted.png` with the orange character lifted out and the disc
-            // underneath restored from `popupSpeking` at matching scale — same canvas,
-            // same halos, same disc, same position. The companion is drawn inside at 87,
-            // the height the baked-in character measured in this 240 box, and sits within
-            // the same `Transform.scale` so it breathes with the disc exactly as before.
-            Transform.scale(
-              scale: 1.0 + (pulseValue * 0.05),
-              child: Container(
-                width: 240 * fit,
-                height: 240 * fit,
-                decoration: const BoxDecoration(
-                  image: DecorationImage(
-                    image: AssetImage('assets/svg_images/callStartedEmpty.png'),
-                    fit: BoxFit.cover,
-                  ),
+            // The `Transform.scale` that used to wrap this is gone — see the
+            // note on this method.
+            Container(
+              width: 240 * fit,
+              height: 240 * fit,
+              decoration: const BoxDecoration(
+                image: DecorationImage(
+                  image: AssetImage('assets/svg_images/callStartedEmpty.png'),
+                  fit: BoxFit.cover,
                 ),
-                child: Center(
-                  child: NowliiAvatar(
-                    size: 87 * fit,
-                    pose: CompanionPose.speaking,
-                  ),
+              ),
+              child: Center(
+                child: NowliiAvatar(
+                  size: 87 * fit,
+                  pose: CompanionPose.speaking,
                 ),
               ),
             ),
           ],
         );
-      },
-        );
-      },
-    );
   }
 
   // In-call notice card, shared style (same cream card the mute/time popups used).

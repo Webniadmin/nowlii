@@ -279,6 +279,16 @@ wording, and the **call screen pulse**.
   again or their phone reports a timezone.
 
 ### Code
+
+- ⚠️ **`LayoutBuilder` under `IntrinsicHeight`/`IntrinsicWidth` paints nothing, silently.**
+  A LayoutBuilder cannot answer an intrinsic-size query, so the parent measures the subtree
+  as zero and the whole thing disappears — **with no exception in the log**. This bit twice
+  on 2026-08-14: the fourth tutorial bubble (an `AutoShrinkText`, which is a LayoutBuilder,
+  inside an `IntrinsicWidth`) drew nothing and read as the app hanging; and the **entire AI
+  call screen** went blank, because its column lives inside an `IntrinsicHeight` and the
+  pulse fix had put a LayoutBuilder in it. Both are fixed. Before reaching for a
+  LayoutBuilder, check what is above it — on the call screen, `MediaQuery` size was all it
+  needed. `AutoShrinkText`'s doc comment carries the same warning.
 - `flutter` is not on PATH in tool shells — use `C:\src\flutter\bin\flutter.bat`.
 - **`flutter analyze lib` has a standing baseline of 10 warnings.** Diff against it rather
   than reading the count. 0 errors. **262 tests** pass.
