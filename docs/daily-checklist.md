@@ -150,8 +150,10 @@ Public auth routes still redirect to home while signed in — for those, log out
     mounted when the result lands. The real test holds the request open with a `Completer`
     until the dialog has pumped fully out — and it was checked, by reconstructing the old
     widget, to fail with exactly the reported symptom (the spinner still on screen).
-    `test/account_exit_navigation_test.dart`, 2 tests. **Log out has no test** — same
-    mechanism, same fix, verified by inspection only.
+    `test/account_exit_navigation_test.dart`, 2 tests. **Log out still has no test** — same
+    mechanism, same fix, but nothing automated covers it.
+  **Both confirmed by the user on the emulator at 320dp**, on the build that shipped as
+  `nowlii-prod-v0.3.apk`. That is what closes out log out, which the tests do not reach.
 - **Terms of Service is linked on `readyToStartScreen`** even though the document does not
   exist. Sign-up and Settings → Privacy hide it; this screen does not.
 - **`popup_error`, `pop_po_sahre` and `procrastination_screen`** still draw the old
@@ -194,8 +196,17 @@ Everything else on this list is smaller than this one. A **prod** APK pointing a
 HTTPS backend has been waiting since 08-06, and three things can only be judged on hardware
 because the emulator cannot route host audio.
 
-- [ ] **Build a fresh APK** — yesterday's frontend work is not in the one on disk.
-      `flutter build apk --dart-define-from-file=dart_defines.prod.json`
+- [x] ~~**Build a fresh APK**~~ — done 2026-08-15, archived as
+      **`../nowlii-apk-archive/nowlii-prod-v0.3.apk`** (266 MB, commit `9d03b9d`). Built with
+      `flutter build apk --debug --dart-define-from-file=dart_defines.prod.json` — **`--debug`,
+      as every APK sent for testing so far has been.** The one release build ever made
+      (`nowlii-prod-v0.1.apk`, 08-05) could not reach the backend at all, because release
+      blocks cleartext and production was still plain HTTP. That blocker is gone now that
+      HTTPS is live, so a release build is finally possible — but it would still be signed
+      with the **debug** keystore (`android/key.properties` does not exist), so it is
+      installable and Google login works while Play would reject it.
+      Verified inside the APK, not just at the command line: the kernel blob carries
+      `https://api.nowlii.com` and `https://ai.nowlii.com`.
 - [ ] Install it and sign in as a real user
 - [ ] **Confirm the timezone fix on the device** — make a quest for a time an hour out and
       check the card says that time, not that time plus your UTC offset
@@ -333,9 +344,27 @@ wording, and the **call screen pulse**.
   pulse fix had put a LayoutBuilder in it. Both are fixed. Before reaching for a
   LayoutBuilder, check what is above it — on the call screen, `MediaQuery` size was all it
   needed. `AutoShrinkText`'s doc comment carries the same warning.
+- ⚠️ **A popped dialog's `BuildContext` is dead, and `context.mounted` hides it.** Anything
+  of the shape "pop the dialog, `await` some work, then navigate or show a snackbar with that
+  same `context`" silently does nothing: the pop unmounts the element when the exit animation
+  ends (~150ms), well inside any network call, so the `context.mounted` guard is false by the
+  time it is read and the method returns through its correct-looking early exit. **No
+  exception, nothing in the log.** It cost Log out its navigation and Delete My Account its
+  spinner (2026-08-15). Capture `GoRouter.of(context)`, `Navigator.of(context)` and
+  `ScaffoldMessenger.of(context)` **before** the pop — all three live above the dialog and
+  outlive it. The `use_build_context_synchronously` lint does flag this, but it is `info`
+  severity and drowns in the ~400 the project already carries.
+  **Testing it needs care:** ordering inverts in a widget test — a mocked store resolves in
+  one microtask, so the dialog is still mounted and the broken code passes. Hold the work open
+  with a `Completer` until the dialog has pumped out. And `pumpAndSettle` never returns while a
+  `CircularProgressIndicator` is on screen; use explicit `pump(Duration)`.
+- ⚠️ **Do not `await` `CallReminderService` on a path the user is leaving through.** Its
+  `init()` awaits two platform channels (`FlutterTimezone`, then the notifications plugin);
+  either one hanging strands the user. In `delete_account_dialog` the cancel is fired and not
+  awaited for exactly this reason.
 - `flutter` is not on PATH in tool shells — use `C:\src\flutter\bin\flutter.bat`.
 - **`flutter analyze lib` has a standing baseline of 10 warnings.** Diff against it rather
-  than reading the count. 0 errors. **262 tests** pass.
+  than reading the count. 0 errors. **284 tests** pass (2026-08-15).
 - **Never key companion art off `predefined_option`.** Production ids are `2, 3, 4, 6, 10,
   12`; the id says nothing about which character a row is. Resolution order is the
   `avatar_logo` filename → preset `nowlii_name` → id. Never the displayed name, which the
