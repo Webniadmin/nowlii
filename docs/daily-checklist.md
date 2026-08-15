@@ -127,16 +127,31 @@ Public auth routes still redirect to home while signed in — for those, log out
 - **Whether the first call actually works is still unanswered.** The avatar on it is the
   chosen companion and the controls sit in one row, both confirmed — but a call cannot be
   judged here. Phone test.
-- **"Log out" leaves you on the Settings screen.** It does clear the session — the next
-  launch lands on the entry screen — but nothing navigates at the time, so it reads as
-  having failed.
-- **"Delete My Account" does the same thing, and worse.** Confirming it spins forever:
-  the account *is* deleted (verified — the next launch lands on sign-in because the stored
-  token points at a user who no longer exists), but the screen never leaves the spinner.
-  On the one flow both stores require, someone deleting their account is left staring at a
-  loader with no idea whether it worked. `auth_service.deleteAccount()` returns true on
-  200 and prints nothing, which is why the log looks empty. Same missing navigation as
-  Log out — worth fixing together.
+- [x] ~~**"Log out" leaves you on the Settings screen"** and **"Delete My Account" spins
+  forever.**~~ **Both fixed 2026-08-15.** One cause, and it was neither a missing `go()` nor
+  a backend problem: both already called `context.go(signInScreen)`, with the *dialog's*
+  `BuildContext`. Popping a dialog unmounts that context when its exit animation ends —
+  ~150ms, comfortably inside the request — so by the time the result landed every
+  `context.mounted` guard downstream read false and took the silent early return. Log out
+  cleared the session and never navigated; delete never dismissed its **modal** spinner,
+  which is why that one had no way out at all.
+  The fix is to capture what outlives the dialog *before* popping it — `GoRouter`,
+  `NavigatorState`, `ScaffoldMessengerState` all live above it — and to dismiss the spinner
+  unconditionally.
+  Two things found while pinning it down:
+  - **`CallReminderService.cancelAll()` was awaited on the way out**, and `init()` awaits two
+    platform channels (`FlutterTimezone`, then the notifications plugin). That put the exit
+    behind a plugin: either one hanging strands the user *after* the account is already
+    deleted. It is fired-and-forgotten now, with its own error sink. `StorageService.clearAll()`
+    is still awaited on purpose — the router guard reads those tokens, so navigating with them
+    in place bounces the user back in.
+  - **The first regression test was worthless and passed against the bug.** Ordering is
+    inverted in widget tests: a mocked store resolves in one microtask, so the dialog is still
+    mounted when the result lands. The real test holds the request open with a `Completer`
+    until the dialog has pumped fully out — and it was checked, by reconstructing the old
+    widget, to fail with exactly the reported symptom (the spinner still on screen).
+    `test/account_exit_navigation_test.dart`, 2 tests. **Log out has no test** — same
+    mechanism, same fix, verified by inspection only.
 - **Terms of Service is linked on `readyToStartScreen`** even though the document does not
   exist. Sign-up and Settings → Privacy hide it; this screen does not.
 - **`popup_error`, `pop_po_sahre` and `procrastination_screen`** still draw the old

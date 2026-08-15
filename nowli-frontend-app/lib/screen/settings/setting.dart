@@ -408,9 +408,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Expanded(
                       child: GestureDetector(
                         onTap: () async {
+                          // Grab the router BEFORE closing the dialog. `context` here is the
+                          // dialog's own, and popping it unmounts that element as soon as the
+                          // exit animation finishes — well before the logout request returns.
+                          // The `if (context.mounted)` guard that used to wrap the `go()` call
+                          // was therefore always false, so the session was cleared and nothing
+                          // ever navigated: you were left sitting on Settings, looking at a
+                          // screen that behaved as though log out had failed.
+                          final router = GoRouter.of(context);
+
                           // Close dialog
                           Navigator.of(context).pop();
-                          
+
                           // Perform logout
                           final authController = AuthController();
                           await authController.logout();
@@ -418,11 +427,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           // left, not to the phone. Without this the next user's profile
                           // would never be told which clock they are on.
                           await DeviceTimezone.forget();
-                          
+
                           // Navigate to sign in screen
-                          if (context.mounted) {
-                            context.go(AppRoutespath.signInScreen);
-                          }
+                          router.go(AppRoutespath.signInScreen);
                         },
                         child: Container(
                           height: 44,

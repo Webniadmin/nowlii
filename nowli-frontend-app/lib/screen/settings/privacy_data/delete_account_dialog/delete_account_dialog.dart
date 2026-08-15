@@ -1,4 +1,6 @@
 // Delete Account Confirmation Dialog
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nowlii/api/auth_service.dart';
@@ -9,7 +11,15 @@ import 'package:nowlii/services/call_reminder_service.dart';
 import 'package:nowlii/themes/text_styles.dart';
 
 class DeleteAccountDialog extends StatelessWidget {
-  const DeleteAccountDialog({super.key});
+  const DeleteAccountDialog({super.key, Future<bool> Function()? deleteAccount})
+      : _deleteAccount = deleteAccount;
+
+  /// Overrides the delete call. Production never passes this — it exists so a test can hold
+  /// the request open across the dialog's exit animation, which is the only window in which
+  /// the bug this widget was carrying is visible at all. Left to the real `AuthService` the
+  /// call resolves in a single microtask under a mocked store, the dialog is still mounted
+  /// when the result lands, and the broken code passes.
+  final Future<bool> Function()? _deleteAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -119,8 +129,20 @@ class DeleteAccountDialog extends StatelessWidget {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () {
+                      // Everything that has to outlive this dialog is captured BEFORE the
+                      // pop. `context` belongs to the dialog, and once it is gone every
+                      // `context.mounted` check downstream is false — see the note on
+                      // _handleDeleteAccount for what that used to cost.
+                      final router = GoRouter.of(context);
+                      final messenger = ScaffoldMessenger.of(context);
+                      final navigator = Navigator.of(context, rootNavigator: true);
+
                       Navigator.pop(context);
-                      _handleDeleteAccount(context);
+                      _handleDeleteAccount(
+                        navigator: navigator,
+                        messenger: messenger,
+                        router: router,
+                      );
                     },
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -152,21 +174,34 @@ class DeleteAccountDialog extends StatelessWidget {
   /// no endpoint. Now it deletes on the server, clears everything stored on the device and
   /// sends the user back to the sign-in screen, because there is no longer an account for
   /// them to return to.
-  Future<void> _handleDeleteAccount(BuildContext context) async {
+  ///
+  /// Takes no `BuildContext` on purpose. It used to take the confirmation dialog's, which
+  /// the caller had already popped — so by the time the delete request came back that
+  /// context was unmounted, `if (!context.mounted) return` fired, and the blocking spinner
+  /// below was never dismissed. The account really was deleted; the user just sat watching
+  /// a loader forever, on the one flow both app stores require. A `NavigatorState`, a
+  /// `ScaffoldMessengerState` and a `GoRouter` all live above the dialog and outlive it, so
+  /// there is nothing left to go stale mid-request.
+  Future<void> _handleDeleteAccount({
+    required NavigatorState navigator,
+    required ScaffoldMessengerState messenger,
+    required GoRouter router,
+  }) async {
     // Blocking spinner: this is irreversible, so the user must not be able to tap it twice
     // or wander off mid-request.
     showDialog(
-      context: context,
+      context: navigator.context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    final deleted = await AuthService().deleteAccount();
-    if (!context.mounted) return;
-    Navigator.of(context, rootNavigator: true).pop(); // dismiss the spinner
+    final deleted = await (_deleteAccount ?? AuthService().deleteAccount)();
+
+    // Unconditional: the spinner is modal, so failing to dismiss it strands the user.
+    if (navigator.mounted) navigator.pop();
 
     if (!deleted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(
           content: Text("Couldn't delete your account. Please check your connection and try again."),
           backgroundColor: Color(0xFFE53935),
@@ -175,18 +210,34 @@ class DeleteAccountDialog extends StatelessWidget {
       return;
     }
 
-    // The account is gone, so every stored token and cached profile is meaningless.
-    await StorageService().clearAll();
-    // Reminders point at calls that no longer exist.
-    await CallReminderService.instance.cancelAll();
-    if (!context.mounted) return;
+    // The account is gone, so every stored token and cached profile is meaningless. This one
+    // is awaited on purpose: the router's guard reads those tokens, so navigating with them
+    // still in place would bounce the user straight back into an app they no longer have an
+    // account for.
+    try {
+      await StorageService().clearAll();
+    } catch (e) {
+      debugPrint('⚠️ could not clear local storage after deletion: $e');
+    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    // Reminders point at calls that no longer exist — but cancelling them runs through
+    // `CallReminderService.init()`, which awaits two platform channels (the timezone plugin
+    // and the notifications plugin). Awaiting that put the whole exit behind a plugin: if
+    // either one hangs, the user is stranded *after* their account has already been deleted,
+    // which is the failure this method exists to prevent. Fired and not awaited, with its own
+    // error sink so a rejection cannot surface as an unhandled async error.
+    unawaited(
+      CallReminderService.instance.cancelAll().catchError(
+        (Object e) => debugPrint('⚠️ could not cancel reminders after deletion: $e'),
+      ),
+    );
+
+    messenger.showSnackBar(
       const SnackBar(
         content: Text('Your account and all of your data have been permanently deleted.'),
         backgroundColor: Color(0xFF2E7D32),
       ),
     );
-    context.go(AppRoutespath.signInScreen);
+    router.go(AppRoutespath.signInScreen);
   }
 }
