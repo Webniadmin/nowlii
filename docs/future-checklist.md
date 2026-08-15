@@ -59,6 +59,30 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
 
 ## P2 — Correctness & quality
 
+- [ ] **The AI voice call parrots the user back in every single reply.** Reported from real
+      use, 2026-08-15: "ne osećam se dobro, boli me glava" → "Okay, I feel you, your head is
+      hurting." Every turn, without exception. Once in a while it lands as being heard; every
+      time it is wearing, and it makes her sound like a script rather than someone listening.
+      **This is not model drift — the persona instructs it.** `nowli-ai/test17.py`,
+      `_REALTIME_PERSONA_EN`:
+
+      > "Reflect back what you actually hear before responding, so {user_name} feels
+      > understood."
+
+      Unconditional, and "before responding" makes it a step in every turn. The line came in
+      with the calm-companion rewrite and the intent was right — it is the fix for a companion
+      that talks past you — but as written it has no "sometimes" and no "only when it adds
+      something".
+      **When picking this up:** rewrite the line so reflecting is occasional and earned
+      (something like: reflect only when it genuinely helps, and when you do, use your own
+      words rather than repeating theirs; usually just respond to what they said). Then
+      **listen to a real call** — this cannot be judged from the prompt text, and the emulator
+      routes no microphone, so it needs a phone and a billable call.
+      Two things to keep in mind while editing that block: the **non-English path does not use
+      this persona at all** (it falls back to `_build_system_prompt`), so check whether the
+      same complaint applies there; and per CLAUDE.md the three provider callers stay in sync,
+      though this particular string is realtime-only. Rollback is documented above the persona.
+
 - [ ] **Google Client ID cleanup.** `docs/google-login.md` lists two conflicting Web client
       IDs (`274971792537-m5oca…` active/verified vs. a stale `1042808398004-…`). Remove the
       stale reference so there's one source of truth; verify all five wiring points agree
