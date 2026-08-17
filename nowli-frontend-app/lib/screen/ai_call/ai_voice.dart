@@ -298,14 +298,21 @@ class _AiVoiceState extends State<AiVoice>
             : "Couldn't start the call right now.\nPlease check your connection and try again.";
       });
       // Give the user a moment to read the message, then leave the call screen.
-      Future.delayed(const Duration(seconds: 3), () {
-        if (!mounted) return;
-        if (context.canPop()) {
-          context.pop();
-        } else {
-          context.go(AppRoutespath.homeScreen);
-        }
-      });
+      Future.delayed(const Duration(seconds: 3), _leaveBlockedCallScreen);
+    }
+  }
+
+  /// Leaves the call screen from the blocked overlay — used both by the daily-limit
+  /// auto-dismiss timer and the close (X) button on the overlay itself. The other
+  /// `_callBlocked` paths (mic permission denied, session/connection failures in
+  /// `_startRealtimeCall`) never scheduled this, so those left the user stuck on the
+  /// overlay with no way back short of force-quitting the app — the X button is the fix.
+  void _leaveBlockedCallScreen() {
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(AppRoutespath.homeScreen);
     }
   }
 
@@ -365,7 +372,23 @@ class _AiVoiceState extends State<AiVoice>
     // WebRTC's getUserMedia does NOT prompt for the mic on its own — request it up front,
     // otherwise the native audio capture fails hard (crash) on Android.
     if (!kIsWeb) {
-      final micStatus = await Permission.microphone.request();
+      // Check first rather than always calling request(): if it's already granted this
+      // skips re-touching the OS permission API entirely, and avoids re-triggering the
+      // system dialog on platforms that would otherwise show it again.
+      var micStatus = await Permission.microphone.status;
+      if (!micStatus.isGranted) {
+        micStatus = await Permission.microphone.request();
+        if (!micStatus.isGranted) {
+          // iOS can report a stale (denied) status for a moment right after the user
+          // answers the system dialog — the permission database hasn't caught up yet.
+          // Confirmed live: a tester granted mic access and still hit the "permission
+          // required" block below because this reused the request() result as final.
+          // Re-reading .status once, after a short beat, gives the OS time to settle.
+          await Future.delayed(const Duration(milliseconds: 400));
+          if (!mounted) return;
+          micStatus = await Permission.microphone.status;
+        }
+      }
       if (!micStatus.isGranted) {
         if (!mounted) return;
         setState(() {
@@ -2651,33 +2674,52 @@ class _AiVoiceState extends State<AiVoice>
       child: Container(
         color: const Color(0xFF91BBF9),
         alignment: Alignment.center,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 32),
-          padding: const EdgeInsets.all(24),
-          decoration: ShapeDecoration(
-            color: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.access_time_filled, size: 50, color: Color(0xFF4542EB)),
-              const SizedBox(height: 16),
-              Text(
-                _blockMessage,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF011F54),
-                  fontSize: 18,
-                  fontFamily: 'Work Sans',
-                  fontWeight: FontWeight.w700,
-                  height: 1.4,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
+              decoration: ShapeDecoration(
+                color: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
                 ),
               ),
-            ],
-          ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.access_time_filled, size: 50, color: Color(0xFF4542EB)),
+                  const SizedBox(height: 16),
+                  Text(
+                    _blockMessage,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF011F54),
+                      fontSize: 18,
+                      fontFamily: 'Work Sans',
+                      fontWeight: FontWeight.w700,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // The only way off this overlay before this fix was force-quitting the app —
+            // none of the `_callBlocked` paths except the daily-limit one auto-dismissed.
+            Positioned(
+              top: 8,
+              right: 24,
+              child: Material(
+                color: Colors.transparent,
+                child: IconButton(
+                  onPressed: _leaveBlockedCallScreen,
+                  icon: const Icon(Icons.close, color: Color(0xFF011F54)),
+                  tooltip: 'Close',
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
