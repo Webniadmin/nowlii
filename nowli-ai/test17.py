@@ -305,28 +305,42 @@ _SUMMARY_KEYS: dict[str, dict[str, str]] = {
 }
 
 _SUMMARY_FALLBACKS: dict[str, dict[str, str]] = {
-    # HONEST fallbacks: used only when a real conversation happened but the GPT
-    # summary call/parse failed. They do NOT fabricate a specific mood/topic/arc —
-    # they own the miss — so a failed summary never masquerades as a real insight.
+    # Used only when a real conversation happened but the GPT summary call/parse failed.
+    # Topic and energy still own the miss rather than inventing one.
+    #
+    # Mood is the exception: an unreadable mood is reported as **neutral**, not as a
+    # failure. "I couldn't catch your mood" was the one tile users actually read as the
+    # app being broken, and a mood that registers as nothing in particular *is* neutral —
+    # so the neutral line is the honest reading of it, not a fabricated one.
     "en": {
-        "mood_detected": "I had a little trouble putting your mood into words this time.",
+        "mood_detected": "You sounded pretty neutral — steady and even, nothing pulling hard either way.",
         "focus_topic":   "I couldn't quite capture what we focused on, but I'm glad we talked.",
         "energy_shift":  "I couldn't read your energy shift this time.",
         "next_step":     "Take a moment for yourself today — you deserve it!",
     },
     "de": {
-        "mood_detected": "Ich konnte deine Stimmung diesmal nicht ganz in Worte fassen.",
+        "mood_detected": "Du klangst ziemlich neutral — ruhig und ausgeglichen.",
         "focus_topic":   "Ich konnte nicht genau festhalten, worum es ging, aber schön, dass wir geredet haben.",
         "energy_shift":  "Ich konnte deinen Energiewechsel diesmal nicht ablesen.",
         "next_step":     "Gönn dir heute einen Moment für dich — du hast es verdient!",
     },
     "es": {
-        "mood_detected": "Esta vez no logré captar bien tu estado de ánimo.",
+        "mood_detected": "Sonaste bastante neutral — tranquilo y equilibrado.",
         "focus_topic":   "No pude captar del todo de qué hablamos, pero me alegra que hayamos charlado.",
         "energy_shift":  "Esta vez no pude interpretar tu cambio de energía.",
         "next_step":     "Tómate un momento para ti hoy — ¡te lo mereces!",
     },
 }
+
+
+def _neutral_mood_line(lang: str) -> str:
+    """The mood sentence for a call whose mood could not be read.
+
+    Single source for it: the summary endpoint uses it when GPT omits the field, and the
+    fallback table uses the same wording when the whole summary call fails.
+    """
+    table = _SUMMARY_FALLBACKS.get(lang, _SUMMARY_FALLBACKS["en"])
+    return table["mood_detected"]
 
 
 _WORDS_CIRCLED_MAX      = 5
@@ -1110,11 +1124,15 @@ _REALTIME_PERSONA_EN = """You are {system_name}, a calm, grounded companion for 
 Speak slowly and softly, in short, natural sentences. Leave small pauses. Never rush, never overwhelm.
 Listen closely and let {user_name} lead. Take what they say at face value — do NOT guess, label, or assume how they feel, and do NOT ask leading mood questions like "are you sad?" or "are you happy or stressed?". If you're unsure how they're doing, ask gently and openly ("How's your day going?", "What's on your mind?") and let them put it into their own words.
 Stay neutral and even — don't swing the mood up or down, and don't read emotion into small things. Match {user_name}'s tone rather than setting it.
-Reflect back what you actually hear before responding, so {user_name} feels understood. Don't rush to fix, and don't give advice unless they ask. Never brush feelings aside with empty reassurance like "it'll be fine".
+Respond to what {user_name} actually said — answer it, ask about it, or sit with it. Reflect their words back only when it genuinely adds something (a hard moment, something they clearly want heard), not as a habit. Don't rush to fix, and don't give advice unless they ask. Never brush feelings aside with empty reassurance like "it'll be fine".
 Only if {user_name} clearly signals they're having a hard time, slow down and steady them — without making it bigger than they made it. If something is clearly going well, share in it lightly.
 Ask one soft, open question at a time, and let {user_name} set the pace.
 Be warm, human, and present — a companion, not a clinician, assistant, or coach. If {user_name} is ever in real danger or crisis, gently and warmly encourage them to reach out to someone they trust or local professional or emergency support, and gently stay with them.
-Remember what {user_name} shares and bring it back naturally. Never say you are an AI — you are simply {system_name}, here for {user_name}."""
+Remember what {user_name} shares and bring it back naturally. Never say you are an AI — you are simply {system_name}, here for {user_name}.
+
+Do not narrate that you are listening. Never begin a reply with a stock acknowledgement — no "I understand", "I hear you", "I get it", "that makes sense", "I see", "ah", "oh", "wow", "of course", and no equivalent in any other language. Say at most one such acknowledgement in an entire conversation, and only where it truly belongs. Never open two replies in a row the same way: vary how you start, and if you catch yourself reaching for a phrase you have already used, say something else or go straight to the substance.
+Avoid catchphrases and recurring images. Do not lean on the same encouragement over and over ("small steps", "one step at a time", "little by little") and never slip into another language for them.
+Names are fixed: you are {system_name}, and the person you are speaking with is {user_name}. Never call yourself {user_name}, never address them as {system_name}, and never swap the two mid-conversation. Use their name sparingly — a few times per call, where it lands naturally — not in every reply."""
 
 
 def _realtime_instructions(session) -> str:
@@ -1524,7 +1542,8 @@ async def chat_summary(request: SummaryRequest):
         session_id=request.session_id, user_name=session.user_name,
         system_name=session.system_name, language=session.language,
         language_name=SUPPORTED_LANGUAGES[session.language], total_turns=len(session.turns),
-        mood_detected=gpt_data.get("mood_detected", ""), focus_topic=gpt_data.get("focus_topic", ""),
+        mood_detected=(gpt_data.get("mood_detected") or _neutral_mood_line(session.language)),
+        focus_topic=gpt_data.get("focus_topic", ""),
         energy_shift=gpt_data.get("energy_shift", ""), next_step=gpt_data.get("next_step", ""),
         # dominant_emotion now comes from the transcript-based top_emotions (per-turn was removed):
         #   dominant_emotion=session.overall_dominant(),
