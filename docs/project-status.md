@@ -1,6 +1,32 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-08-21_
+_Last reviewed: 2026-08-25_
+
+## Completed this session (2026-08-25)
+
+_Full detail in `daily-reports/2026-08-25.md`. Six commits `3f77fbf` -> `086f5e9`, on
+`fix/call-mic-permission-and-close-button`, **not pushed**. **`nowli-backend` deployed to
+production** (commit `086f5e9`, no migrations); `nowli-ai` deliberately untouched._
+
+- **Notifications and the timezone proved on hardware for the first time.** A quest set for
+  12:30 rang at 12:30:00.026 as an exact `RTC_WAKEUP`, at the epoch that is 12:30 in the
+  device's own zone. The 08-21 Flutter work is finally committed too.
+- **Quest alarms fire 5 minutes early**, calendar-style, with the copy reading the quest's
+  clock rather than the reminder's.
+- **The streak can lapse again.** It never compared to today, so a run from last January still
+  reported 2 in August. Anchored to today-or-yesterday, on the user's calendar, ignoring future
+  dates. **The backend has its first tests** (`Apps/quests/tests.py`, 11 cases).
+- **`DELETE /api/voice-calls/<id>/summary/`** added, so a receipt can be swiped away.
+- **One shared calendar** (`lib/widget/quest_calendar.dart`) replaces the two that disagreed;
+  the week strip had no "skipped" state at all.
+- **Activity trend** had `maxY` hardcoded to 20, drawing every real bar at a twentieth of its
+  height.
+- Quest cards open on tap and complete on the checkbox; the invented "10 mins" pill is gone;
+  three empty states now centre in the room they have; suggested cards are readable (most were
+  navy on navy); profile, receipts and settings match the design.
+
+**Found, not fixed:** nothing runs after login (no `sync()`, no `DeviceTimezone.report()`), all
+five notification toggles are dead, and the profile's notification feed has no writer.
 
 ## Completed this session (2026-08-21)
 
