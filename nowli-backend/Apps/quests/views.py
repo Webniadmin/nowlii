@@ -7,6 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from Apps.subscriptions.permissions import HasProAccessOrReadOnly
+from Apps.users.timezones import user_localdate
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from .models import Quests, SubTasks
@@ -144,27 +145,43 @@ class QuestsViewset(viewsets.ModelViewSet):
     )
     @action(detail=False, methods=['get'], url_path='streak')
     def streak(self, request):
-        # Get dates where all quests for that date are done
+        # Dates where *every* quest the user set for that day is finished. A day with one
+        # unfinished quest is not a streak day — that rule is also what the completion
+        # banner reads, so the two cannot disagree.
         completed_dates = Quests.objects.filter(
             user=request.user, select_a_date__isnull=False
         ).values('select_a_date').annotate(
             total=Count('id'),
             done=Count('id', filter=Q(task_done=True))
-        ).filter(total__gt=0, total=F('done')).values_list('select_a_date', flat=True).distinct().order_by('-select_a_date')
+        ).filter(total__gt=0, total=F('done')).values_list('select_a_date', flat=True).distinct()
 
-        if not completed_dates:
+        # The user's own calendar day, not the server's. `select_a_date` is a naive
+        # wall-clock date, so deciding which day is "today" against a UTC clock hands
+        # anyone east of Greenwich the wrong answer for the first hours of their day.
+        today = user_localdate(request.user)
+
+        # Quests can be created — and ticked — for dates ahead of now. Those days have not
+        # happened yet and must not extend or anchor a streak, or finishing tomorrow's
+        # quest today would silently award two days.
+        completed = [d for d in sorted(set(completed_dates), reverse=True) if d <= today]
+
+        if not completed:
             return Response({'streak': 0}, status=status.HTTP_200_OK)
 
-        # Find current streak: consecutive days ending with the latest completed date
-        completed_dates = sorted(set(completed_dates), reverse=True)
-        streak = 0
-        for i, d in enumerate(completed_dates):
-            if i == 0:
-                streak = 1
-            elif (completed_dates[i-1] - d).days == 1:
-                streak += 1
-            else:
+        # A streak has to still be running. The old code counted consecutive days ending at
+        # the *latest completed date* and never compared it to now, so two finished days
+        # last January still reported a streak of 2 in August — it could only ever grow or
+        # hold, never lapse. Today's own quests may still be unfinished, so yesterday is
+        # close enough to count as unbroken; anything older is a streak that has ended.
+        if completed[0] < today - timedelta(days=1):
+            return Response({'streak': 0}, status=status.HTTP_200_OK)
+
+        streak = 1
+        for previous, current in zip(completed, completed[1:]):
+            if (previous - current).days != 1:
                 break
+            streak += 1
+
         return Response({'streak': streak}, status=status.HTTP_200_OK)
 
 
