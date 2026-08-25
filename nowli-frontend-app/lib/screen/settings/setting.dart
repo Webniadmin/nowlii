@@ -85,10 +85,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   _buildSettingsItem(
-                    iconWidget: Image.asset(
-                      Assets.svgIcons.nowliPro.path,
-                      width: 40,
+                    // The membership mark from Figma 3368:29245 — Nowlii's own logo on the
+                    // brand green, replacing the old `nowliPro` badge. Built rather than
+                    // shipped flat because the design is a tinted plate with the mark
+                    // inside it, and the plate is the part that has to match #A0E871
+                    // exactly; the glyph is the exported SVG, untouched.
+                    iconWidget: Container(
+                      width: 47,
                       height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFA0E871),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Assets.svgIcons.nowliiProMark.svg(
+                        width: 27.7,
+                        height: 20.9,
+                      ),
                     ),
                     // "Your membership" per the design (Figma 5:2015). "Nowlii Pro" is the
                     // product's name for the paid tier, not a thing the user owns; the row

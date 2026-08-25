@@ -464,6 +464,24 @@ class VoiceCallSummaryView(APIView):
         code = status.HTTP_200_OK if existed else status.HTTP_201_CREATED
         return Response(CallSummarySerializer(summary).data, status=code)
 
+    @swagger_auto_schema(
+        operation_summary="Delete an AI voice call's summary",
+        operation_description=(
+            'Removes the saved receipt for this call. The call itself is untouched: it '
+            'still counts against the day it was made, so deleting a receipt cannot be '
+            'used to buy back a spark.'
+        ),
+        tags=['Voice calls'],
+        responses={204: 'Deleted', 404: 'No summary for this call'},
+    )
+    def delete(self, request, pk):
+        # Scoped to the caller's own calls, so one user cannot delete another's receipt by
+        # guessing an id — the same lookup the POST above uses.
+        call = get_object_or_404(VoiceCall, pk=pk, user=request.user)
+        summary = get_object_or_404(CallSummary, call=call, user=request.user)
+        summary.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class VoiceCallSummaryNoteView(APIView):
     """`PATCH /api/voice-calls/<id>/summary/note/` — the user's own note on a receipt.

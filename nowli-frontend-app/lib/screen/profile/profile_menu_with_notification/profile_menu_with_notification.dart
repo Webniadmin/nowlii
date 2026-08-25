@@ -7,6 +7,7 @@ import 'package:nowlii/themes/create_qutes.dart';
 import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 import 'package:nowlii/models/subscription_model.dart';
+import 'package:nowlii/services/companion_avatar.dart';
 import 'package:nowlii/services/profile_service.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:nowlii/services/subscription_schedule.dart';
@@ -122,7 +123,22 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
     int? activeQuests;
     if (status != null) {
       final quests = await QuestService().fetchAllQuests();
-      activeQuests = quests.where((q) => !q.taskDone).length;
+
+      // "Active" is what the user still has ahead of them — not every quest they have ever
+      // left unticked. Counting all of those made the number climb forever and never fall:
+      // a quest whose day came and went unfinished is *missed*, not active, and it stayed
+      // in the total months later, which is why the count read as wrong.
+      //
+      // Undated quests still count: they have no day to have missed. Today counts even
+      // once its hour has passed, because the day is not over.
+      final now = DateTime.now();
+      final startOfToday = DateTime(now.year, now.month, now.day);
+      activeQuests = quests.where((q) {
+        if (q.taskDone) return false;
+        final date = DateTime.tryParse(q.selectADate);
+        if (date == null) return true;
+        return !date.isBefore(startOfToday);
+      }).length;
     }
 
     if (mounted) {
@@ -204,7 +220,9 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: const Color(0xFFDFEFFF),
-                      border: Border.all(color: Colors.white, width: 4),
+                      // No ring. The design draws the photo bare; the white border read as
+                      // a sticker edge against the blue page and made the circle look
+                      // smaller than the 120 it is.
                       image: _profileData?.profileImage.isNotEmpty == true
                           ? DecorationImage(
                               image: NetworkImage(_profileData!.profileImage),
@@ -236,13 +254,19 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
                       height: 36,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: const Color(0xFF7FFF00),
-                        border: Border.all(color: Colors.white, width: 3),
+                        // Nowlii green — the same 0xFF3BB64B the plan card ends on and
+                        // "QUEST COMPLETED" is set in. It was 0xFF7FFF00, pure chartreuse,
+                        // which belongs to no other surface in the app.
+                        color: const Color(0xFF3BB64B),
+                        // Bare, like the photo it sits on — same reason.
                       ),
                       child: const Icon(
                         Icons.favorite_rounded,
                         size: 18,
-                        color: Color(0xFF4542EB),
+                        // Navy, not the old purple: on the darker Nowlii green the purple
+                        // fell to 2.5:1 (it had 5:1 against chartreuse). Navy reads at
+                        // 6:1 and is what the plan card already puts on this same green.
+                        color: Color(0xFF011F54),
                       ),
                     ),
                   ),
@@ -250,7 +274,7 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
               ),
             ),
           ),
-          const SizedBox(height: 65),
+          const SizedBox(height: 48),
 
           // Profile Card
           Stack(
@@ -293,19 +317,24 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
 
               // User Name Badge
               Positioned(
-                top: -68,
+                top: -50,
                 left: 0,
                 right: 0,
                 child: Center(
                   child: Container(
-                    height: 74,
-                    width: 265,
+                    // 265 x 74 was most of the screen's width for a five-letter name.
+                    // The design's pill is roughly half that; the FittedBox below still
+                    // shrinks a long name rather than letting it hit the padding.
+                    height: 56,
+                    width: 200,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 20,
                       vertical: 8,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF7FFF00),
+                      // The design's green. 0xFF7FFF00 is pure chartreuse and belongs to
+                      // no other surface in the app.
+                      color: const Color(0xFFA0E871),
                       borderRadius: BorderRadius.circular(50),
                     ),
                     child: Center(
@@ -346,7 +375,7 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
                 // A pencil, as the design has it. `Edit profile.png` is a
                 // left-pointing arrow, so the row read as "go back" rather than
                 // "edit" — and sat directly under a back button that does.
-                Assets.svgIcons.editProfilIcon.path,
+                const Icon(Icons.edit_outlined, size: 28, color: Colors.white),
                 () async {
                   // Navigate and reload when returning
                   await context.push('/editProfileScreen');
@@ -359,7 +388,11 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
               const SizedBox(height: 12),
               _buildActionButton(
                 'Contact support',
-                Assets.svgIcons.contactSupport.path,
+                Image.asset(
+                  Assets.svgIcons.contactSupport.path,
+                  width: 28,
+                  height: 28,
+                ),
                 () {
                   context.push('/supportScreen');
                 },
@@ -463,7 +496,11 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
                         shape: const StadiumBorder(),
                       ),
                       child: Text(
-                        'Talk to Fuzzy',
+                        // The tenth place that addressed the companion by a name the user
+                        // never chose. "Fuzzy" is the onboarding placeholder, not anyone's
+                        // companion — the other nine were fixed on 2026-08-21 and this one
+                        // sits far enough down the profile that nobody had scrolled to it.
+                        'Talk to ${CompanionAvatar.current.name}',
                         style: GoogleFonts.workSans(
                           color: const Color(0xFFFFFEF8),
                           fontSize: 18,
@@ -612,9 +649,16 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
     return IconButton(icon: Image.asset(assetPath), onPressed: onPressed);
   }
 
+  /// One of the two rows under the profile card.
+  ///
+  /// Takes the icon as a widget rather than an asset path plus a tint. The tint was the
+  /// bug: `Image.asset(..., color:)` flattens every pixel to one colour, and
+  /// `Edit profilIcon.png` is a *filled blue plate* with a navy pencil on it — so painting
+  /// it white produced a solid white disc with no pencil in it at all. The design wants an
+  /// outlined pencil, matching the outlined "i" on the row below, and neither is a plate.
   Widget _buildActionButton(
     String text,
-    String assetPath,
+    Widget icon,
     VoidCallback onPressed,
   ) {
     return InkWell(
@@ -629,7 +673,7 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            Image.asset(assetPath, width: 28, height: 28),
+            icon,
             const SizedBox(width: 8),
             Text(text, style: AppsTextStyles.workSansBlack20),
           ],
