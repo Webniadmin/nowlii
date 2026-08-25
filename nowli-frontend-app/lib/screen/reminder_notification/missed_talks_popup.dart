@@ -2,6 +2,7 @@ import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
+import 'package:nowlii/services/display_name.dart';
 
 class MissedTalksPopup extends StatefulWidget {
   const MissedTalksPopup({super.key});
@@ -16,9 +17,16 @@ class _MissedTalksPopupState extends State<MissedTalksPopup>
   late Animation<double> _fadeIn;
   late Animation<Offset> _slideUp;
 
+  /// Empty until the profile read lands — the headline drops the name rather than
+  /// showing a placeholder one.
+  String _userName = '';
+
   @override
   void initState() {
     super.initState();
+    DisplayName.userUpper().then((name) {
+      if (mounted) setState(() => _userName = name);
+    });
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -74,8 +82,12 @@ class _MissedTalksPopupState extends State<MissedTalksPopup>
                     SizedBox(
                       width: 310,
                       child: Text(
-                        'HEY JULIE, YOU\'VE BEEN QUIET LATELY',
+                        _userName.isEmpty
+                            ? 'YOU\'VE BEEN QUIET LATELY'
+                            : 'HEY $_userName, YOU\'VE BEEN QUIET LATELY',
                         textAlign: TextAlign.center,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: const Color(0xFF011F54),
                           fontSize: 32,

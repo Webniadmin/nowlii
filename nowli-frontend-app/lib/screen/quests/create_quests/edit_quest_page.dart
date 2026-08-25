@@ -257,6 +257,9 @@ class _EditQuestPageState extends State<EditQuestPage> {
                   SizedBox(height: 12 * baseScale),
                   AddSubtasksButton(
                     questController: _taskController,
+                    // The quest's existing subtasks were parsed in initState and then
+                    // never handed to the widget that draws them.
+                    initialSubtasks: subtasks,
                     onSubtasksChanged: (List<String> newSubtasks) {
                       setState(() => subtasks = newSubtasks);
                     },
@@ -270,6 +273,7 @@ class _EditQuestPageState extends State<EditQuestPage> {
                   ),
                   SizedBox(height: 12 * baseScale),
                   WhenCard(
+                    initialDate: selectedDate,
                     onDateSelected: (String option, DateTime date) {
                       setState(() => selectedDate = date);
                     },

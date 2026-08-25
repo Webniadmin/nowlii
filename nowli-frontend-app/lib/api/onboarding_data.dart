@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:nowlii/services/companion_avatar.dart';
 
 /// Everything the onboarding flow collects, before it becomes a Profile.
 ///
@@ -85,6 +86,7 @@ class OnboardingData extends ChangeNotifier {
   /// `avatar_logo` from `predefined_option` and treats the URL as read-only.
   void setAvatarLogo(String value) {
     _avatarLogo = value;
+    _syncCompanionAvatar();
     _changed('Avatar logo set');
   }
 
@@ -92,6 +94,7 @@ class OnboardingData extends ChangeNotifier {
   /// the companion, and with it the AI voice.
   void setPredefinedOption(int value) {
     _predefinedOption = value;
+    _syncCompanionAvatar();
     _changed('Companion set');
   }
 
@@ -102,12 +105,28 @@ class OnboardingData extends ChangeNotifier {
 
   void setNowliiName(String value) {
     _nowliiName = value;
+    _syncCompanionAvatar();
     _changed('Nowlii name set');
   }
 
   void setCustomNowliiName(String value) {
     _customNowliiName = value;
+    _syncCompanionAvatar();
     _changed('Custom Nowlii name set');
+  }
+
+  /// Push the companion choice into [CompanionAvatar] straight away.
+  ///
+  /// There is no profile to adopt until the last screen of onboarding, so without this
+  /// every `NowliiAvatar` shown along the way drew the fallback character instead of the
+  /// one the user had just picked. Overwritten by the real profile as soon as it is saved.
+  void _syncCompanionAvatar() {
+    CompanionAvatar.adoptOnboarding(
+      optionId: _predefinedOption,
+      avatarLogo: _avatarLogo,
+      presetName: _nowliiName,
+      customName: _customNowliiName,
+    );
   }
 
   void _changed(String action) {
@@ -181,6 +200,11 @@ class OnboardingData extends ChangeNotifier {
       _profileImage = map['profileImage'] as String?;
       _nowliiName = map['nowliiName'] as String?;
       _customNowliiName = map['customNowliiName'] as String?;
+      // Resuming onboarding after the app was killed has to restore the companion too,
+      // or the second run shows the fallback character despite the choice surviving.
+      if (_predefinedOption != null || (_avatarLogo?.isNotEmpty ?? false)) {
+        _syncCompanionAvatar();
+      }
       notifyListeners();
     } catch (e) {
       if (kDebugMode) debugPrint('OnboardingData: could not restore — $e');

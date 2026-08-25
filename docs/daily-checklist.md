@@ -4,14 +4,59 @@ _The single active document for the current working day. Update **only this file
 during the day. At end of day, write a report in `daily-reports/` and reset this list
 for tomorrow. Deferred items go to `future-checklist.md`._
 
-**Day:** 2026-08-14
-**Branch:** `feat/design-implementation` — merged to `main` today at the user's decision,
-ahead of the phone test (see the note under the phone test below)
-**Last working day:** `daily-reports/2026-08-12.md` — the pose art landed, and the mapping
-under every avatar turned out to have been wrong for five of the six companions.
-**2026-08-13 produced no commits and no report.**
+**Day:** 2026-08-21 (Friday) — **next working day is Monday 2026-08-24**
+**Branch:** `fix/call-mic-permission-and-close-button`
+**Today's report:** `daily-reports/2026-08-21.md` — eight items from the user's device run.
+Six fixed at the cause, one still unproven (the male voice), everything server-side deployed.
+**Earlier:** `daily-reports/2026-08-12.md` — the pose art, and the mapping under every avatar
+that had been wrong for five of the six companions. The 08-14 and 08-15 work never got its own
+report; it is the two sections further down, kept here rather than lost.
 
-## ✅ Done today (2026-08-14)
+---
+
+## ▶ START HERE — Monday, on the phone
+
+Everything below this block is older. Nothing from 2026-08-21 has been near real hardware, and
+most of it cannot be judged anywhere else.
+
+**Before anything else:** the Flutter changes from 08-21 are **uncommitted and not in any
+APK**. Build one first, or none of what follows exists on the device:
+`flutter build apk --debug --dart-define-from-file=dart_defines.prod.json`.
+The server-side half (persona, neutral mood, suggestion timezone) **is already live** and
+needs no build.
+
+1. **The male voice — the one open question.** Settings → AI Personalization → Voice &
+   Personality now shows the current value on the row; set it to **Male**, then start a call
+   and read two lines in `flutter logs`:
+   - `Companion voice from profile: Male` — the phone sent it. If this says `Female` or
+     `(unset)`, the setting never reached the profile, and the snackbar on the settings row
+     will have said so.
+   - `Realtime voice for this call: cedar` — the server granted the male voice (`marin` is
+     female, `default` means the gender never arrived).
+   Those two lines say which side is wrong. Without them this cannot be diagnosed at all.
+2. **Notifications.** The permission is now requested on any quest, and by `sync()` itself.
+   ⚠️ **An account that already denied twice will never see the dialog again** — Android
+   stops showing it — so grant it in system settings first, or test on a fresh install.
+   Then: a quest with a time should ring at that time, and a quest with "Enable call" should
+   warn **5 minutes** before (not 10 — the copy said 10 and was wrong).
+3. **The call itself: does the companion still agree with everything?** The persona no longer
+   says "reflect back what you actually hear", which is what produced "ah, I understand you"
+   on every turn. It is now a strict instruction, so watch the other way too — if it reads as
+   curt or cold, the dial is the "at most one such acknowledgement" line in
+   `_REALTIME_PERSONA_EN` (documented in `ai-prompts.md` §1a).
+4. **Names in the call.** It should never call itself by the user's name or the reverse. Also
+   check the companion's own name on screen: the reminder notification, the Today call button,
+   both out-of-sparks slots, the voice-check popups.
+5. **The summary screen.** A short or silent call must now say the mood was **neutral** (with
+   the peaceful face), never "I couldn't catch your mood".
+6. **AI suggested quests.** Open them in the evening: the suggested times should match the
+   time of day *you* are in, not UTC.
+
+- [ ] Empty both QA allowlists again when the test is done — see **Accounts** below.
+
+---
+
+## ✅ Done 2026-08-14
 
 - **The 320dp sweep is finished except the call screens.** Settings and every screen under
   it driven at 320.0dp, and onboarding covered by a new `test/small_screen_layout_test.dart`
@@ -32,7 +77,7 @@ under every avatar turned out to have been wrong for five of the six companions.
 - Verified: `flutter analyze lib` → 0 errors, **10 warnings, the standing baseline**;
   **268 tests pass**, up from 262.
 
-## ✅ Also done today — a 16-item pass from the user, on a 320dp screen
+## ✅ Also done 2026-08-14 — a 16-item pass from the user, on a 320dp screen
 
 Commits `9db9b30`, `8216571`, `c127330`, `299191f`, `184d7ad`.
 
@@ -190,11 +235,11 @@ Public auth routes still redirect to home while signed in — for those, log out
 
 ---
 
-## ▶ START HERE — the phone test, seven days overdue
+## ▶ The phone test — still open, now two weeks overdue
 
-Everything else on this list is smaller than this one. A **prod** APK pointing at the live
-HTTPS backend has been waiting since 08-06, and three things can only be judged on hardware
-because the emulator cannot route host audio.
+The block at the top of this file is Monday's version of this list; this one is what it
+inherited. **The archived APK below predates the 08-21 fixes** — it is commit `9d03b9d`, so it
+carries none of them. Build a new one rather than reinstalling it.
 
 - [x] ~~**Build a fresh APK**~~ — done 2026-08-15, archived as
       **`../nowlii-apk-archive/nowlii-prod-v0.3.apk`** (266 MB, commit `9d03b9d`). Built with
@@ -308,8 +353,11 @@ wording, and the **call screen pulse**.
 - Env changes take effect on container **create**, not restart — always `up -d`.
 - **Production logs 500s now.** `docker logs nowlii-backend` holds tracebacks.
 - **HTTPS is live**: `https://api.nowlii.com`, `https://ai.nowlii.com`. Cert to 2026-10-29.
-- As of 2026-08-12 the deployed backend is **byte-identical to committed `HEAD`** — there is
-  nothing waiting to deploy.
+- **As of 2026-08-21 both services on the box run commit `7377ae8`** (backend and `nowli-ai`,
+  rebuilt and restarted that afternoon). Nothing server-side is waiting to deploy. The
+  **Flutter** tree is a different story — see the top of this file.
+- `git archive` ships **committed** files only. A deploy of uncommitted work silently ships
+  the old code and looks like it worked.
 
 ### Accounts, money, data
 - ⚠️ **Both QA allowlists are ACTIVE on production** — both set to `p.pavle16`, restored at
@@ -364,7 +412,9 @@ wording, and the **call screen pulse**.
   awaited for exactly this reason.
 - `flutter` is not on PATH in tool shells — use `C:\src\flutter\bin\flutter.bat`.
 - **`flutter analyze lib` has a standing baseline of 10 warnings.** Diff against it rather
-  than reading the count. 0 errors. **284 tests** pass (2026-08-15).
+  than reading the count. 0 errors. **293 tests** pass (2026-08-21).
+- **The backend has no tests.** `manage.py test` reports `Ran 0 tests`, so backend changes are
+  covered by reading and by `manage.py check` alone — say so rather than implying a green run.
 - **Never key companion art off `predefined_option`.** Production ids are `2, 3, 4, 6, 10,
   12`; the id says nothing about which character a row is. Resolution order is the
   `avatar_logo` filename → preset `nowlii_name` → id. Never the displayed name, which the

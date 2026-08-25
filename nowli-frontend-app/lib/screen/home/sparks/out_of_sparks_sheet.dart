@@ -2,9 +2,8 @@ import 'package:nowlii/widget/nowlii_avatar.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:nowlii/core/app_routes/app_routes.dart';
+import 'package:nowlii/services/companion_avatar.dart';
 
 /// What the out-of-sparks card opens when tapped.
 ///
@@ -88,8 +87,8 @@ class OutOfSparksSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  'Two a day is limited by design. Nowlii gives you a spark, then gets '
-                  'out of your way.',
+                  'Two a day is limited by design. ${CompanionAvatar.current.name} '
+                  'gives you a spark, then gets out of your way.',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.workSans(
                     color: const Color(0xFF4C586E),
@@ -161,23 +160,9 @@ class OutOfSparksSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                TextButton(
-                  // Closes the sheet first: leaving it open behind the receipts would put
-                  // the user back here when they came back.
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    context.push(AppRoutespath.receipts);
-                  },
-                  child: Text(
-                    "Read today's receipts instead",
-                    style: GoogleFonts.workSans(
-                      color: const Color(0xFF4C586E),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+                // The receipt library used to have a second door here ("Read today's
+                // receipts instead"). It now lives in Insights only, so there is one
+                // place to look for it rather than two that disagree about where it is.
               ],
             ),
           ),

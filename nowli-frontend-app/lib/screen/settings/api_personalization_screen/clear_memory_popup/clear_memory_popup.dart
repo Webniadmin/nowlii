@@ -57,7 +57,7 @@
 
 //           // Description
 //           Text(
-//             'This will erase everything Nowlii has learned about you - moods, reflections, and conversation history. Your connection will start fresh, like meeting for the first time.\n\nAre you sure you want to continue?',
+//             'This will erase everything ${CompanionAvatar.current.name} has learned about you - moods, reflections, and conversation history. Your connection will start fresh, like meeting for the first time.\n\nAre you sure you want to continue?',
 //             textAlign: TextAlign.center,
 //             style: AppsTextStyles.workSansRegularF16,
 //           ),
@@ -119,6 +119,7 @@
 import 'package:flutter/material.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/themes/text_styles.dart';
+import 'package:nowlii/services/companion_avatar.dart';
 
 class ClearMemoryPopup extends StatelessWidget {
   const ClearMemoryPopup({super.key});
@@ -178,7 +179,7 @@ class ClearMemoryPopup extends StatelessWidget {
 
             // Description
             Text(
-              'This will erase everything Nowlii has learned about you - moods, reflections, and conversation history. Your connection will start fresh, like meeting for the first time.\n\nAre you sure you want to continue?',
+              'This will erase everything ${CompanionAvatar.current.name} has learned about you - moods, reflections, and conversation history. Your connection will start fresh, like meeting for the first time.\n\nAre you sure you want to continue?',
               textAlign: TextAlign.center,
               style: AppsTextStyles.workSansRegularF16,
             ),

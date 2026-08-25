@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'package:nowlii/screen/home/swipe_to_talk/screen_flow_controller.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/voice_check/voice_check_controller.dart';
+import 'package:nowlii/services/companion_avatar.dart';
 
 /// Main Voice Check Popup Widget
 class PoupSpking extends StatefulWidget {
@@ -847,7 +848,7 @@ class _PoupSpkingState extends State<PoupSpking> with ScreenFlowMixin {
     String text;
     switch (controller.state.value) {
       case VoiceCheckState.recording:
-        text = "Nowlii will listen once you say something.";
+        text = "${CompanionAvatar.current.name} will listen once you say something.";
         break;
       case VoiceCheckState.error:
         text = "You didn't say anything?\nHold and speak again.";

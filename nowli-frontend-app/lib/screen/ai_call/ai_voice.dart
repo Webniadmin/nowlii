@@ -16,6 +16,7 @@ import 'package:nowlii/services/audio_stream_service.dart';
 import 'package:nowlii/services/call_duration.dart';
 import 'package:nowlii/services/call_reminder_service.dart';
 import 'package:nowlii/services/call_time_announcer.dart';
+import 'package:nowlii/services/display_name.dart';
 import 'package:nowlii/services/realtime_call_service.dart';
 import 'package:nowlii/services/spark_state.dart';
 import 'package:nowlii/services/spark_state_store.dart';
@@ -838,28 +839,12 @@ class _AiVoiceState extends State<AiVoice>
   /// Resolve the real user identity for the AI session from the stored auth state /
   /// profile — never a hardcoded name. Falls back through profile name → auth username →
   /// a neutral greeting placeholder (only if the user somehow has neither).
-  Future<String> _resolveUserName() async {
-    final storage = StorageService();
-    final profile = await storage.getProfileData();
-    final profileName = profile?.name.trim() ?? '';
-    if (profileName.isNotEmpty) return profileName;
-    final username = (await storage.getUsername())?.trim() ?? '';
-    if (username.isNotEmpty) return username;
-    return 'there';
-  }
+  Future<String> _resolveUserName() => DisplayName.user();
 
   /// Resolve the companion (Nowlii) name for the AI session from the stored profile —
   /// custom name if set, else the chosen predefined companion. Falls back to 'Fuzzy'
   /// so the AI always has a name to introduce itself with.
-  Future<String> _resolveCompanionName() async {
-    final storage = StorageService();
-    final profile = await storage.getProfileData();
-    final custom = profile?.customNowliiName?.trim() ?? '';
-    if (custom.isNotEmpty) return custom;
-    final predefined = profile?.nowliiName?.trim() ?? '';
-    if (predefined.isNotEmpty) return predefined;
-    return 'Fuzzy';
-  }
+  Future<String> _resolveCompanionName() => DisplayName.companion();
 
   /// Resolve the companion's voice ('Male'/'Female') from the stored profile so the AI call
   /// speaks in the voice the user chose for their companion. Empty when unset → the AI
@@ -867,7 +852,11 @@ class _AiVoiceState extends State<AiVoice>
   Future<String> _resolveCompanionVoice() async {
     final storage = StorageService();
     final profile = await storage.getProfileData();
-    return profile?.voice.trim() ?? '';
+    final voice = profile?.voice.trim() ?? '';
+    // The other half of the trail started in RealtimeCallService: this is what the phone
+    // asked for, that is what the server granted.
+    print('Companion voice from profile: ${voice.isEmpty ? '(unset)' : voice}');
+    return voice;
   }
 
   /// Topics the user asked the companion not to raise (Settings → AI Personalization).
@@ -1428,14 +1417,23 @@ class _AiVoiceState extends State<AiVoice>
     setState(() {
       _isPaused = !_isPaused;
       if (_useRealtime) {
-        // Realtime: pausing mutes the mic so Nowlii can't hear you; the timer pause is
-        // handled by _isPaused in _startCall. Unpausing re-opens the mic.
-        _realtime.setMuted(_isPaused || _isMuted);
+        // Realtime: a real hold in both directions — mic off so Nowlii can't hear you,
+        // her voice off so she isn't talking to a paused screen, and any in-flight reply
+        // cancelled. The session, transcript and connection stay up, so resuming costs
+        // no spark and no reconnect. The timer freeze is handled by _isPaused in
+        // _startCall.
+        _realtime.setPaused(_isPaused);
         return;
       }
       if (_isPaused) {
-        // Paused - stop listening
+        // Paused - stop listening, and stop talking. Silencing only the mic left the
+        // fallback pipeline reading its queued reply aloud through the whole pause.
         _stopListening();
+        _ttsQueue.clear();
+        _isSpeaking = false;
+        try {
+          if (!kIsWeb) _flutterTts.stop();
+        } catch (_) {}
       } else {
         // Resumed - restart listening if conditions are met
         if (!_isMuted && !_isHandlingAiResponse && !_isSpeaking) {
@@ -1847,19 +1845,30 @@ class _AiVoiceState extends State<AiVoice>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          GestureDetector(
-                            onTap: _togglePause,
-                            child: Container(
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFC3DBFF),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                _isPaused ? Icons.play_arrow : Icons.pause,
-                                color: const Color(0xFF4542EB),
-                                size: 24,
+                          Semantics(
+                            button: true,
+                            label: _isPaused ? 'Resume call' : 'Pause call',
+                            child: GestureDetector(
+                              onTap: _togglePause,
+                              child: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  // Held calls invert the pill: the icon alone is a small
+                                  // target to read at a glance, and a paused call that
+                                  // looks live gets hung up on by mistake.
+                                  color: _isPaused
+                                      ? const Color(0xFF4542EB)
+                                      : const Color(0xFFC3DBFF),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  _isPaused ? Icons.play_arrow : Icons.pause,
+                                  color: _isPaused
+                                      ? Colors.white
+                                      : const Color(0xFF4542EB),
+                                  size: 24,
+                                ),
                               ),
                             ),
                           ),

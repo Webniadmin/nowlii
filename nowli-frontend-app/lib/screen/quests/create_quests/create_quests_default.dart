@@ -271,9 +271,11 @@ class _CreateQuestPageState extends State<CreateQuestPage> {
       }
     }
 
-    // "Enable call" also schedules the call: the backend created a ScheduledCall for every
-    // quest above, and this lays the local reminders down for them (5 minutes before).
-    if (quest != null && enableCall) {
+    // Lay the local notifications down for what was just created. This runs for **every**
+    // quest, not only the ones with a call: a quest with a time carries an alarm too, and
+    // gating this on `enableCall` meant a user who never turned that toggle on was never
+    // asked for notification permission — so none of their alarms ever rang either.
+    if (quest != null) {
       await CallReminderService.instance.requestPermissions();
       await CallReminderService.instance.sync();
     }
@@ -284,7 +286,8 @@ class _CreateQuestPageState extends State<CreateQuestPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(enableCall
-              ? "Quest created — we'll remind you 5 minutes before your call."
+              ? "Quest created — we'll remind you "
+                  "${CallReminderService.leadMinutes} minutes before your call."
               : 'Quest created successfully!'),
           backgroundColor: Colors.green,
         ),

@@ -31,6 +31,7 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
   SubscriptionStatus? _status;
   SubscriptionPlan? _plan;
   bool _activating = false;
+  bool _cancelling = false;
 
   /// True when the router sent the user here because they'd lost access (trial over),
   /// as opposed to them opening the screen from the profile menu. Drives whether a
@@ -204,6 +205,58 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
     if (status != null && status.hasAccess && _openedAsPaywall) {
       context.go(AppRoutespath.homeScreen);
     }
+  }
+
+  /// Cancel a paid subscription.
+  ///
+  /// The screen has always promised "Cancel anytime", and both `SubscriptionService
+  /// .cancel()` and `POST /api/subscriptions/cancel/` were written for it — but nothing
+  /// in the app ever called either. A subscriber's only control was an inert
+  /// "You're subscribed" button, so the one thing this screen is *for* could not be done
+  /// from it.
+  Future<void> _cancelSubscription() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFFFFFEF8),
+        title: const Text('Cancel your subscription?'),
+        // Says what actually happens. `CancelView` sets the status to cancelled and
+        // `has_access` is computed from it, so access stops on the spot — promising "you
+        // keep it until the end of the period" would have been a comfortable lie.
+        content: const Text(
+          'Your paid access ends right away and the app returns to its free state. '
+          'You can subscribe again at any time.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep it'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Cancel subscription'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _cancelling = true);
+    final status = await _subService.cancel();
+    if (!mounted) return;
+    setState(() {
+      _cancelling = false;
+      if (status != null) _status = status;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(status != null
+            ? 'Subscription cancelled.'
+            : "Couldn't cancel right now. Please try again."),
+        backgroundColor: status != null ? Colors.green : Colors.red,
+      ),
+    );
   }
 
   void _dismiss() {
@@ -482,12 +535,33 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
     // onTap of null. It was inert and nothing said so; a subscriber could only find out by
     // pressing it. It now states the fact instead of offering the sale.
     if (_isSubscribed) {
-      return PaywallTapButton(
-        // Short on purpose: the button is one line and clips, and the price is already
-        // stated twice above it — in the summary and in the timeline row.
-        label: _isFreeForever ? 'Free forever' : "You're subscribed",
-        knobIcon: Assets.svgIcons.paywallSparkle.svg(width: 24, height: 24),
-        onTap: null,
+      return Column(
+        children: [
+          PaywallTapButton(
+            // Short on purpose: the button is one line and clips, and the price is already
+            // stated twice above it — in the summary and in the timeline row.
+            label: _isFreeForever ? 'Free forever' : "You're subscribed",
+            knobIcon: Assets.svgIcons.paywallSparkle.svg(width: 24, height: 24),
+            onTap: null,
+          ),
+          // Lifetime-free access is not a paid subscription and the backend refuses to
+          // cancel it, so there is nothing to offer that user.
+          if (!_isFreeForever) ...[
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: _cancelling ? null : _cancelSubscription,
+              child: Text(
+                _cancelling ? 'Cancelling…' : 'Cancel subscription',
+                style: GoogleFonts.workSans(
+                  color: const Color(0xFF4C586E),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ],
+        ],
       );
     }
 

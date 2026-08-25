@@ -199,9 +199,33 @@ class _TimePickerCardState extends State<TimePickerCard> {
                 ),
                 SizedBox(width: 8 * s),
                 Expanded(
-                  child: Text(
-                    'What time?',
-                    style: AppTextStylesQutes.workSansExtraBold32,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'What time?',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStylesQutes.workSansExtraBold32,
+                      ),
+                      // The card starts collapsed, so the quest's own time used to live
+                      // entirely behind a tap: opening Edit Quest showed no time at all
+                      // and read as a missing field. Only shown once there is a real
+                      // choice to show — an untouched picker is still only a suggestion.
+                      if (_userAdjusted)
+                        Text(
+                          '${_selectedHour.toString().padLeft(2, '0')}:'
+                          '${_selectedMinute.toString().padLeft(2, '0')}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: const Color(0xFF4C586E),
+                            fontSize: 16 * s,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 Container(

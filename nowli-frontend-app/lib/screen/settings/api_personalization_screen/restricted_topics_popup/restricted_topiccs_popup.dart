@@ -219,6 +219,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 
 import 'package:nowlii/utils/color_palette/color_palette.dart';
+import 'package:nowlii/services/companion_avatar.dart';
 
 class RestrictedTopicsPopup extends StatefulWidget {
   const RestrictedTopicsPopup({super.key, this.initialTopics = const []});
@@ -311,7 +312,8 @@ class _RestrictedTopicsPopupState extends State<RestrictedTopicsPopup> {
           SizedBox(
             width: 295,
             child: Text(
-              'You control what Nowlii talks about - for a safe, positive space.',
+              'You control what ${CompanionAvatar.current.name} talks about - for a '
+              'safe, positive space.',
               style: GoogleFonts.workSans(
                 color: const Color(0xFF011F54), // Text-text-default
                 fontSize: 16,
