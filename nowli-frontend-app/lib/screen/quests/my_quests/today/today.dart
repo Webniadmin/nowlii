@@ -5,7 +5,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/models/scheduled_call.dart';
+import 'package:nowlii/services/call_duration.dart';
 import 'package:nowlii/services/call_reminder_service.dart';
+import 'package:nowlii/services/companion_avatar.dart';
 import 'package:nowlii/services/quest_service.dart';
 import 'package:nowlii/services/scheduled_call_state.dart';
 import 'package:nowlii/services/voice_call_service.dart';
@@ -260,6 +262,10 @@ class _TodayState extends State<Today> {
             onToggle: () async {
               final questService = QuestService();
               await questService.updateQuestStatus(quest.id, !quest.taskDone);
+              // A finished quest must stop ringing. Completion is the one quest change
+              // that never rebuilt the local notifications, so its alarm survived the
+              // tick and went off anyway.
+              await CallReminderService.instance.sync();
               _loadTodayQuests();
             },
             onEdit: () async {
@@ -343,7 +349,14 @@ class QuestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final levelColor = _getLevelColor(quest.zone);
     
-    return Container(
+    // Tapping the card anywhere but the checkbox opens the quest. The checkbox keeps its
+    // own GestureDetector and wins the tap outright — Flutter's gesture arena resolves in
+    // favour of the innermost recogniser — so ticking a quest never opens the editor.
+    // `opaque` so the padding around the text counts as the card, not a hole.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onEdit,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -355,7 +368,7 @@ class QuestCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: MainAxisAlignment.start,
             children: [
               GestureDetector(
                 onTap: onToggle,
@@ -377,6 +390,10 @@ class QuestCard extends StatelessWidget {
                       : null,
                 ),
               ),
+              // The edit pencil is gone: the card itself is the target now, so a second
+              // control for the same action only competed with the checkbox opposite it.
+              // Commented rather than deleted, matching how the Shuffle button was retired.
+              /*
               GestureDetector(
                 onTap: onEdit,
                 child: Container(
@@ -391,6 +408,7 @@ class QuestCard extends StatelessWidget {
                   ),
                 ),
               ),
+              */
             ],
           ),
           const SizedBox(height: 10),
@@ -445,6 +463,11 @@ class QuestCard extends StatelessWidget {
                   ),
                 ),
               ),
+              // The duration pill is gone. A quest has no duration — there is no such field
+              // on the model and nothing ever asked the user for one — so this read "10
+              // mins" on every quest anybody ever created, which is a number the app
+              // invented. The zone pill beside it is real and stays.
+              /*
               const SizedBox(width: 8),
               Container(
                 height: 34,
@@ -467,6 +490,7 @@ class QuestCard extends StatelessWidget {
                   ),
                 ),
               ),
+              */
             ],
           ),
           // "Enable call" quest flag: schedules a call at the quest's time AND keeps a
@@ -477,6 +501,7 @@ class QuestCard extends StatelessWidget {
           ],
         ],
       ),
+    ),
     );
   }
 
@@ -579,7 +604,9 @@ class QuestCard extends StatelessWidget {
             const SizedBox(width: 8),
             Flexible(
               child: Text(
-                label ?? 'Call Nowlii (5 min)',
+                // The companion's own name, and the call length from the one constant
+                // that defines it — both were spelled out here by hand.
+                label ?? 'Call ${CompanionAvatar.current.name} ($callMinutesLabel min)',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.workSans(
