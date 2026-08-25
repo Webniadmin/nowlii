@@ -8,6 +8,7 @@ import 'package:nowlii/themes/text_styles.dart' show AppsTextStyles;
 import 'package:nowlii/utils/color_palette/color_palette.dart';
 import 'package:nowlii/services/insights_service.dart';
 import 'package:nowlii/services/month_grid.dart';
+import 'package:nowlii/widget/quest_calendar.dart';
 import 'package:nowlii/services/personal_notes_service.dart';
 import 'package:nowlii/models/insights_models.dart';
 
@@ -91,6 +92,25 @@ class _InsightsScreenState extends State<InsightsScreen> {
     });
   }
 
+  /// The month as the shared calendar wants it: one entry per grid cell, Monday-first,
+  /// with `null` for the blanks before the 1st.
+  ///
+  /// The 1st has to start in its own weekday's column or every mark in the grid sits under
+  /// the wrong day name — that is what `monthGridCells` is for.
+  List<QuestCalendarStatus?> _calendarCells() {
+    final days = _insightsData?.monthly.calendar ?? [];
+    if (days.isEmpty) return const [];
+
+    final cells = monthGridCells([for (final d in days) d.date]);
+    return [
+      for (final index in cells)
+        index == null ? null : questCalendarStatus(days[index].status),
+    ];
+  }
+
+  /* Superseded by [_calendarCells] and widget/quest_calendar.dart. The old grid drew its
+     own circles, its own day numbers and a third "streak" state the design dropped; kept
+     for reference rather than deleted.
   List<DayStatus> _getCalendarStatuses() {
     if (_insightsData == null) return [];
     
@@ -107,6 +127,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
       }
     }).toList();
   }
+  */
 
   @override
   Widget build(BuildContext context) {
@@ -1437,22 +1458,14 @@ class _InsightsScreenState extends State<InsightsScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        currentMonth,
-                        style: GoogleFonts.workSans(
-                          color: const Color(0xFF011F54),
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          height: 1.20,
-                          letterSpacing: -0.50,
-                        ),
+                      // Month name, Mo–Su header, grid and legend are one widget now,
+                      // shared with the week strip on My Progress — see
+                      // widget/quest_calendar.dart. The four pieces used to be assembled
+                      // here and nowhere else, which is why the two screens drifted.
+                      QuestCalendar(
+                        monthLabel: currentMonth,
+                        cells: _calendarCells(),
                       ),
-                      const SizedBox(height: 24),
-                      _buildWeekdayHeaders(),
-                      const SizedBox(height: 16),
-                      _buildCalendarGrid(),
-                      const SizedBox(height: 24),
-                      _buildLegend(),
                     ],
                   ),
                 ),
@@ -1560,6 +1573,8 @@ class _InsightsScreenState extends State<InsightsScreen> {
     );
   }
 
+  /* Replaced by widget/quest_calendar.dart, which both this screen and the week
+     strip on My Progress now draw. Kept rather than deleted.
   Widget _buildWeekdayHeaders() {
     const weekdays = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
     return Row(
@@ -1584,7 +1599,10 @@ class _InsightsScreenState extends State<InsightsScreen> {
       }).toList(),
     );
   }
+  */
 
+  /* Replaced by widget/quest_calendar.dart, which both this screen and the week
+     strip on My Progress now draw. Kept rather than deleted.
   Widget _buildCalendarGrid() {
     final calendarStatuses = _getCalendarStatuses();
     final calendarDays = _insightsData?.monthly.calendar ?? [];
@@ -1621,17 +1639,29 @@ class _InsightsScreenState extends State<InsightsScreen> {
       },
     );
   }
+  */
 
+  /* Replaced by widget/quest_calendar.dart, which both this screen and the week
+     strip on My Progress now draw. Kept rather than deleted.
   Widget _buildDayCircle(DayStatus status, int day) {
     Color backgroundColor;
     Color borderColor;
     String? imagePath;
+    // Only set where the bundled art's own colour is wrong for the new palette. The X is
+    // a solid #C2383A glyph, so recolouring the circle under it alone would have left a
+    // red mark sitting on lavender.
+    Color? imageTint;
 
     switch (status) {
       case DayStatus.skipped:
-        backgroundColor = Color(0xFFFEDCDC);
-        borderColor = const Color(0xFFD32F2F);
+        // Purple, not red. A day you didn't get to is not an error state, and the alarm
+        // red read as one in a grid the user looks at to feel good about a month. Stays
+        // inside the palette already on this screen (the card border is 0xFFE8E8FF) and
+        // in the same family as the primary 0xFF4542EB.
+        backgroundColor = const Color(0xFFEDEAFF);
+        borderColor = const Color(0xFF7C77E8);
         imagePath = Assets.svgImages.xCircle.path;
+        imageTint = const Color(0xFF5B55D6);
         break;
       case DayStatus.consistent:
         backgroundColor = const Color(0xFFFFE4CC);
@@ -1667,7 +1697,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
           // A day that carries no mark prints its date instead. Without a number
           // somewhere in the grid there is nothing to read a ✓ against.
           child: imagePath != null
-              ? Image.asset(imagePath, width: 20, height: 20)
+              ? Image.asset(imagePath, width: 20, height: 20, color: imageTint)
               : Text(
                   '$day',
                   style: GoogleFonts.workSans(
@@ -1681,7 +1711,10 @@ class _InsightsScreenState extends State<InsightsScreen> {
       ),
     );
   }
+  */
 
+  /* Replaced by widget/quest_calendar.dart, which both this screen and the week
+     strip on My Progress now draw. Kept rather than deleted.
   Widget _buildLegend() {
     return Wrap(
       alignment: WrapAlignment.center,
@@ -1689,7 +1722,9 @@ class _InsightsScreenState extends State<InsightsScreen> {
       runSpacing: 8,
       children: [
         _buildLegendItem(
-          color: const Color(0xFFD32F2F),
+          // Matches the skipped circle's border above — a legend in a colour the grid no
+          // longer uses is worse than no legend.
+          color: const Color(0xFF7C77E8),
           label: 'Skipped',
           icon: Icons.close,
         ),
@@ -1706,7 +1741,10 @@ class _InsightsScreenState extends State<InsightsScreen> {
       ],
     );
   }
+  */
 
+  /* Replaced by widget/quest_calendar.dart, which both this screen and the week
+     strip on My Progress now draw. Kept rather than deleted.
   Widget _buildLegendItem({
     required Color color,
     required String label,
@@ -1728,6 +1766,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
       ],
     );
   }
+  */
 
   Widget _buildMilestonesAndAchievements() {
     final milestones = _insightsData!.monthly.milestones;

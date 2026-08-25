@@ -72,9 +72,12 @@ class _ProgressState extends State<Progress> with TickerProviderStateMixin {
           children: [
             TabBar(
               controller: mainTab,
-              // Custom indicator with underline
+              // Navy, not black: every other selected link in the app is 0xFF011F54 (the
+              // zone chips on Quests, the day headings, the card titles), and this pair of
+              // tabs was the one place still painting the active state in flat black.
+              labelColor: const Color(0xFF011F54),
               indicator: const UnderlineTabIndicator(
-                borderSide: BorderSide(width: 5.0, color: Colors.black),
+                borderSide: BorderSide(width: 5.0, color: Color(0xFF011F54)),
                 insets: EdgeInsets.symmetric(horizontal: 0.0),
               ),
               // REMOVE hover / overlay

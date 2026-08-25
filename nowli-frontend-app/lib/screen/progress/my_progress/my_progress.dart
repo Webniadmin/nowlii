@@ -10,6 +10,7 @@ import 'package:nowlii/services/insights_service.dart';
 import 'package:nowlii/services/streak_service.dart';
 import 'package:nowlii/models/insights_models.dart';
 import 'package:nowlii/models/streak_model.dart';
+import 'package:nowlii/widget/quest_calendar.dart';
 
 class MyProgress extends StatefulWidget {
   const MyProgress({super.key});
@@ -197,8 +198,12 @@ class _MyProgressState extends State<MyProgress> {
               crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+          // Left-aligned, with the rest of the card left centred. 302 was a fixed width
+          // lifted from the design's phone; on anything narrower it clamps to the card and
+          // on anything wider it floats in the middle, so the heading's left edge moved
+          // with the screen. Full width pins it to the card's own edge.
           SizedBox(
-            width: 302,
+            width: double.infinity,
             child: Text(
               'Daily streak',
               style: GoogleFonts.workSans(
@@ -212,13 +217,13 @@ class _MyProgressState extends State<MyProgress> {
           ),
           const SizedBox(height: 4),
           SizedBox(
-            width: 302,
+            width: double.infinity,
             child: Text(
               streakDays <= 0
                   ? "Start your streak today!"
                   : nextMilestone > 0
-                      ? "You've stayed consistent for $streakDays days!\n$daysToGo to go to your $nextMilestone-day badge."
-                      : "Legendary — $streakDays days and counting!",
+                      ? "You've stayed consistent for $streakDays ${streakDays == 1 ? 'day' : 'days'}!\n$daysToGo to go to your $nextMilestone-day badge."
+                      : "Legendary — $streakDays ${streakDays == 1 ? 'day' : 'days'} and counting!",
               style: GoogleFonts.workSans(
                 color: const Color(0xFF011F54),
                 fontSize: 18,
@@ -226,7 +231,6 @@ class _MyProgressState extends State<MyProgress> {
                 height: 1.4,
                 letterSpacing: -0.5,
               ),
-              textAlign: TextAlign.center,
             ),
           ),
           const SizedBox(height: 20),
@@ -247,7 +251,7 @@ class _MyProgressState extends State<MyProgress> {
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
-                    '$streakDays DAYS',
+                    '$streakDays ${streakDays == 1 ? 'DAY' : 'DAYS'}',
                     style: TextStyle(
                       color: const Color(0xFF3F3CD6),
                       fontSize: 48,
@@ -360,7 +364,7 @@ class _MyProgressState extends State<MyProgress> {
 
   Widget _buildWeeklyStreak() {
     final weeklyCalendar = _insights?.weekly.calendar ?? [];
-    final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    // Day names come from QuestCalendar's own Mo–Su header now.
     
     int completedDays = weeklyCalendar.where((day) => day.status == 'consistent').length;
     double progressPercentage = weeklyCalendar.isNotEmpty ? (completedDays / 7.0) : 0.0;
@@ -384,36 +388,19 @@ class _MyProgressState extends State<MyProgress> {
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: List.generate(
-              7,
-              (index) {
-                final dayData = index < weeklyCalendar.length ? weeklyCalendar[index] : null;
-                final isCompleted = dayData?.status == 'consistent';
-                
-                return Column(
-                  children: [
-                    SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: Center(
-                        child: Image.asset(
-                          isCompleted ? Assets.svgIcons.blue.path : Assets.svgIcons.sunButton.path,
-                          width: 60,
-                          height: 60,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      index < days.length ? days[index] : '',
-                      style: AppTextStylesQutes.workSansSemiBold18,
-                    ),
-                  ],
-                );
-              },
-            ),
+          // The same calendar Insights draws, one week of it — widget/quest_calendar.dart.
+          // This was a row of two hand-picked icons (a blue tick or a sun) with its own day
+          // labels, sharing nothing with the month grid and disagreeing with it: it had no
+          // "skipped" state at all, so a day you missed and a day still ahead looked
+          // identical. The backend already sends the week Monday-first, so the seven cells
+          // line up under the headers without any shifting.
+          QuestCalendar(
+            cells: [
+              for (var i = 0; i < 7; i++)
+                questCalendarStatus(
+                  i < weeklyCalendar.length ? weeklyCalendar[i].status : null,
+                ),
+            ],
           ),
           const SizedBox(height: 12),
           Container(
@@ -668,6 +655,15 @@ class _MyProgressState extends State<MyProgress> {
       }
     }
 
+    // The axis follows the week instead of a fixed 20. Nobody finishes twenty quests in a
+    // day, so every real bar was drawn at a twentieth of the height available and the
+    // chart read as empty — the "activity trend doesn't work" report. The floor of 4 keeps
+    // a quiet week from stretching one quest to full height, and rounding up to a multiple
+    // of four keeps every gridline label a whole number.
+    final peak = completedCounts.fold<double>(0, (a, b) => b > a ? b : a);
+    final maxY = peak <= 4 ? 4.0 : (peak / 4).ceil() * 4.0;
+    final axisStep = maxY / 4;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -741,7 +737,7 @@ class _MyProgressState extends State<MyProgress> {
             child: BarChart(
               BarChartData(
                 alignment: BarChartAlignment.spaceAround,
-                maxY: 20,
+                maxY: maxY,
                 barTouchData: BarTouchData(enabled: false),
                 titlesData: FlTitlesData(
                   show: true,
@@ -762,7 +758,7 @@ class _MyProgressState extends State<MyProgress> {
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      interval: 5,
+                      interval: axisStep,
                       getTitlesWidget: (value, meta) {
                         return Text(
                           value.toInt().toString(),
@@ -784,7 +780,7 @@ class _MyProgressState extends State<MyProgress> {
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
-                  horizontalInterval: 5,
+                  horizontalInterval: axisStep,
                   getDrawingHorizontalLine: (value) {
                     return FlLine(color: Colors.grey.shade300, strokeWidth: 1);
                   },
