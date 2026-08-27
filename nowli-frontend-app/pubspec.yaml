@@ -97,8 +97,15 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/images/nowli.png"
-  adaptive_icon_background: "#FFFFFF"
+  # The mark's own orange, sampled from the Figma export (#FC820F). It was #FFFFFF, which
+  # was right only while the icon carried its own pale-blue plate: an adaptive launcher
+  # masks the foreground, so a round or squircle mask cut the plate away and left the mark
+  # floating on a white disc.
+  adaptive_icon_background: "#FC820F"
   adaptive_icon_foreground: "assets/images/nowli.png"
+  # An App Store icon may not carry an alpha channel — Apple rejects the upload outright.
+  # The generated Icon-App-1024x1024 did (min alpha 0), so this has to stay on.
+  remove_alpha_ios: true
 
 flutter_gen:
   output: lib/core/gen/ # Optional (default: lib/gen/)
