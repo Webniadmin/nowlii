@@ -87,6 +87,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // The banner sits in the root overlay, so leaving the screen does not take it with us.
+    _dismissCompletionBanner();
     _scrollController.dispose();
     _confettiController.dispose();
     super.dispose();
@@ -275,8 +277,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  /// The banner lives in the **root** overlay, which outlives this screen, so its removal
+  /// must never be conditional on `mounted`. It was: a completion followed by a tap that
+  /// left home inside the three seconds skipped the `remove()` entirely and stranded the
+  /// banner on top of the whole app, with nothing left able to dismiss it.
+  OverlayEntry? _completionBanner;
+  Timer? _completionBannerTimer;
+
+  /// Takes the banner down, from the timer or from `dispose`. Nulling the field as we go
+  /// is what makes it safe to call twice.
+  void _dismissCompletionBanner() {
+    _completionBannerTimer?.cancel();
+    _completionBannerTimer = null;
+    _completionBanner?.remove();
+    _completionBanner = null;
+  }
+
   void _showCompletionDialog({required String title, required String badge}) {
     if (!mounted) return;
+    // Two quick completions would otherwise stack two banners at the same offset.
+    _dismissCompletionBanner();
     final overlay = Overlay.of(context);
     late OverlayEntry overlayEntry;
 
@@ -303,11 +323,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
 
     overlay.insert(overlayEntry);
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
-        overlayEntry.remove();
-      }
-    });
+    _completionBanner = overlayEntry;
+    _completionBannerTimer = Timer(const Duration(seconds: 3), _dismissCompletionBanner);
   }
 
   @override
