@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/core/app_routes/app_routes.dart';
 import 'package:nowlii/models/call_summary_history.dart';
 import 'package:nowlii/services/receipt_format.dart';
@@ -98,6 +99,22 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // The screen had no way out but the system gesture. Same control
+                      // the profile header uses, so "back" looks like itself everywhere.
+                      GestureDetector(
+                        onTap: () => context.pop(),
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFFFFEF8),
+                            shape: BoxShape.circle,
+                          ),
+                          padding: const EdgeInsets.all(12),
+                          child: Image.asset(Assets.svgIcons.profileBack.path),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       const Text(
                         'YOUR WORDS,\nKEPT.',
                         style: TextStyle(
@@ -159,7 +176,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         itemCount: _receipts.length,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, index) => _buildReceiptCard(index),
+        itemBuilder: (context, index) => _buildDismissibleReceipt(index),
       ),
     );
   }
@@ -178,6 +195,110 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
             height: 1.5,
           ),
         ),
+      ),
+    );
+  }
+
+  /// A receipt the user can swipe away.
+  ///
+  /// Keyed by the call id, not the list position: a Dismissible keeps its key across
+  /// rebuilds, so an index key makes the *next* receipt inherit the dismissed one's state
+  /// and disappear along with it. Removal is optimistic so the row leaves under the finger,
+  /// and the receipt is put back if the server refuses — a gap that silently returns on
+  /// the next refresh is worse than a message.
+  Widget _buildDismissibleReceipt(int index) {
+    final receipt = _receipts[index];
+
+    return Dismissible(
+      key: ValueKey<int>(receipt.callId),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 24),
+        decoration: BoxDecoration(
+          color: const Color(0xFFC2383A),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Icon(Icons.delete_outline, color: Colors.white, size: 26),
+      ),
+      confirmDismiss: (_) => _confirmDelete(),
+      onDismissed: (_) => _deleteReceipt(receipt),
+      child: _buildReceiptCard(index),
+    );
+  }
+
+  /// Deleting a receipt cannot be undone, and it is the only record of that call.
+  Future<bool> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: _card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Delete this receipt?',
+          style: GoogleFonts.workSans(
+            color: _ink,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
+          ),
+        ),
+        content: Text(
+          "It's the only record of that call, and this can't be undone.",
+          style: GoogleFonts.workSans(
+            color: _muted,
+            fontSize: 16,
+            fontWeight: FontWeight.w400,
+            height: 1.4,
+            letterSpacing: -0.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Keep it',
+              style: GoogleFonts.workSans(
+                color: _ink,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.workSans(
+                color: const Color(0xFFC2383A),
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  Future<void> _deleteReceipt(CallSummaryHistoryItem receipt) async {
+    final index = _receipts.indexOf(receipt);
+    setState(() {
+      _receipts = [..._receipts]..remove(receipt);
+    });
+
+    final deleted = await _service.deleteSummary(receipt.callId);
+    if (!mounted || deleted) return;
+
+    setState(() {
+      final restored = [..._receipts];
+      restored.insert(index.clamp(0, restored.length), receipt);
+      _receipts = restored;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Couldn't delete that receipt. It's still here."),
       ),
     );
   }

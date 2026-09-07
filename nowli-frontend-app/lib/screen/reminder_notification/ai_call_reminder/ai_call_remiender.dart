@@ -13,6 +13,7 @@ import 'package:nowlii/screen/reminder_notification/ai_call_reminder/default_yel
 import 'package:nowlii/screen/reminder_notification/ai_call_reminder/error_toast/error_toast.dart';
 import 'package:nowlii/screen/reminder_notification/ai_call_reminder/quest_suggestion_purple/quest_suggestion_purple.dart';
 import 'package:nowlii/screen/reminder_notification/ai_call_reminder/success_toast/success_toast.dart';
+import 'package:nowlii/services/display_name.dart';
 import 'package:nowlii/themes/create_qutes.dart';
 import 'package:nowlii/themes/text_styles.dart';
 import 'package:nowlii/utils/color_palette/color_palette.dart';
@@ -34,9 +35,16 @@ class _AiCallRemienderState extends State<AiCallRemiender> {
     TaskItem('To Sleep 🌙', '22:00', false, isSpecial: true),
   ];
 
+  /// Empty until the profile read lands — the headline drops the name rather than
+  /// showing a placeholder one.
+  String _userName = '';
+
   @override
   void initState() {
     super.initState();
+    DisplayName.userUpper().then((name) {
+      if (mounted) setState(() => _userName = name);
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         OnboardingOverlay.show(context);
@@ -127,7 +135,12 @@ class _AiCallRemienderState extends State<AiCallRemiender> {
             ),
           ),
         ),
-        Text('HI JULIE!', style: AppsTextStyles.extraBold32Centered),
+        Text(
+          _userName.isEmpty ? 'HI THERE!' : 'HI $_userName!',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppsTextStyles.extraBold32Centered,
+        ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(

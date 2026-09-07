@@ -269,6 +269,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nowlii/core/gen/assets.gen.dart';
+import 'package:nowlii/services/display_name.dart';
 
 class EnergyCheckInScreen extends StatefulWidget {
   const EnergyCheckInScreen({super.key});
@@ -279,6 +280,18 @@ class EnergyCheckInScreen extends StatefulWidget {
 
 class _EnergyCheckInScreenState extends State<EnergyCheckInScreen> {
   String? selectedMood;
+
+  /// Empty until the profile read lands, so the headline reads "HEY! HOW'S…" for one
+  /// frame rather than flashing a wrong name. Never seeded with a sample name.
+  String _userName = '';
+
+  @override
+  void initState() {
+    super.initState();
+    DisplayName.userUpper().then((name) {
+      if (mounted) setState(() => _userName = name);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -331,8 +344,12 @@ class _EnergyCheckInScreenState extends State<EnergyCheckInScreen> {
                   const SizedBox(height: 60), // ✅ 100 → 60 করা হয়েছে
                   // Title
                   Text(
-                    "HEY JULIE! HOW'S\nYOUR ENERGY TODAY?",
+                    _userName.isEmpty
+                        ? "HEY! HOW'S\nYOUR ENERGY TODAY?"
+                        : "HEY $_userName! HOW'S\nYOUR ENERGY TODAY?",
                     textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: const Color(0xFF011F54),
                       fontSize: 32,

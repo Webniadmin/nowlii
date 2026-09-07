@@ -1,6 +1,65 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-08-12 (evening)_
+_Last reviewed: 2026-08-25_
+
+## Completed this session (2026-08-25)
+
+_Full detail in `daily-reports/2026-08-25.md`. Six commits `3f77fbf` -> `086f5e9`, on
+`fix/call-mic-permission-and-close-button`, **not pushed**. **`nowli-backend` deployed to
+production** (commit `086f5e9`, no migrations); `nowli-ai` deliberately untouched._
+
+- **Notifications and the timezone proved on hardware for the first time.** A quest set for
+  12:30 rang at 12:30:00.026 as an exact `RTC_WAKEUP`, at the epoch that is 12:30 in the
+  device's own zone. The 08-21 Flutter work is finally committed too.
+- **Quest alarms fire 5 minutes early**, calendar-style, with the copy reading the quest's
+  clock rather than the reminder's.
+- **The streak can lapse again.** It never compared to today, so a run from last January still
+  reported 2 in August. Anchored to today-or-yesterday, on the user's calendar, ignoring future
+  dates. **The backend has its first tests** (`Apps/quests/tests.py`, 11 cases).
+- **`DELETE /api/voice-calls/<id>/summary/`** added, so a receipt can be swiped away.
+- **One shared calendar** (`lib/widget/quest_calendar.dart`) replaces the two that disagreed;
+  the week strip had no "skipped" state at all.
+- **Activity trend** had `maxY` hardcoded to 20, drawing every real bar at a twentieth of its
+  height.
+- Quest cards open on tap and complete on the checkbox; the invented "10 mins" pill is gone;
+  three empty states now centre in the room they have; suggested cards are readable (most were
+  navy on navy); profile, receipts and settings match the design.
+
+**Found, not fixed:** nothing runs after login (no `sync()`, no `DeviceTimezone.report()`), all
+five notification toggles are dead, and the profile's notification feed has no writer.
+
+## Completed this session (2026-08-21)
+
+_Full detail in `daily-reports/2026-08-21.md`. Eight items from a user's device run.
+**`nowli-ai` and `nowli-backend` deployed to production the same day** (commit `7377ae8`,
+no migrations); the Flutter half is uncommitted and not in any APK._
+
+- **Notifications had never been asked for.** `POST_NOTIFICATIONS` was requested from exactly
+  one place — the create-quest screen, inside the "Enable call" branch — and `sync()` returned
+  in silence when it was missing. So a user who never used that toggle got no call reminders
+  **and no quest alarms**, with nothing to see. `sync()` asks now (once per run), and quest
+  creation asks for every quest.
+- **The AI stopped acknowledging every sentence.** The persona said *"Reflect back what you
+  actually hear before responding"*, which a model reads as "open every reply with 'I
+  understand'". Rewritten, plus explicit rules against stock openers, repeated sentence
+  starts, catchphrases and stray foreign phrases. The same prompt now fixes the two roles —
+  it had been swapping its own name with the user's mid-call.
+- **An unreadable mood is reported as neutral**, on all three paths that can produce that tile
+  (endpoint, fallback table, and the Flutter screen's own no-summary case), instead of
+  admitting the miss. Topic and energy still own theirs.
+- **Quest suggestions ran on the server's UTC clock** — time of day and weekday both go into
+  the prompt and into the static fallback's bucket, so a user at +02:00 got morning
+  suggestions in the evening. They read the user's zone now, as does the week's reference
+  date. Separately, `quest_suggestion_service.dart` had been calling a route that never
+  existed, unauthenticated; it points at `/api/insights/` with a token.
+- **The companion's own name** replaced "Nowlii"/"Fuzzy" in nine user-facing strings,
+  including the reminder notification's title.
+- **Two real defects around the male voice**, though neither is confirmed as the cause of the
+  report: the selector always opened on "Female" regardless of the account, and a failed
+  backend save was swallowed — which silently reverts the voice on the next profile refresh.
+  A log line on each side of the call now identifies which half is wrong.
+- Verified: `flutter analyze lib` 0 errors / 10 warnings (baseline), **293 tests pass**,
+  `manage.py check` clean. **Nothing was verified on hardware.**
 
 ## Completed this session (2026-08-12)
 

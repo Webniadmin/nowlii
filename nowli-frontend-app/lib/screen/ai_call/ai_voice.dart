@@ -16,6 +16,7 @@ import 'package:nowlii/services/audio_stream_service.dart';
 import 'package:nowlii/services/call_duration.dart';
 import 'package:nowlii/services/call_reminder_service.dart';
 import 'package:nowlii/services/call_time_announcer.dart';
+import 'package:nowlii/services/display_name.dart';
 import 'package:nowlii/services/realtime_call_service.dart';
 import 'package:nowlii/services/spark_state.dart';
 import 'package:nowlii/services/spark_state_store.dart';
@@ -298,14 +299,21 @@ class _AiVoiceState extends State<AiVoice>
             : "Couldn't start the call right now.\nPlease check your connection and try again.";
       });
       // Give the user a moment to read the message, then leave the call screen.
-      Future.delayed(const Duration(seconds: 3), () {
-        if (!mounted) return;
-        if (context.canPop()) {
-          context.pop();
-        } else {
-          context.go(AppRoutespath.homeScreen);
-        }
-      });
+      Future.delayed(const Duration(seconds: 3), _leaveBlockedCallScreen);
+    }
+  }
+
+  /// Leaves the call screen from the blocked overlay — used both by the daily-limit
+  /// auto-dismiss timer and the close (X) button on the overlay itself. The other
+  /// `_callBlocked` paths (mic permission denied, session/connection failures in
+  /// `_startRealtimeCall`) never scheduled this, so those left the user stuck on the
+  /// overlay with no way back short of force-quitting the app — the X button is the fix.
+  void _leaveBlockedCallScreen() {
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(AppRoutespath.homeScreen);
     }
   }
 
@@ -365,7 +373,23 @@ class _AiVoiceState extends State<AiVoice>
     // WebRTC's getUserMedia does NOT prompt for the mic on its own — request it up front,
     // otherwise the native audio capture fails hard (crash) on Android.
     if (!kIsWeb) {
-      final micStatus = await Permission.microphone.request();
+      // Check first rather than always calling request(): if it's already granted this
+      // skips re-touching the OS permission API entirely, and avoids re-triggering the
+      // system dialog on platforms that would otherwise show it again.
+      var micStatus = await Permission.microphone.status;
+      if (!micStatus.isGranted) {
+        micStatus = await Permission.microphone.request();
+        if (!micStatus.isGranted) {
+          // iOS can report a stale (denied) status for a moment right after the user
+          // answers the system dialog — the permission database hasn't caught up yet.
+          // Confirmed live: a tester granted mic access and still hit the "permission
+          // required" block below because this reused the request() result as final.
+          // Re-reading .status once, after a short beat, gives the OS time to settle.
+          await Future.delayed(const Duration(milliseconds: 400));
+          if (!mounted) return;
+          micStatus = await Permission.microphone.status;
+        }
+      }
       if (!micStatus.isGranted) {
         if (!mounted) return;
         setState(() {
@@ -815,28 +839,12 @@ class _AiVoiceState extends State<AiVoice>
   /// Resolve the real user identity for the AI session from the stored auth state /
   /// profile — never a hardcoded name. Falls back through profile name → auth username →
   /// a neutral greeting placeholder (only if the user somehow has neither).
-  Future<String> _resolveUserName() async {
-    final storage = StorageService();
-    final profile = await storage.getProfileData();
-    final profileName = profile?.name.trim() ?? '';
-    if (profileName.isNotEmpty) return profileName;
-    final username = (await storage.getUsername())?.trim() ?? '';
-    if (username.isNotEmpty) return username;
-    return 'there';
-  }
+  Future<String> _resolveUserName() => DisplayName.user();
 
   /// Resolve the companion (Nowlii) name for the AI session from the stored profile —
   /// custom name if set, else the chosen predefined companion. Falls back to 'Fuzzy'
   /// so the AI always has a name to introduce itself with.
-  Future<String> _resolveCompanionName() async {
-    final storage = StorageService();
-    final profile = await storage.getProfileData();
-    final custom = profile?.customNowliiName?.trim() ?? '';
-    if (custom.isNotEmpty) return custom;
-    final predefined = profile?.nowliiName?.trim() ?? '';
-    if (predefined.isNotEmpty) return predefined;
-    return 'Fuzzy';
-  }
+  Future<String> _resolveCompanionName() => DisplayName.companion();
 
   /// Resolve the companion's voice ('Male'/'Female') from the stored profile so the AI call
   /// speaks in the voice the user chose for their companion. Empty when unset → the AI
@@ -844,7 +852,11 @@ class _AiVoiceState extends State<AiVoice>
   Future<String> _resolveCompanionVoice() async {
     final storage = StorageService();
     final profile = await storage.getProfileData();
-    return profile?.voice.trim() ?? '';
+    final voice = profile?.voice.trim() ?? '';
+    // The other half of the trail started in RealtimeCallService: this is what the phone
+    // asked for, that is what the server granted.
+    print('Companion voice from profile: ${voice.isEmpty ? '(unset)' : voice}');
+    return voice;
   }
 
   /// Topics the user asked the companion not to raise (Settings → AI Personalization).
@@ -1405,14 +1417,23 @@ class _AiVoiceState extends State<AiVoice>
     setState(() {
       _isPaused = !_isPaused;
       if (_useRealtime) {
-        // Realtime: pausing mutes the mic so Nowlii can't hear you; the timer pause is
-        // handled by _isPaused in _startCall. Unpausing re-opens the mic.
-        _realtime.setMuted(_isPaused || _isMuted);
+        // Realtime: a real hold in both directions — mic off so Nowlii can't hear you,
+        // her voice off so she isn't talking to a paused screen, and any in-flight reply
+        // cancelled. The session, transcript and connection stay up, so resuming costs
+        // no spark and no reconnect. The timer freeze is handled by _isPaused in
+        // _startCall.
+        _realtime.setPaused(_isPaused);
         return;
       }
       if (_isPaused) {
-        // Paused - stop listening
+        // Paused - stop listening, and stop talking. Silencing only the mic left the
+        // fallback pipeline reading its queued reply aloud through the whole pause.
         _stopListening();
+        _ttsQueue.clear();
+        _isSpeaking = false;
+        try {
+          if (!kIsWeb) _flutterTts.stop();
+        } catch (_) {}
       } else {
         // Resumed - restart listening if conditions are met
         if (!_isMuted && !_isHandlingAiResponse && !_isSpeaking) {
@@ -1824,19 +1845,30 @@ class _AiVoiceState extends State<AiVoice>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          GestureDetector(
-                            onTap: _togglePause,
-                            child: Container(
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFC3DBFF),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                _isPaused ? Icons.play_arrow : Icons.pause,
-                                color: const Color(0xFF4542EB),
-                                size: 24,
+                          Semantics(
+                            button: true,
+                            label: _isPaused ? 'Resume call' : 'Pause call',
+                            child: GestureDetector(
+                              onTap: _togglePause,
+                              child: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  // Held calls invert the pill: the icon alone is a small
+                                  // target to read at a glance, and a paused call that
+                                  // looks live gets hung up on by mistake.
+                                  color: _isPaused
+                                      ? const Color(0xFF4542EB)
+                                      : const Color(0xFFC3DBFF),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  _isPaused ? Icons.play_arrow : Icons.pause,
+                                  color: _isPaused
+                                      ? Colors.white
+                                      : const Color(0xFF4542EB),
+                                  size: 24,
+                                ),
                               ),
                             ),
                           ),
@@ -2651,33 +2683,52 @@ class _AiVoiceState extends State<AiVoice>
       child: Container(
         color: const Color(0xFF91BBF9),
         alignment: Alignment.center,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 32),
-          padding: const EdgeInsets.all(24),
-          decoration: ShapeDecoration(
-            color: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.access_time_filled, size: 50, color: Color(0xFF4542EB)),
-              const SizedBox(height: 16),
-              Text(
-                _blockMessage,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF011F54),
-                  fontSize: 18,
-                  fontFamily: 'Work Sans',
-                  fontWeight: FontWeight.w700,
-                  height: 1.4,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
+              decoration: ShapeDecoration(
+                color: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
                 ),
               ),
-            ],
-          ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.access_time_filled, size: 50, color: Color(0xFF4542EB)),
+                  const SizedBox(height: 16),
+                  Text(
+                    _blockMessage,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF011F54),
+                      fontSize: 18,
+                      fontFamily: 'Work Sans',
+                      fontWeight: FontWeight.w700,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // The only way off this overlay before this fix was force-quitting the app —
+            // none of the `_callBlocked` paths except the daily-limit one auto-dismissed.
+            Positioned(
+              top: 8,
+              right: 24,
+              child: Material(
+                color: Colors.transparent,
+                child: IconButton(
+                  onPressed: _leaveBlockedCallScreen,
+                  icon: const Icon(Icons.close, color: Color(0xFF011F54)),
+                  tooltip: 'Close',
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

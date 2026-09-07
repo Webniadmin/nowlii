@@ -236,3 +236,44 @@ matching path constant. It compiles fine where it is; it's just not routed.
   `reminder_notifications.dart` still declares `ReminederNotifications`) — belongs to the
   broader **A3 naming pass**; left alone to keep this change low-risk.
 - Wiring any `experimental/` or relocated mockup screen into real routes/data.
+
+---
+
+## 2026-09-07 — three stale blue app-icon copies out of the bundle
+
+The 08-27 icon commit was called "the orange mark, everywhere the blue one was". It missed
+three files, all still shipping inside `assets/` on the day of this write-up:
+
+| Was | Now | What it held |
+|---|---|---|
+| `assets/svg_icons/App store_ App Icon.png` | `docs/store-assets/_archive/app-store-icon-1024-blue-legacy.png` | 1024×1024 blue App Store master (`#DFEFFF` plate, `#3D87F5` mark) |
+| `assets/svg_icons/App store_ App Icon.svg` | `docs/store-assets/_archive/app-store-icon-blue-legacy.svg` | the same icon as vector, same three old fills |
+| `assets/svg_images/Android App Icon - Squircle.png` | `docs/store-assets/_archive/android-squircle-122-blue-legacy.png` | 122×122 squircle in `#3F3CD6` |
+
+**Relocated, not deleted** — they sit beside `nowli-icon-blue-legacy.png` in the same archive,
+outside `assets/`, so they no longer ship.
+
+All three were **unreferenced**: the only mention anywhere was a commented-out line,
+`lib/screen/auth/sign_up.dart:165`. That line names `Assets.svgIcons.appStoreAppIconSvg`,
+which no longer exists — it is inside a comment, so nothing breaks, but do not uncomment it.
+
+**They were a trap, which is why they went rather than stayed.** `assets/svg_images/` and
+`assets/svg_icons/` are registered as whole directories in `pubspec.yaml`, so every file in
+them gets a `flutter_gen` accessor whether or not anyone wants one. Anybody reaching for the
+obvious-looking `Assets.svgImages.androidAppIconSquircle` got the **blue** icon, while the
+live splash reaches the orange one by literal path
+(`assets/images/Android App Icon - Squircle.png`, 308×308, `#FC820F` — that one stays).
+
+**`assets.gen.dart` had to be regenerated** (`dart run build_runner build -d`) — whole-folder
+registration means the generated accessors change when a file leaves. Removing the PNG also
+**renamed** its SVG twin's accessor from `appStoreAppIconSvg` to `appStoreAppIcon`, because
+flutter_gen only appends the `Png`/`Svg` suffix while both extensions exist; archiving the SVG
+then took that accessor away too.
+
+Verified after: `flutter analyze lib` = 0 errors, 10 warnings (the standing baseline), and
+**297 tests pass** — unchanged.
+
+**What was checked and found already correct**, so nothing was touched: `assets/images/nowli.png`
+is **byte-identical** (MD5 `91d35ae1acdccdb1f330eef6c098ecb5`) to the Figma master exported from
+`App icon application` → `App store_ App Icon_2` (node `61:13065`), as are
+`docs/store-assets/app-store-icon-1024.png` and the 512 Play file.

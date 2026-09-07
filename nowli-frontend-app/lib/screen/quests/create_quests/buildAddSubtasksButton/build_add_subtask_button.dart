@@ -9,11 +9,19 @@ class AddSubtasksButton extends StatefulWidget {
   final Function(List<String>)? onSubtasksChanged;
   final TextEditingController? questController; // Quest text controller
 
+  /// Subtasks the quest already has, for the edit screen.
+  ///
+  /// Without this the widget always started empty, so an existing quest's subtasks were
+  /// invisible on Edit Quest — and because the first change reported the widget's own
+  /// (empty) list back to the parent, saving after any edit wiped them.
+  final List<String> initialSubtasks;
+
   const AddSubtasksButton({
-    super.key, 
-    this.scale = 1.0, 
+    super.key,
+    this.scale = 1.0,
     this.onSubtasksChanged,
     this.questController,
+    this.initialSubtasks = const [],
   });
 
   @override
@@ -30,8 +38,19 @@ class _AddSubtasksButtonState extends State<AddSubtasksButton> {
 
   // Chosen/selected subtasks
   final List<String> chosenSubtasks = [];
-  
+
   final SubtaskService _subtaskService = SubtaskService();
+
+  @override
+  void initState() {
+    super.initState();
+    // Seed from the quest being edited, and open the list so they are visible rather than
+    // hidden behind the collapsed "Add subtasks" affordance.
+    if (widget.initialSubtasks.isNotEmpty) {
+      chosenSubtasks.addAll(widget.initialSubtasks);
+      showSubtaskGenerator = true;
+    }
+  }
 
   void _notifyParent() {
     widget.onSubtasksChanged?.call(chosenSubtasks);
@@ -323,42 +342,93 @@ class _AddSubtasksButtonState extends State<AddSubtasksButton> {
               ),
 
               // --- Chosen section ---
-              if (chosenSubtasks.isNotEmpty) ...[
-                SizedBox(height: 16 * s),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16 * s),
-                  child: Row(
-                    children: [
-                      Text(
-                        'Choosen',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.workSans(
-                          color: const Color(0xFF011F54), // Text-text-default
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          height: 1.20,
-                          letterSpacing: -0.50,
-                        ),
+              SizedBox(height: 12 * s),
+            ],
+            // Rendered whenever there are subtasks, not only after the AI
+            // generator has run. It used to live inside the generated-results block,
+            // so a quest opened for editing showed none of the subtasks it already
+            // had unless the user happened to press Generate.
+            if (chosenSubtasks.isNotEmpty) ...[
+              SizedBox(height: 16 * s),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16 * s),
+                child: Row(
+                  children: [
+                    Text(
+                      'Choosen',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.workSans(
+                        color: const Color(0xFF011F54), // Text-text-default
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        height: 1.20,
+                        letterSpacing: -0.50,
                       ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: _onDeselectAll,
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: _onDeselectAll,
+                      child: Row(
+                        children: [
+                          Image.asset(
+                            Assets.images.deselectAll.path,
+                            height: 16 * s,
+                            width: 16 * s,
+                          ),
+                          SizedBox(width: 4 * s),
+                          Text(
+                            'Deselect all',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.workSans(
+                              color: const Color(
+                                0xFF4542EB,
+                              ), // Text-text-primary
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              height: 0.80,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 10 * s),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16 * s),
+                child: Wrap(
+                  spacing: 8 * s,
+                  runSpacing: 8 * s,
+                  children: chosenSubtasks.map((subtask) {
+                    return GestureDetector(
+                      onTap: () => _onToggleSubtask(subtask),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16 * s,
+                          vertical: 10 * s,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4542EB),
+                          borderRadius: BorderRadius.circular(25 * s),
+                        ),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Image.asset(
-                              Assets.images.deselectAll.path,
-                              height: 16 * s,
-                              width: 16 * s,
+                              Assets.images.checkCircle.path,
+                              height: 18 * s,
+                              width: 18 * s,
+                              color: Colors.white,
                             ),
-                            SizedBox(width: 4 * s),
+                            SizedBox(width: 6 * s),
                             Text(
-                              'Deselect all',
-                              textAlign: TextAlign.center,
+                              subtask,
                               style: GoogleFonts.workSans(
                                 color: const Color(
-                                  0xFF4542EB,
-                                ), // Text-text-primary
-                                fontSize: 16,
+                                  0xFFFFFDF7,
+                                ), // Text-text-light
+                                fontSize: 18,
                                 fontWeight: FontWeight.w900,
                                 height: 0.80,
                               ),
@@ -366,57 +436,10 @@ class _AddSubtasksButtonState extends State<AddSubtasksButton> {
                           ],
                         ),
                       ),
-                    ],
-                  ),
+                    );
+                  }).toList(),
                 ),
-                SizedBox(height: 10 * s),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16 * s),
-                  child: Wrap(
-                    spacing: 8 * s,
-                    runSpacing: 8 * s,
-                    children: chosenSubtasks.map((subtask) {
-                      return GestureDetector(
-                        onTap: () => _onToggleSubtask(subtask),
-                        child: Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 16 * s,
-                            vertical: 10 * s,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4542EB),
-                            borderRadius: BorderRadius.circular(25 * s),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Image.asset(
-                                Assets.images.checkCircle.path,
-                                height: 18 * s,
-                                width: 18 * s,
-                                color: Colors.white,
-                              ),
-                              SizedBox(width: 6 * s),
-                              Text(
-                                subtask,
-                                style: GoogleFonts.workSans(
-                                  color: const Color(
-                                    0xFFFFFDF7,
-                                  ), // Text-text-light
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  height: 0.80,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ],
-              SizedBox(height: 12 * s),
+              ),
             ],
 
             SizedBox(height: 12 * s),

@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/screen_flow_controller.dart';
 import 'package:nowlii/screen/home/swipe_to_talk/voice_check/voice_check_controller.dart';
+import 'package:nowlii/services/companion_avatar.dart';
 
 /// Main Voice Check Popup Widget
 class PoupYourShareYou extends StatefulWidget {
@@ -119,7 +120,7 @@ class _PoupYourShareYouState extends State<PoupYourShareYou>
                     SizedBox(
                       width: 335,
                       child: Text(
-                        'Hold to speak 🎙️\nNowlii will listen once you say something.',
+                        'Hold to speak 🎙️\n${CompanionAvatar.current.name} will listen once you say something.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: const Color(
@@ -629,7 +630,7 @@ class _PoupYourShareYouState extends State<PoupYourShareYou>
     String text;
     switch (controller.state.value) {
       case VoiceCheckState.recording:
-        text = "Nowlii will listen once you say something.";
+        text = "${CompanionAvatar.current.name} will listen once you say something.";
         break;
       case VoiceCheckState.error:
         text = "You didn't say anything?\nHold and speak again.";

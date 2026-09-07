@@ -9,6 +9,7 @@ from collections import defaultdict, Counter
 from django.utils import timezone
 
 from Apps.quests.models import Quests   # adjust import path if needed
+from Apps.users.timezones import user_localdate
 
 
 # ─────────────────────────────────────────────
@@ -132,7 +133,9 @@ def _generate_calendar(start_date: date, end_date: date, quests: list, ref_date:
 # ─────────────────────────────────────────────
 
 def get_monthly_analytics(user, ref: date = None) -> dict:
-    ref = ref or date.today()
+    # The user's today, not the server's: TIME_ZONE is UTC, so anyone east of it
+    # spent their first hours of a new day still being shown the previous week.
+    ref = ref or user_localdate(user)
     first, last = _month_bounds(ref)
 
     qs = (
@@ -453,17 +456,28 @@ def _build_mood_week(user, monday: date, ref: date) -> list:
     """
     # Local import avoids an app-load-time cycle (insights ↔ voice_calls).
     from Apps.voice_calls.models import CallEmotionSnapshot
+    from Apps.users.timezones import user_timezone
 
+    # Which day a call belongs to is a question about the user's calendar, never the
+    # server's. TIME_ZONE is UTC, so `localtime()` filed an 01:00 call in Belgrade under
+    # the previous day — the bar for Monday showed Sunday night's mood, and a late call
+    # could fall outside the week entirely.
+    tz = user_timezone(user)
     sunday = monday + timedelta(days=6)
+    # Widened by a day on each side, then bucketed exactly: a row whose UTC date sits
+    # outside the week can still be inside it once converted, and vice versa.
     snaps = list(
         CallEmotionSnapshot.objects.filter(
-            user=user, created_at__date__gte=monday, created_at__date__lte=sunday
+            user=user,
+            created_at__date__gte=monday - timedelta(days=1),
+            created_at__date__lte=sunday + timedelta(days=1),
         )
     )
     by_day: dict[date, list] = defaultdict(list)
     for s in snaps:
-        # localtime keeps day-bucketing consistent with the __date filter above.
-        by_day[timezone.localtime(s.created_at).date()].append(s)
+        day = s.created_at.astimezone(tz).date()
+        if monday <= day <= sunday:
+            by_day[day].append(s)
 
     mood_week = []
     for i in range(7):
@@ -488,7 +502,9 @@ def _build_mood_week(user, monday: date, ref: date) -> list:
 
 
 def get_weekly_analytics(user, ref: date = None) -> dict:
-    ref = ref or date.today()
+    # The user's today, not the server's: TIME_ZONE is UTC, so anyone east of it
+    # spent their first hours of a new day still being shown the previous week.
+    ref = ref or user_localdate(user)
     monday, sunday = _week_bounds(ref)
 
     qs = (
@@ -577,7 +593,9 @@ def get_weekly_analytics(user, ref: date = None) -> dict:
 # ─────────────────────────────────────────────
 
 def build_analytics_summary(user, ref: date = None) -> dict:
-    ref = ref or date.today()
+    # The user's today, not the server's: TIME_ZONE is UTC, so anyone east of it
+    # spent their first hours of a new day still being shown the previous week.
+    ref = ref or user_localdate(user)
     return {
         "weekly":  get_weekly_analytics(user, ref),
         "monthly": get_monthly_analytics(user, ref),

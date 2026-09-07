@@ -42,10 +42,22 @@ Flutter (WebRTC)  ──① POST /api/v1/realtime/token ─────▶  nowl
 - **`POST /api/v1/session/turns`** `{session_id, turns:[{user_message, ai_reply}]}` → replaces `session.turns`
   so the summary/insight endpoints have the conversation.
 - **Persona:** `_REALTIME_PERSONA_EN` — a calm, professional psychological-companion (speaks slowly/softly,
-  validates feelings first, doesn't rush to fix, one gentle question at a time, gentle crisis-safety line).
+  doesn't rush to fix, one gentle question at a time, gentle crisis-safety line).
   Only the Realtime path uses it (via `_realtime_instructions`); the original `_FRIEND_PROMPTS` /
   `_build_system_prompt` persona (text/SSE path) is **untouched**.
-- **Env knobs:** `REALTIME_MODEL`, `REALTIME_VOICE`, `REALTIME_TRANSCRIBE_MODEL`.
+  **Changed 2026-08-21** after a user run: it used to say *"reflect back what you actually hear before
+  responding"*, and the model obeyed literally — every reply opened with "ah, I understand you". It now
+  answers what was said and reflects back only where that carries weight, and it carries explicit rules
+  against stock openers, two replies in a row starting the same way, recurring catchphrases, and swapping
+  `{system_name}` with `{user_name}` mid-call. If the companion now reads as curt, that is the trade-off to
+  tune. Quoted verbatim in `ai-prompts.md` §1a.
+- **Voice is per user.** `Profile.voice` (`Male`/`Female`) → `session.voice_gender` → `_resolve_realtime_voice`
+  → `REALTIME_VOICE_MALE` (`cedar`) or `REALTIME_VOICE_FEMALE` (`marin`); `REALTIME_VOICE` is only the
+  fallback when the client sends nothing. The minted token echoes the chosen `voice` back, and the app logs
+  it (`Realtime voice for this call:`) — that log plus `Companion voice from profile:` is how to tell a
+  choice that never left the phone from one the server ignored.
+- **Env knobs:** `REALTIME_MODEL`, `REALTIME_VOICE`, `REALTIME_VOICE_MALE`, `REALTIME_VOICE_FEMALE`,
+  `REALTIME_TRANSCRIBE_MODEL`.
 
 ## Frontend — `nowli-frontend-app`
 

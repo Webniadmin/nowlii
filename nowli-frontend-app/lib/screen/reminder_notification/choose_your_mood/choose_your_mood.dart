@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:nowlii/screen/reminder_notification/choose_your_mood/loader.dart';
+import 'package:nowlii/services/display_name.dart';
 
 class AppColors {
   static const Color navy = Color(0xFF0B2246);
@@ -43,6 +44,18 @@ class ChooiseYourMood extends StatefulWidget {
 
 class _ChooiseYourMoodState extends State<ChooiseYourMood> {
   int? selectedIndex;
+
+  /// Empty until the profile read lands — the headline drops the name rather than
+  /// showing a placeholder one.
+  String _userName = '';
+
+  @override
+  void initState() {
+    super.initState();
+    DisplayName.userUpper().then((name) {
+      if (mounted) setState(() => _userName = name);
+    });
+  }
 
   // === Change this path to your uploaded file path (option A) OR
   // move the file into assets/images and use Image.asset() with that path (option B).
@@ -141,8 +154,12 @@ class _ChooiseYourMoodState extends State<ChooiseYourMood> {
 
                         // Title (big chunky font): two lines with bold weight
                         Text(
-                          "HEY JULIE! HOW'S\nYOUR ENERGY TODAY?",
+                          _userName.isEmpty
+                              ? "HEY! HOW'S\nYOUR ENERGY TODAY?"
+                              : "HEY $_userName! HOW'S\nYOUR ENERGY TODAY?",
                           textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: AppColors.headingBlue,
                             fontSize: 22 * baseScale,

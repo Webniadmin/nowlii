@@ -60,11 +60,18 @@ class _BlockngState extends State<Blockng> {
       return RefreshIndicator(
         onRefresh: _loadBacklogQuests,
         color: const Color(0xFF4542EB),
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height - 200,
-            child: Center(
+        child: // The empty state centres in the room this tab actually has. It used to be a
+        // `SizedBox(height: screenHeight - 200)`: 200 is roughly the header and tabs on
+        // the design's phone, but the tab view also sits above a bottom bar, so the box
+        // came out taller than the space it was in — the content centred low, leaving a
+        // screenful of nothing above the icon and pushing the last line under the
+        // navigation bar. Fixed in today.dart first; these three kept the old shape.
+        LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
                 child: Column(
@@ -123,6 +130,7 @@ class _BlockngState extends State<Blockng> {
                   ],
                 ),
               ),
+            ),
             ),
           ),
         ),
@@ -266,6 +274,11 @@ class BacklogQuestCard extends StatelessWidget {
                   ),
                 ),
               ),
+              // The duration pill is gone. A quest has no duration — there is no such field
+              // on the model and nothing ever asked the user for one — so this read "10
+              // mins" on every quest anybody ever created, which is a number the app
+              // invented. The zone pill beside it is real and stays.
+              /*
               const SizedBox(width: 8),
               Container(
                 height: 34,
@@ -288,6 +301,7 @@ class BacklogQuestCard extends StatelessWidget {
                   ),
                 ),
               ),
+              */
             ],
           ),
           const SizedBox(height: 20),

@@ -1,6 +1,5 @@
 import json
 import logging
-from datetime import date
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -23,6 +22,7 @@ from .ai_client import (
 from .serializers import AIInsightResponseSerializer
 from .models import InsightCache
 from Apps.users.models import Profile
+from Apps.users.timezones import user_localdate, user_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,9 @@ class AIInsightView(APIView):
 
     def get(self, request):
         user    = request.user
-        ref     = date.today()
+        # The user's own today, not the server's: `ref` picks the week window, the cache
+        # key and every "is this day skipped" decision below, and TIME_ZONE is UTC.
+        ref     = user_localdate(user)
         refresh = request.query_params.get("refresh", "false").lower() == "true"
 
         # A lapsed user still sees their own numbers — that is what this screen mostly is —
@@ -117,9 +119,14 @@ class AIInsightView(APIView):
         # whole screen: each block falls back to data-derived copy independently and we
         # still return 200. Fallbacks are never cached, so the next load retries the AI.
         if not reflections_ok or not suggestions_ok:
-            # Get current time/day for suggestions
+            # Get current time/day for suggestions — on the USER'S clock, not the
+            # server's. TIME_ZONE is UTC, so this asked "what time is it?" of a machine
+            # nobody lives on: a user at +02:00 opening this at 21:00 was handed morning
+            # suggestions at morning times, and on the wrong weekday either side of
+            # midnight. Both values go straight into the AI prompt and into the static
+            # fallback's time-of-day bucket.
             from django.utils import timezone
-            now = timezone.now()
+            now = timezone.now().astimezone(user_timezone(user))
             current_time = now.strftime("%H:%M")
             day_of_week  = now.strftime("%A")
 

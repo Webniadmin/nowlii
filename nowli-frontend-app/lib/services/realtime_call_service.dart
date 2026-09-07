@@ -30,7 +30,12 @@ class RealtimeCallService {
   MediaStream? _localStream;
   bool _connected = false;
   bool _muted = false;
+  bool _paused = false;
   bool _dcOpen = false;
+
+  /// The model's outgoing audio. Held only so [setPaused] can silence it — playback
+  /// itself is the platform's job.
+  final List<MediaStreamTrack> _remoteAudioTracks = [];
   final List<Map<String, dynamic>> _outbox = []; // events queued until the channel opens
 
   // The Realtime API allows only one response at a time — asking for a second while one is
@@ -70,6 +75,11 @@ class RealtimeCallService {
         return false;
       }
       final tok = jsonDecode(tokenResp.body) as Map<String, dynamic>;
+      // Which OpenAI voice this call will actually speak in, as decided server-side from
+      // the profile's Male/Female. Logged because "the call still sounds female" is
+      // otherwise unanswerable from the device: this line says whether the choice reached
+      // the server (cedar = male, marin = female) or was lost on the way.
+      print('Realtime voice for this call: ${tok['voice'] ?? 'default'}');
       final ephemeral = tok['client_secret']?.toString();
       final sdpUrl =
           (tok['sdp_url'] ?? 'https://api.openai.com/v1/realtime/calls').toString();
@@ -98,6 +108,17 @@ class RealtimeCallService {
       // automatically once the track arrives; nothing else to attach for audio-only.
       _pc!.onTrack = (RTCTrackEvent event) {
         // Model audio track received — playback is handled by the native audio device.
+        // We keep a handle on the tracks anyway: pausing the call has to silence the
+        // model's voice, and the only lever for that is `enabled` on the remote track.
+        _remoteAudioTracks
+          ..clear()
+          ..addAll(event.streams.isNotEmpty
+              ? event.streams.first.getAudioTracks()
+              : [if (event.track.kind == 'audio') event.track]);
+        // A track that arrives mid-pause must not start playing.
+        for (final t in _remoteAudioTracks) {
+          t.enabled = !_paused;
+        }
       };
       _pc!.onConnectionState = (state) {
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
@@ -233,8 +254,42 @@ class RealtimeCallService {
   void setMuted(bool muted) {
     _muted = muted;
     for (final t in _localStream?.getAudioTracks() ?? const []) {
-      t.enabled = !muted;
+      // A pause outranks an unmute: releasing the mute button while paused must not
+      // quietly re-open the mic.
+      t.enabled = !muted && !_paused;
     }
+  }
+
+  bool get isPaused => _paused;
+
+  /// Hold the call without ending it.
+  ///
+  /// Muting the mic alone is not a pause: the model carries on talking to a user who
+  /// thinks the call is stopped. So this silences both directions and cancels whatever
+  /// the model is mid-way through saying — the same interruption barge-in already does.
+  ///
+  /// What survives: the peer connection, the data channel, the session and its whole
+  /// conversation history, and the transcript collected for the summary. Resuming needs
+  /// no reconnect and costs no spark. What does not survive: the sentence that was in
+  /// flight when you paused.
+  void setPaused(bool paused) {
+    if (_paused == paused) return;
+    _paused = paused;
+
+    if (paused && _responseActive) {
+      // Stop generation rather than let it stream into a muted output — otherwise the
+      // model "says" a whole reply during the pause and resuming lands mid-thought.
+      _send({'type': 'response.cancel'});
+      _responseActive = false;
+      _deferredResponse = null;
+      onAiSpeakingChange?.call(false);
+    }
+
+    for (final t in _remoteAudioTracks) {
+      t.enabled = !paused;
+    }
+    // Re-applies the mic state through the mute rule above.
+    setMuted(_muted);
   }
 
   void _send(Map<String, dynamic> event) {
@@ -350,6 +405,8 @@ class RealtimeCallService {
   Future<void> disconnect() async {
     _connected = false;
     _dcOpen = false;
+    _paused = false;
+    _remoteAudioTracks.clear();
     // Drop anything still waiting to be said — the call is over.
     _responseActive = false;
     _deferredResponse = null;

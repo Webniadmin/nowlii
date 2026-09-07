@@ -217,6 +217,44 @@ class CompanionAvatar {
     );
   }
 
+  /// Adopt the pick made during onboarding, before any profile exists yet.
+  ///
+  /// [adopt] can only run once a profile has been stored, and onboarding does not create
+  /// one until the very last screen. So every `NowliiAvatar` in the welcome/activation
+  /// flow — the speaking popups, the procrastination screen — rendered the fallback
+  /// character: the user chose a companion and was then introduced to a different one,
+  /// right up until the moment onboarding finished.
+  ///
+  /// [avatarLogo] here is usually a bundled asset path rather than the S3 URL, which is
+  /// what [CompanionIdentity.isAsset] already exists to handle.
+  ///
+  /// Superseded by [adopt] the moment the real profile is saved; nothing needs to undo it.
+  static void adoptOnboarding({
+    int? optionId,
+    String? avatarLogo,
+    String? presetName,
+    String? customName,
+  }) {
+    final previous = identity.value;
+    final preset = (presetName?.isNotEmpty ?? false)
+        ? presetName!
+        : previous.presetName;
+    final custom = customName?.trim() ?? '';
+
+    identity.value = CompanionIdentity(
+      imageUrl: (avatarLogo != null && avatarLogo.isNotEmpty)
+          ? avatarLogo
+          : previous.imageUrl,
+      optionId: optionId ?? previous.optionId,
+      presetName: preset,
+      name: custom.isNotEmpty
+          ? custom
+          : preset.isNotEmpty
+              ? preset
+              : 'Nowlii',
+    );
+  }
+
   /// Signing out must drop the companion too, or the next account on the device is
   /// greeted by the previous user's character until their profile loads.
   static void clear() => identity.value = CompanionIdentity.fallback;

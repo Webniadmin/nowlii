@@ -253,6 +253,7 @@ import 'package:nowlii/core/gen/assets.gen.dart';
 import 'package:nowlii/api/profile_controller.dart';
 import 'package:nowlii/api/storage.dart';
 import 'package:nowlii/api/profile_service.dart';
+import 'package:nowlii/services/companion_avatar.dart';
 
 class AIPersonalizationScreen extends StatefulWidget {
   const AIPersonalizationScreen({super.key});
@@ -265,6 +266,9 @@ class AIPersonalizationScreen extends StatefulWidget {
 class _AIPersonalizationScreenState extends State<AIPersonalizationScreen> {
   bool _useDataToImproveAI = true;
   List<String> _restrictedTopics = const [];
+  /// The companion's voice as the account currently holds it. Shown on the row and used to
+  /// open the selector on the right option.
+  String _voice = 'Female';
 
   @override
   void initState() {
@@ -284,6 +288,7 @@ class _AIPersonalizationScreenState extends State<AIPersonalizationScreen> {
     setState(() {
       _useDataToImproveAI = profile.useDataToImprove;
       _restrictedTopics = profile.restrictedTopics;
+      _voice = profile.voice.trim().isEmpty ? 'Female' : profile.voice.trim();
     });
   }
 
@@ -384,29 +389,44 @@ class _AIPersonalizationScreenState extends State<AIPersonalizationScreen> {
                       height: 40,
                     ),
                     title: 'Voice & Personality',
+                    trailingLabel: _voice,
                     onTap: () async {
                       final selectedVoice = await VoiceSelectorPopup.show(
                         context,
+                        current: _voice,
                       );
-                      if (selectedVoice != null) {
-                        // Persist the choice so the AI voice call speaks in it. Save to the
-                        // local profile cache (what the call reads via StorageService) and
-                        // best-effort to the backend so it survives a reinstall.
-                        final storage = StorageService();
-                        final profile = await storage.getProfileData();
-                        if (profile != null) {
-                          await storage.saveProfileData(
-                            profile.copyWith(voice: selectedVoice),
-                          );
-                        }
-                        // Best-effort backend sync; ignore failures (local cache already set).
-                        ProfileController().updateProfile(voice: selectedVoice);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Voice set to $selectedVoice')),
-                          );
-                        }
+                      if (selectedVoice == null) return;
+
+                      // Persist the choice so the AI voice call speaks in it. The local
+                      // profile cache is what the call screen reads when it opens a
+                      // session, so write that first and the very next call is right even
+                      // with a slow network.
+                      final storage = StorageService();
+                      final profile = await storage.getProfileData();
+                      if (profile != null) {
+                        await storage.saveProfileData(
+                          profile.copyWith(voice: selectedVoice),
+                        );
                       }
+                      if (mounted) setState(() => _voice = selectedVoice);
+
+                      // The backend save is NOT optional, and its failure is not cosmetic:
+                      // the cache is refreshed from the server on later loads, so a choice
+                      // that only ever landed locally silently reverts to the account's old
+                      // voice — the call goes back to speaking in the voice the user thought
+                      // they had changed. Say so instead of pretending it saved.
+                      final saved = await ProfileController()
+                          .updateProfile(voice: selectedVoice);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(saved
+                              ? 'Voice set to $selectedVoice'
+                              : "Voice set to $selectedVoice on this phone, but we "
+                                  "couldn't save it to your account — check your "
+                                  "connection and try again."),
+                        ),
+                      );
                     },
                     hasArrow: true,
                   ),
@@ -431,8 +451,8 @@ class _AIPersonalizationScreenState extends State<AIPersonalizationScreen> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(selectedTopics.isEmpty
-                              ? 'Nowlii can talk about anything again'
-                              : "Nowlii won't bring up "
+                              ? '${CompanionAvatar.current.name} can talk about anything again'
+                              : "${CompanionAvatar.current.name} won't bring up "
                                   '${selectedTopics.length} '
                                   '${selectedTopics.length == 1 ? "topic" : "topics"}'),
                         ),
@@ -481,6 +501,10 @@ class _AIPersonalizationScreenState extends State<AIPersonalizationScreen> {
     IconData? icon,
     Widget? iconWidget,
     required String title,
+    /// The setting's current value, drawn to the left of the chevron. A row that opens a
+    /// picker should say what it is set to; without it the only way to read this setting
+    /// was to open the picker, which is also the only way to change it.
+    String? trailingLabel,
     VoidCallback? onTap,
     bool hasArrow = false,
     bool hasSwitch = false,
@@ -518,6 +542,15 @@ class _AIPersonalizationScreenState extends State<AIPersonalizationScreen> {
           Expanded(child: Text(title, style: AppsTextStyles.textDefaultStyle)),
 
           // Trailing widget
+          if (trailingLabel != null && trailingLabel.isNotEmpty) ...[
+            Text(
+              trailingLabel,
+              style: AppsTextStyles.myWorkSansStyle.copyWith(
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           if (hasArrow)
             Icon(
               Icons.arrow_forward_ios,

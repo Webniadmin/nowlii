@@ -7,7 +7,16 @@ class WhenCard extends StatefulWidget {
   final double scale;
   final Function(String, DateTime)? onDateSelected;
 
-  const WhenCard({super.key, this.scale = 1.0, this.onDateSelected});
+  /// The date the quest already has, for the edit screen. Without it Edit Quest opened
+  /// with nothing selected, so a quest set for tomorrow looked unscheduled.
+  final DateTime? initialDate;
+
+  const WhenCard({
+    super.key,
+    this.scale = 1.0,
+    this.onDateSelected,
+    this.initialDate,
+  });
 
   @override
   State<WhenCard> createState() => _WhenCardState();
@@ -15,6 +24,32 @@ class WhenCard extends StatefulWidget {
 
 class _WhenCardState extends State<WhenCard> {
   String selectedDateOption = '';
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialDate;
+    if (initial != null) {
+      // Show it the same way the card labels a fresh choice, so an edited quest reads
+      // identically to one just picked. Reporting it back is not needed — the parent
+      // already holds this date; it only lacked a way to display it.
+      selectedDateOption = _labelFor(initial);
+    }
+  }
+
+  /// 'Today' / 'Tomorrow' for the two shortcuts, otherwise the same
+  /// `12 Aug, Tuesday` shape the custom picker produces.
+  String _labelFor(DateTime date) {
+    final now = DateTime.now();
+    bool sameDay(DateTime a, DateTime b) =>
+        a.year == b.year && a.month == b.month && a.day == b.day;
+    if (sameDay(date, now)) return 'Today';
+    if (sameDay(date, now.add(const Duration(days: 1)))) return 'Tomorrow';
+    const weekdays = [
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+    ];
+    return '${date.day} ${_getMonthName(date.month)}, ${weekdays[date.weekday - 1]}';
+  }
 
   void _updateDate(String option, DateTime date) {
     setState(() {

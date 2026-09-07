@@ -265,7 +265,13 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                           // Insights
                           _buildInsightCard(
                             title: 'Mood detected',
-                            description: _summary?.moodDetected ?? "I didn't quite catch your mood this time.",
+                            // An unread mood is reported as neutral, never as a miss:
+                            // "I didn't quite catch your mood" was the one tile that read
+                            // as the app being broken. nowli-ai now sends the same neutral
+                            // wording when its own summary fails, so the two agree.
+                            description: _summary?.moodDetected.trim().isNotEmpty == true
+                                ? _summary!.moodDetected
+                                : 'You sounded pretty neutral — steady and even, nothing pulling hard either way.',
                             backgroundColor: const Color(0xFFFAE3CE),
                             icon: Icons.mood,
                             // The face follows the mood. It was a fixed `Icons.mood`, so
@@ -330,8 +336,16 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                               const SizedBox(height: 8),
                               Container(
                                 width: double.infinity,
-                                height: 87,
-                                padding: const EdgeInsets.all(24),
+                                // A hard 87px box with 24px of padding left 39px of
+                                // usable height — one line short of the two lines the
+                                // field claims to take, so the second line was cut off
+                                // mid-glyph. Now it is a floor rather than a ceiling, and
+                                // the box also survives the OS font-size slider.
+                                constraints: const BoxConstraints(minHeight: 87),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 16,
+                                ),
                                 decoration: ShapeDecoration(
                                   color: const Color(0xFFFFFDF7),
                                   shape: RoundedRectangleBorder(
@@ -355,8 +369,24 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                                       letterSpacing: -0.5,
                                     ),
                                     border: InputBorder.none,
+                                    // InputDecoration adds its own vertical padding on
+                                    // top of the container's — the other half of why the
+                                    // second line had nowhere to go.
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.zero,
                                   ),
+                                  style: const TextStyle(
+                                    color: Color(0xFF011F54),
+                                    fontSize: 16,
+                                    fontFamily: 'Work Sans',
+                                    fontWeight: FontWeight.w400,
+                                    height: 1.4,
+                                    letterSpacing: -0.5,
+                                  ),
+                                  minLines: 2,
                                   maxLines: 2,
+                                  keyboardType: TextInputType.multiline,
+                                  textInputAction: TextInputAction.newline,
                                 ),
                               ),
                             ],
@@ -399,25 +429,42 @@ class _CallSummaryScreenState extends State<CallSummaryScreen> {
                                 flex: 3,
                                 child: ElevatedButton(
                                   onPressed: () async {
-                                    // Persist the reflection as a personal note (per user,
-                                    // via the same store the Insights screen reads), so it
-                                    // survives and shows up there. Empty note → just leave.
                                     final note = _noteController.text.trim();
+
+                                    // Two destinations, because the app reads notes from
+                                    // two places and this screen used to write to only
+                                    // one. Locally, for the Insights list; and onto this
+                                    // call's receipt on the backend, which is where
+                                    // "Your note" is rendered and where Call History and
+                                    // a reinstall look. Writing only locally is why a
+                                    // note typed here never showed up on its own receipt.
+                                    bool noteStored = false;
+                                    bool backendRefused = false;
                                     if (note.isNotEmpty) {
                                       await _notesService.addNote(note);
+                                      noteStored = true;
+                                      if (widget.callId != null) {
+                                        final saved =
+                                            await _voiceCallService.saveReceiptNote(
+                                          callId: widget.callId!,
+                                          note: note,
+                                        );
+                                        backendRefused = saved == null;
+                                      }
                                     }
                                     if (!mounted) return;
 
-                                    // Three honest outcomes, where there used to be two
-                                    // and one of them was wrong: the note was saved, or
-                                    // there was no note but the summary is safely stored
-                                    // anyway, or genuinely nothing was kept.
-                                    final saved = note.isNotEmpty || _summaryPersisted;
-                                    final message = note.isNotEmpty
-                                        ? 'Reflection saved!'
-                                        : _summaryPersisted
-                                            ? 'Summary saved to your history.'
-                                            : 'Nothing to save yet.';
+                                    // Honest outcomes, including the new one: kept on the
+                                    // device but the receipt did not take it.
+                                    final saved =
+                                        (noteStored && !backendRefused) || _summaryPersisted;
+                                    final message = backendRefused
+                                        ? "Saved on this device — couldn't reach your receipt."
+                                        : noteStored
+                                            ? 'Reflection saved!'
+                                            : _summaryPersisted
+                                                ? 'Summary saved to your history.'
+                                                : 'Nothing to save yet.';
 
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(

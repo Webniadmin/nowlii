@@ -243,6 +243,34 @@ class VoiceCallService {
     }
   }
 
+  /// Delete one saved receipt.
+  ///
+  /// Keyed by the **call** id, which is what the list returns — `CallSummary` has no id of
+  /// its own on the wire. Returns whether the server accepted it, so the screen can put a
+  /// receipt back rather than leaving a gap the next refresh would undo.
+  ///
+  /// The call itself survives: it still counts against the day it was made, so deleting a
+  /// receipt cannot be used to buy back a spark.
+  Future<bool> deleteSummary(int callId) async {
+    try {
+      final token = await _getToken();
+      final response = await http
+          .delete(
+            Uri.parse('$_base${ApiConstants.voiceCallSummary(callId)}'),
+            headers: _headers(token),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      // 404 counts as done: the receipt is not there, which is what the caller wanted.
+      if (response.statusCode == 204 || response.statusCode == 404) return true;
+      print('⚠️ deleteSummary status: ${response.statusCode} — ${response.body}');
+      return false;
+    } catch (e) {
+      print('❌ deleteSummary error: $e');
+      return false;
+    }
+  }
+
   /// The current user's saved call summaries (newest first), for the Call History screen.
   /// Returns an empty list on any error.
   Future<List<CallSummaryHistoryItem>> getSummaries() async {

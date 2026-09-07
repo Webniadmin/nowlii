@@ -211,7 +211,11 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
       child: SafeArea(
         child: Column(
           children: [
-            _buildHeader(),
+            // Shuffle removed per request. Suggestions still refresh on every load of
+            // this tab, which was the only thing the button did — it called
+            // _loadSuggestions() directly. Commented rather than deleted, matching how the
+            // Activity Trend "This week" label was retired.
+            // _buildHeader(),
             if (_isLoading)
               Expanded(
                 child: Center(
@@ -267,7 +271,7 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
                               description: suggestion.description,
                               time: suggestion.suggestedTime,
                               softSteps: suggestion.zone,
-                              hardSteps: '10 mins',
+                              hardSteps: '5 mins',
                               imagePath: _getBackgroundForTask(suggestion.task),
                               emoji: _getEmojiForTask(suggestion.task),
                               hardStepsColor: _getZoneColor(suggestion.zone),
@@ -284,6 +288,7 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
     );
   }
 
+  /*
   Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -340,6 +345,8 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
       ),
     );
   }
+  */
+
 }
 
 class SleepRoutineCard extends StatelessWidget {
@@ -590,8 +597,22 @@ class RoutineCard extends StatelessWidget {
     this.suggestion,
   });
 
+  /// Backgrounds dark enough that the card's navy ink disappears into them.
+  ///
+  /// `moon4` is the night art **and** the fallback for every task matching no keyword, so
+  /// this is most cards rather than an edge case — "Meditation session" was navy on navy
+  /// and effectively unreadable. Keyed off the asset rather than a flag passed in, so the
+  /// one place that knows a background is dark sits next to the text that must survive it.
+  bool get _onDarkBackground => imagePath == Assets.svgIcons.moon4.path;
+
   @override
   Widget build(BuildContext context) {
+    // The two pills at the bottom keep their navy text: they carry their own light
+    // green/zone fill, so they were readable on either ground all along.
+    final ink = _onDarkBackground ? Colors.white : const Color(0xFF011F54);
+    final mutedInk =
+        _onDarkBackground ? Colors.white70 : const Color(0xFF4C586E);
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -605,7 +626,9 @@ class RoutineCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Image.asset(emoji, width: 64, height: 64),
+              // Matched to the add button opposite it (48 inside 8 of padding). At 64 it
+              // read as a third element competing with the title.
+              Image.asset(emoji, width: 48, height: 48),
               GestureDetector(
                 onTap: () async {
                   final result = await context.push('/suggestedTaskOverview', extra: suggestion);
@@ -629,7 +652,7 @@ class RoutineCard extends StatelessWidget {
           Text(
             title,
             style: GoogleFonts.workSans(
-              color: const Color(0xFF011F54),
+              color: ink,
               fontSize: 32,
               fontWeight: FontWeight.w800,
               height: 1.2,
@@ -652,14 +675,14 @@ class RoutineCard extends StatelessWidget {
                         Assets.svgIcons.calendarBlank.path,
                         width: 12,
                         height: 12,
-                        color: const Color(0xFF011F54),
+                        color: ink,
                       ),
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
                           'Today',
                           style: GoogleFonts.workSans(
-                            color: const Color(0xFF011F54),
+                            color: ink,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             height: 1.2,
@@ -686,14 +709,14 @@ class RoutineCard extends StatelessWidget {
                         Assets.svgIcons.clockBlack.path,
                         width: 12,
                         height: 12,
-                        color: const Color(0xFF011F54),
+                        color: ink,
                       ),
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
                           time,
                           style: GoogleFonts.workSans(
-                            color: const Color(0xFF011F54),
+                            color: ink,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             height: 1.2,
@@ -712,7 +735,7 @@ class RoutineCard extends StatelessWidget {
           Text(
             description,
             style: GoogleFonts.workSans(
-              color: const Color(0xFF4C586E),
+              color: mutedInk,
               fontSize: 16,
               fontWeight: FontWeight.w400,
               height: 1.3,

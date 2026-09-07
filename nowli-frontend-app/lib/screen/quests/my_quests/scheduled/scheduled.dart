@@ -61,11 +61,18 @@ class _ScheduledState extends State<Scheduled> {
       return RefreshIndicator(
         onRefresh: _loadScheduledQuests,
         color: const Color(0xFF4542EB),
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height - 200,
-            child: Center(
+        child: // The empty state centres in the room this tab actually has. It used to be a
+        // `SizedBox(height: screenHeight - 200)`: 200 is roughly the header and tabs on
+        // the design's phone, but the tab view also sits above a bottom bar, so the box
+        // came out taller than the space it was in — the content centred low, leaving a
+        // screenful of nothing above the icon and pushing the last line under the
+        // navigation bar. Fixed in today.dart first; these three kept the old shape.
+        LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
                 child: Column(
@@ -83,8 +90,11 @@ class _ScheduledState extends State<Scheduled> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    SizedBox(
-                      width: 222,
+                    // No fixed width: 222 forced "No scheduled quests yet." onto two
+                    // lines for no reason — it fits one at every width the app supports,
+                    // and the 24 of padding either side is what should bound it.
+                    Padding(
+                      padding: EdgeInsets.zero,
                       child: Text(
                         'No scheduled quests yet.',
                         textAlign: TextAlign.center,
@@ -149,6 +159,7 @@ class _ScheduledState extends State<Scheduled> {
                   ],
                 ),
               ),
+            ),
             ),
           ),
         ),
@@ -256,7 +267,13 @@ class ScheduledQuestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final levelColor = _getLevelColor(quest.zone);
     
-    return Container(
+    // Same rule as the Today card: the card itself opens the quest. A scheduled quest has
+    // no checkbox — there is nothing to tick on a day that has not arrived — so here the
+    // card simply replaces the pencil rather than sharing the surface with anything.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onEdit,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -283,6 +300,8 @@ class ScheduledQuestCard extends StatelessWidget {
                   ),
                 ),
               ),
+              // Retired with the Today card's pencil — the whole card is the target now.
+              /*
               GestureDetector(
                 onTap: onEdit,
                 child: Container(
@@ -297,6 +316,7 @@ class ScheduledQuestCard extends StatelessWidget {
                   ),
                 ),
               ),
+              */
             ],
           ),
           const SizedBox(height: 16),
@@ -340,6 +360,11 @@ class ScheduledQuestCard extends StatelessWidget {
                   ),
                 ),
               ),
+              // The duration pill is gone. A quest has no duration — there is no such field
+              // on the model and nothing ever asked the user for one — so this read "10
+              // mins" on every quest anybody ever created, which is a number the app
+              // invented. The zone pill beside it is real and stays.
+              /*
               const SizedBox(width: 8),
               Container(
                 height: 34,
@@ -362,10 +387,12 @@ class ScheduledQuestCard extends StatelessWidget {
                   ),
                 ),
               ),
+              */
             ],
           ),
         ],
       ),
+    ),
     );
   }
 }

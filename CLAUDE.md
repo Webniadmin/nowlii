@@ -20,9 +20,14 @@ The three projects are developed and run independently; there is no root-level b
 - Run dev server: `uv run python manage.py runserver` (or `docker-compose -f docker-compose.dev.yml up --build`)
 - Migrations: `uv run python manage.py makemigrations` / `uv run python manage.py migrate`
 - Create admin: `uv run python manage.py createsuperuser`
-- Run all tests: `uv run python manage.py test`
-- Run one app's tests: `uv run python manage.py test Apps.quests`
-- Run a single test: `uv run python manage.py test Apps.quests.tests.QuestTestCase.test_name`
+- Run one app's tests: `uv run python manage.py test Apps.quests.tests` — a **module** label.
+  A bare `manage.py test` errors, and so does the app label `Apps.quests`: `Apps/` has no
+  `__init__.py`, so unittest discovery dies in `TypeError: _path_normpath`. (This file used to
+  quote both broken forms.)
+- Run a single test: `uv run python manage.py test Apps.quests.tests.StreakTests.test_name`
+- **Coverage is one app.** `Apps/quests/tests.py` (the streak rule, 11 cases, 2026-08-25) is
+  the only suite that exists. Everything else is covered by reading and `manage.py check`
+  alone — say so rather than implying a green run across the backend.
 - API docs (Swagger): `http://localhost:8000/api/docs/`; root `/` redirects there.
 
 ### Architecture
@@ -81,7 +86,7 @@ FastAPI app **"Emotion AI — Human Friend System"** (v4.2). This is the `:8001`
   - `aiBaseUrl` (`:8001`) — the FastAPI AI/voice service in **`nowli-ai/`** (`/api/v1/session/new`, `/api/v1/chat-stream`, `/api/v1/detect-emotion`, `/api/v1/chat/summary`). Used by `lib/services/ai_call_service.dart`.
 - **Layers**: `lib/api/` (auth + profile controllers/services/models), `lib/services/` (feature services: quests, insights, streak, AI call, audio streaming, speech), `lib/models/` (data models), `lib/screen/` (feature UI modules), `lib/widget/` + `lib/custom_code/` (reusable UI), `lib/themes/` + `lib/utlis/color_palette/` (styling).
 - **Voice/AI**: `speech_to_text` + `flutter_tts` for the talking companion; audio streaming to the `:8001` server.
-- **Scheduled call reminders**: `lib/services/call_reminder_service.dart` is the only file that touches `flutter_local_notifications`. Everything else calls `sync()`, which rebuilds all pending reminders from the backend — call it after login, after a quest changes, and **after every call ends** (that last one is what keeps the out-of-calls wording accurate). "After a quest changes" includes **editing** one: `await` the push to the edit screen and `sync()` on a true result, or the reminder silently keeps pointing at the old time. Requires **core library desugaring** in `android/app/build.gradle.kts`; the build fails without it. Never declare `USE_EXACT_ALARM` (Play restricts it to alarm/calendar apps) — `SCHEDULE_EXACT_ALARM` with an inexact fallback is the supported path.
+- **Scheduled call reminders**: `lib/services/call_reminder_service.dart` is the only file that touches `flutter_local_notifications`. Everything else calls `sync()`, which rebuilds all pending reminders from the backend — call it after login, after a quest changes, and **after every call ends** (that last one is what keeps the out-of-calls wording accurate). "After a quest changes" includes **editing** one: `await` the push to the edit screen and `sync()` on a true result, or the reminder silently keeps pointing at the old time. Requires **core library desugaring** in `android/app/build.gradle.kts`; the build fails without it. Never declare `USE_EXACT_ALARM` (Play restricts it to alarm/calendar apps) — `SCHEDULE_EXACT_ALARM` with an inexact fallback is the supported path. **`sync()` asks for the notification permission itself** (`_ensureNotificationPermission`, at most once per app run) — do not put that request behind a feature toggle again: it lived inside create-quest's `enableCall` branch until 2026-08-21, so a user who never turned that on was never asked, and every `sync()` returned in silence with no reminders, **no quest alarms** and nothing in the log. There are **two** lead times, both public so copy quotes them rather than typing a number (which is how three screens came to promise 10 minutes for a 5-minute reminder): `CallReminderService.leadMinutes` for a scheduled call, and `questAlarmLeadMinutes` for a quest alarm, which since 2026-08-25 fires 5 minutes **before** the quest rather than at it. The notification body must read `questStartTime`, never the fire time, or a 12:30 quest announces itself as 12:25; and a quest created inside its own lead window fires immediately instead of falling silent.
 - **The companion avatar (since 2026-08-11):** never hardcode a character image. Use
   **`lib/widget/nowlii_avatar.dart`** (`NowliiAvatar(size:)`), backed by
   **`lib/services/companion_avatar.dart`**, which resolves the user's pick: cached
@@ -126,6 +131,7 @@ FastAPI app **"Emotion AI — Human Friend System"** (v4.2). This is the `:8001`
   enlargement anywhere, silently breaking large-text accessibility. The current code clamps the
   platform scaler (keeping its curve) and multiplies by the width fit via `_FittedTextScaler`.
   Verified at 320/360/375/411dp × OS font 1.0/1.3.
+- **The quest calendar** lives in **`lib/widget/quest_calendar.dart`** and nowhere else. Insights draws a month of it, My Progress a week; before 2026-08-25 each owned a copy and they disagreed — the week strip had no `skipped` state at all, so a day you missed and a day still ahead looked identical. Three states only (`consistent` / `skipped` / `none`): the backend's `streak` status folds into `consistent`, because the design has no third mark and a streak day is a day where everything got done. The two glyphs carry their own fill — render them **untinted**. Cells are Monday-first; a month gets its leading blanks from `services/month_grid.dart`, or every mark sits under the wrong weekday.
 - **Zone colours** live in **`lib/utils/color_palette/zone_colors.dart`** (`zoneColor`, `zoneTextColor`, `zoneColorHex`) and nowhere else. There were five copies and only Soft steps agreed across them, so the same quest changed colour from screen to screen. Lookup is case-insensitive because the suggestion endpoints lower-case the zone name while the quest endpoints do not.
 
 ### Gotchas (this codebase is under active, messy development)
@@ -141,4 +147,5 @@ FastAPI app **"Emotion AI — Human Friend System"** (v4.2). This is the `:8001`
 - `docs/architecture.md` — how the three services connect, data/auth flow, ports, per-service directories and env vars.
 - `docs/project-status.md` — current state: what's complete, what's unfinished, and a dated session log.
 - **`docs/deploy-aws.md` — AWS deploy runbook** (live on EC2 `16.170.191.239`). SSH + `git archive | ssh tar -x` → `docker compose build && up -d`; prod `.env` gotchas, rollback tags, and the known OpenAI-quota blocker on AI features.
+- **`docs/ai-prompts.md` — every prompt the product sends, quoted verbatim from source**, with a table saying which anchor to edit for which behaviour (`_REALTIME_PERSONA_EN` for the spoken call, `_SUMMARY_*` for the receipt screen, `REFLECTION_PROMPT` for Insights). Read it before changing how the companion talks — and re-copy the block you touched, since the doc claims to be verbatim. It also lists the prompts that are **dead code** (`config.py:SYSTEM_PROMPT_TEMPLATE`, `services/llm_chat.py`), which look like the main persona and are never executed.
 - **`docs/realtime-voice.md` — AI voice call on the OpenAI Realtime API** (WebRTC speech-to-speech, `gpt-realtime-mini`). The live call now runs through `lib/services/realtime_call_service.dart` + `nowli-ai` `/api/v1/realtime/token` & `/session/turns` (behind `_useRealtime` in `ai_voice.dart`; old STT/TTS pipeline kept as fallback). Includes the two required fixes (`ACCESS_NETWORK_STATE`, no `?model=`), persona/voice + rollback, and build/test steps.

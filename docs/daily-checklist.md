@@ -4,227 +4,176 @@ _The single active document for the current working day. Update **only this file
 during the day. At end of day, write a report in `daily-reports/` and reset this list
 for tomorrow. Deferred items go to `future-checklist.md`._
 
-**Day:** 2026-08-14
-**Branch:** `feat/design-implementation` — merged to `main` today at the user's decision,
-ahead of the phone test (see the note under the phone test below)
-**Last working day:** `daily-reports/2026-08-12.md` — the pose art landed, and the mapping
-under every avatar turned out to have been wrong for five of the six companions.
-**2026-08-13 produced no commits and no report.**
-
-## ✅ Done today (2026-08-14)
-
-- **The 320dp sweep is finished except the call screens.** Settings and every screen under
-  it driven at 320.0dp, and onboarding covered by a new `test/small_screen_layout_test.dart`
-  instead — it runs once, on a brand-new account, so a device cannot get back to it.
-  Three defects fixed: the **Clear All AI Memory** sheet drew its buttons half-cut (no
-  `isScrollControlled`, so the sheet was capped at 9/16 of the screen and clipped in
-  silence), and the **Update** button on both the rename screen and the companion picker
-  ran edge to edge from a hardcoded `width: 335`.
-- **All six companions checked by eye**, switching the account through each and watching
-  the home card. Every one showed the right character on the hero card *and* in the reading
-  pose on the quest card — including id 3, whose Figma columns are swapped, and the 4/10 and
-  6/12 pairs that used to collapse. Account restored to Zee afterwards.
-- **Reminders no longer degrade to inexact alarms after a restart** — `sync()` re-reads the
-  permission instead of trusting a flag only the create-quest screen ever set.
-- **"Nowlli" → "Nowlii"** in 24 user-facing strings across eight screens. The product's own
-  name was misspelled in Notifications, both AI-personalization sheets, the delete-account
-  warning and the cancel-plan flow.
-- Verified: `flutter analyze lib` → 0 errors, **10 warnings, the standing baseline**;
-  **268 tests pass**, up from 262.
-
-## ✅ Also done today — a 16-item pass from the user, on a 320dp screen
-
-Commits `9db9b30`, `8216571`, `c127330`, `299191f`, `184d7ad`.
-
-- **Auth.** Both social buttons were drawn on every platform; two pills pushed
-  "Don't have an account? → Sign up" below the fold. Google on Android, Apple on iOS now
-  (`widget/social_auth_availability.dart`), labels scale instead of wrapping.
-- **Onboarding steps 3–6**, seen at this width for the first time. Card descriptions were
-  sliced mid-line; step 4's blue sheet covered the heading behind it and is rebuilt to
-  Figma `46:10084`; steps 5 and 6 overflowed by 30 and 10 pixels; and tapping "Choose your
-  own name" swapped the picture to `avatars[0]`, so the companion the user had just chosen
-  turned into a different one.
-- **The picker's tile colours were the id bug again** — `(id - 1) % 6` against production
-  ids `2, 3, 4, 6, 10, 12`. Third sighting of that arithmetic in this app. The rule is in
-  one place now (`CompanionIdentity.slotFor`) with `test/companion_tile_colour_test.dart`
-  pinned to the real ids.
-- **First run no longer fires four sample notifications** the moment the tutorial ends.
-  The tutorial bubbles fit, and the swipe bubble says what swiping does.
-- **The call pulse** no longer spans the whole screen at 320dp — the composition scales,
-  proportions unchanged, nothing moves at 375 and up.
-- **Profile**: real default silhouette instead of the app's own logo cropped into the
-  avatar circle; the heart is the design's size and reads as online; Edit Profile has a
-  pencil rather than a back arrow.
-- **Settings** rows tightened to the design — all nine within one short scroll.
-- **Quests → Today** empty state centres in the space it has instead of a guessed height.
-- **The paywall** fades its scroll edge instead of slicing "How it works?" in half.
-  (That change is in `184d7ad`, whose message does not mention it — `subscription_popup.dart`
-  lives under `screen/settings/`.)
-- Verified: `flutter analyze lib` 0 errors, 10 warnings (baseline); **276 tests pass**, up
-  from 268.
-
-### Three follow-ups from the user's fresh run
-
-- **The tutorial bubbles read one ellipsised line** with half the bubble empty under them.
-  `AutoShrinkText` set `TextOverflow.ellipsis` on every `Text` it built — and with
-  `maxLines: null` that does not mean "wrap, trim if it runs out", it collapses the text to
-  a single line. Its own measuring pass had no ellipsis, so it measured two lines, decided
-  they fit and never shrank anything. The ellipsis is now only applied where there is a
-  line cap to put it on, and the measurement matches what is painted.
-  `test/auto_shrink_text_test.dart` covers both halves.
-- **The fourth tutorial step drew nothing** — the screen dimmed and stayed that way until
-  you tapped again, which read as the app hanging. `AutoShrinkText` is a `LayoutBuilder`,
-  and it was inside an `IntrinsicWidth`: a LayoutBuilder cannot answer an intrinsic-size
-  query, so the bubble measured as nothing and collapsed, silently. The `IntrinsicWidth`
-  is gone (the text sets its own width now) and the widget's doc comment warns about it.
-- **The picker had the right colours in the wrong seats.** The API returns companions by
-  primary key — on production milo, knotty, gumo, fizzy, bloop, zee — while the design
-  reads milo/bloop, gumo/knotty, fizzy/zee. `fetchNowliiOptions` sorts by the canonical
-  companion order now, which also repairs the offline fallback tile in `_buildCharacterCard`
-  (it picks a bundled tile by `A + index`, so it was only ever right when index met slot).
-  Worth knowing: **`Fizzy.png` is the one capitalised filename on S3** — the slug lookup
-  lower-cases, so it survives, but nothing else may assume the case.
-
-### The call screen, in three rounds
-
-Worth reading before touching it again, because the first two rounds were wrong.
-
-1. **The pulse fix blanked the whole screen.** A `LayoutBuilder` went into
-   `_buildAvatarWithProgress`, and the column it lives in is inside an
-   `IntrinsicHeight` — see the standing note under Code. No exception, just an empty
-   screen. The width comes from `MediaQuery` now.
-2. **Shrinking the pulse, then deleting it, both missed the cause.** The two pulse rings
-   were plain children of the `Stack`, so their pulse-driven width *was* the Stack's
-   measured size, and the re-measure travelled up through the `Column` and the
-   `IntrinsicHeight`. The layout was moving, not the picture — which is why reducing the
-   amplitude could not help.
-3. **The fix, and it was the user's idea:** the rings sit in `Positioned.fill` →
-   `OverflowBox`, painted but never measured, with the Stack pinned to the progress
-   ring's 280 and `clipBehavior: Clip.none` so the halo can bleed. `Transform.scale` on
-   the disc came back too — a paint transform never touched layout.
-   Verified across three frames half a second apart: only the halo and the disc differ.
-
-Also: the three controls are top-aligned (the "Mark as done" label made its column
-taller, so a centred row lifted its button out of line), and the gap under them is **23,
-not 40** — the row is bottom-anchored by the `Spacer` above the avatar, so that gap is
-what sets its height on the screen.
-
-**The full flow is verified end to end on the emulator:** swipe → call screen → timer →
-"Mark as done" → "Wrap up already?" → the summary, with real generated copy and the
-companion's own name. What still cannot be judged here is audio — the emulator routes no
-microphone, so whether Nowlii actually hears and answers is still the phone test.
-
-### 🔑 Onboarding is reachable now
-
-`adb shell am start -n com.nowlii.app/.MainActivity -e route /avatarLogo` opens **any**
-route directly — Flutter's Android embedding takes the initial route from that intent
-extra. This is what made the onboarding work possible: those screens run once, on an
-account that has just been created, so a signed-in device could never get back to them.
-Public auth routes still redirect to home while signed in — for those, log out first.
-
-## 🔎 Open from that pass
-
-- **Whether the first call actually works is still unanswered.** The avatar on it is the
-  chosen companion and the controls sit in one row, both confirmed — but a call cannot be
-  judged here. Phone test.
-- [x] ~~**"Log out" leaves you on the Settings screen"** and **"Delete My Account" spins
-  forever.**~~ **Both fixed 2026-08-15.** One cause, and it was neither a missing `go()` nor
-  a backend problem: both already called `context.go(signInScreen)`, with the *dialog's*
-  `BuildContext`. Popping a dialog unmounts that context when its exit animation ends —
-  ~150ms, comfortably inside the request — so by the time the result landed every
-  `context.mounted` guard downstream read false and took the silent early return. Log out
-  cleared the session and never navigated; delete never dismissed its **modal** spinner,
-  which is why that one had no way out at all.
-  The fix is to capture what outlives the dialog *before* popping it — `GoRouter`,
-  `NavigatorState`, `ScaffoldMessengerState` all live above it — and to dismiss the spinner
-  unconditionally.
-  Two things found while pinning it down:
-  - **`CallReminderService.cancelAll()` was awaited on the way out**, and `init()` awaits two
-    platform channels (`FlutterTimezone`, then the notifications plugin). That put the exit
-    behind a plugin: either one hanging strands the user *after* the account is already
-    deleted. It is fired-and-forgotten now, with its own error sink. `StorageService.clearAll()`
-    is still awaited on purpose — the router guard reads those tokens, so navigating with them
-    in place bounces the user back in.
-  - **The first regression test was worthless and passed against the bug.** Ordering is
-    inverted in widget tests: a mocked store resolves in one microtask, so the dialog is still
-    mounted when the result lands. The real test holds the request open with a `Completer`
-    until the dialog has pumped fully out — and it was checked, by reconstructing the old
-    widget, to fail with exactly the reported symptom (the spinner still on screen).
-    `test/account_exit_navigation_test.dart`, 2 tests. **Log out still has no test** — same
-    mechanism, same fix, but nothing automated covers it.
-  **Both confirmed by the user on the emulator at 320dp**, on the build that shipped as
-  `nowlii-prod-v0.3.apk`. That is what closes out log out, which the tests do not reach.
-- **Terms of Service is linked on `readyToStartScreen`** even though the document does not
-  exist. Sign-up and Settings → Privacy hide it; this screen does not.
-- **`popup_error`, `pop_po_sahre` and `procrastination_screen`** still draw the old
-  `popupSpeking` composite — the disc with a character baked into it — rather than the
-  user's companion.
-- **Milo's home tile renders as a navy disc** inside the indigo square, where Zee fills it.
-  Either the served art carries its own background or the S3 image failed and the opaque
-  bundled tile was used; not chased.
-
-## ⚠️ Corrections to what this file used to say
-
-- **The emulator is signed in as `pavlegdn`, not `p.pavle16`.** That is why the entitlement
-  allowlist appeared not to work: the home card read "Unlimited sparks" (the voice allowlist
-  matched) while **Add quest went straight to the paywall**. Unblocked by subscribing through
-  the paywall — `activate` is still a mock, so it cost nothing — at the user's choice.
-  **`p.pavle16` has not been checked today**, so whether the allowlists reach it is unknown.
-- **The `editFrom` "doesn't send `predefined_option`" bug is fixed** and has been for a
-  while; the warning in this file was stale. It sends the id, and switching companions
-  persists — verified six times over today.
-- **`/avatarLogo`, the "main avatar picker", is routed from onboarding only.** So the pencil
-  on Edit Profile → rename screen → its own pencil is not the path to avoid, it is the only
-  path there is after signup.
-
-## 🔎 Found today, not yet acted on
-
-- **Create-quest asks for the nearby-devices (Bluetooth) permission** — "find, connect to,
-  and determine the relative position of nearby devices", on the screen where someone writes
-  down a task. Almost certainly a plugin pulling in `BLUETOOTH_CONNECT` for headsets. Play
-  wants a justification for it, and the wording is alarming in that context.
-- **The profile picture slot draws a washed-out, oversized logo** rather than a photo or a
-  clean placeholder, on both Profile and Edit Profile.
-- **Progress shows all seven weekday circles ticked** under "0-Day Streak" and "0 / 3 days".
-  Unverified — it may be the unfilled state, but ticked-and-orange reads as done.
+**Day:** 2026-09-07 (Monday) — first session since 08-27; the branch sat 11 days.
+**Branch:** `fix/call-mic-permission-and-close-button` — six commits `3f77fbf` → `086f5e9`,
+**not pushed to `origin`**.
+**Yesterday's report:** `daily-reports/2026-08-25.md` — notifications proved on hardware, the
+streak fix, the shared calendar, and four passes over the app.
 
 ---
 
-## ▶ START HERE — the phone test, seven days overdue
+## ✅ Done 2026-09-07 — the icon, confirmed on a device
 
-Everything else on this list is smaller than this one. A **prod** APK pointing at the live
-HTTPS backend has been waiting since 08-06, and three things can only be judged on hardware
-because the emulator cannot route host audio.
+- **The orange icon is real, and it is the design's.** `assets/images/nowli.png` is
+  **byte-identical** (MD5 `91d35ae1acdccdb1f330eef6c098ecb5`) to the Figma master exported
+  from `App icon application` → `App store_ App Icon_2` (node `61:13065`), and so are both
+  files in `docs/store-assets/`. Nothing needed redrawing.
+- **Seen on the emulator at last** — `960667f` shipped it unverified. In the app drawer it is
+  a clean solid `#FC820F` circle out to the edge. The **dock** shows a pale `#FFCA96` ring
+  around it; that is a launcher dock treatment, not the asset — the two layers are provably
+  the same colour, there is one `colors.xml`, one adaptive XML, and no `roundIcon`.
+- **Launch sequence, measured frame by frame:** Android 12 system splash (white + the icon
+  masked to a circle) → crossfade → Flutter `Splash()` on indigo `#4542EB`.
+  **Decided today: the indigo stays.** It is the old brand colour under the new orange mark,
+  and the white→indigo jump is deliberate, not a bug to “fix” later.
+- **Three blue copies the 08-27 pass missed** are out of the bundle (`1144fe8`) — the 1024
+  App Store master, its SVG twin, and a 122px squircle, all relocated to
+  `docs/store-assets/_archive/`. They were unreferenced but reachable through the
+  whole-folder flutter_gen accessors, so `Assets.svgImages.androidAppIconSquircle` handed
+  back the **blue** icon to anyone who reached for it.
+- **Both APKs rebuilt** off `1144fe8` against prod, and archived in `nowlii-apk-archive/`
+  as `nowlii-debug-v0.3-orange-icon.apk` and
+  `nowlii-release-v0.3-orange-icon-DEBUGKEY.apk`.
+- **A release build works, and this is the first time anyone has run one.** `--release`
+  carries `isMinifyEnabled` and `isShrinkResources`, both on and both never exercised: R8
+  strips reflection-reached code and the failure shows up at runtime, not at build time.
+  It builds (124.9 MB against the debug 266 MB) **and boots** — installed on the emulator
+  it reaches the welcome screen with nothing in logcat: no `ClassNotFound`, no
+  `NoSuchMethod`, no fatal. Only the first screen was exercised; the rest of the app under
+  R8 is still unproven.
+- **The release APK is signed `CN=Android Debug`** — verified with `apksigner`, not assumed.
+  `key.properties` is absent so `build.gradle.kts` falls back to the debug keystore exactly
+  as written. Note its `logger.warn` **never reached the console** through `flutter build`,
+  so absence of that warning proves nothing — check the certificate.
+- Baseline held: `flutter analyze lib` 0 errors / 10 warnings, **297 tests pass**.
 
-- [x] ~~**Build a fresh APK**~~ — done 2026-08-15, archived as
-      **`../nowlii-apk-archive/nowlii-prod-v0.3.apk`** (266 MB, commit `9d03b9d`). Built with
-      `flutter build apk --debug --dart-define-from-file=dart_defines.prod.json` — **`--debug`,
-      as every APK sent for testing so far has been.** The one release build ever made
-      (`nowlii-prod-v0.1.apk`, 08-05) could not reach the backend at all, because release
-      blocks cleartext and production was still plain HTTP. That blocker is gone now that
-      HTTPS is live, so a release build is finally possible — but it would still be signed
-      with the **debug** keystore (`android/key.properties` does not exist), so it is
-      installable and Google login works while Play would reject it.
-      Verified inside the APK, not just at the command line: the kernel blob carries
-      `https://api.nowlii.com` and `https://ai.nowlii.com`.
-- [ ] Install it and sign in as a real user
-- [ ] **Confirm the timezone fix on the device** — make a quest for a time an hour out and
-      check the card says that time, not that time plus your UTC offset
-- [ ] Microphone, voice check, one AI call. **Calls are free and unlimited on the QA account
-      right now** — the allowlists were restored at the end of 08-12 so the expiring trial
-      would not block this. That also means nothing caps the OpenAI spend, so **empty them
-      again as soon as the test is done** (see Accounts below).
-- [ ] **Second phone still to retry** — `kekile49@gmail.com` failed all of 08-06 afternoon
-      and has not tried since the fix went out at ~18:26
-- [x] ~~Merge → `main` once it passes.~~ **Merged 08-14, before the phone test**, at the
-      user's explicit decision after the ordering was pointed out. So `main` now carries work
-      that no hardware has seen — the phone test still has to happen, and anything it finds
-      lands on `main` rather than on a branch.
+## ❗ Found today, not acted on
 
-While the call is open, three things fixed yesterday are worth a glance on real hardware,
-since the emulator's silence made every summary a degenerate one:
-the **mood face** (should follow what the summary actually says), the **"Save reflection"**
-wording, and the **call screen pulse**.
+- **The native Android launch screen is still the stock Flutter template.**
+  `drawable/launch_background.xml` is a plain colour fill with the bitmap item commented
+  out, and there is no `flutter_native_splash` block in `pubspec.yaml`. It does not show
+  today only because **Android 12+ draws its own splash from the launcher icon** — which is
+  why the first frames are white with a circular orange mark. That system splash arrives in
+  **API 31**, and `minSdk` here is **23**, so every phone on Android 6–11 gets a plain
+  untouched colour fill with **no mark at all** until Flutter boots. Nobody has looked at
+  this app on one; the only test device and the only AVD are both API 36.
+- ⚠️ **The welcome screen still wears the blue mark, and it is the first screen a new user
+  sees.** `entry_screen_p2.dart` (route `EntryScreen`, live) draws one asset,
+  `assets/svg_images/enttry_two_screnn.png` — a 1500×2524 composite with the photo, the
+  NOWLII wordmark **and the mark all baked into the pixels**. The mark there is pale blue
+  (`#98BCFF`), measured on the release build. **No code change can fix it**; the art has to
+  be re-exported. Two things to settle first: the new identity has no standalone mark
+  (the icon is a cream mark *on* an orange plate), so somebody has to say whether it becomes
+  cream, orange, or keeps a plate; and in the current export the **green heart is clipped**
+  by the wordmark sitting over it, so the composition needs looking at, not just recolouring.
+  Needs the Figma frame for this screen — the link supplied today was the app-icon board only.
+- **`lib/screen/auth/sign_up.dart:165`** names `Assets.svgIcons.appStoreAppIconSvg`, an
+  accessor that no longer exists. It is inside a comment, so nothing breaks — do not
+  uncomment it.
+- **A release APK cannot be uploaded.** `android/key.properties` does not exist, so
+  `build.gradle.kts` falls back to the **debug** keystore and warns. Play rejects that.
+  Still the upload-keystore blocker below.
+
+---
+
+## ▶ START HERE
+
+1. **Start the incoming call — step 1: the screen, triggered locally.** Decided 2026-08-27: a
+   scheduled call should **ring** instead of arriving as a notification. Build the
+   incoming-call screen on `flutter_callkit_incoming` and fire it locally for now; the T-5min
+   reminder and every quest alarm stay exactly as they are. Answer routes into
+   `AiVoice(scheduledCallId:, questTitle:)`, which already takes both. Suppress the ring when
+   `remaining == 0` — `sync()` already knows that as `stranded`. **Do not build this on a
+   locally scheduled full-screen intent**: Battery Saver alone drifts exact alarms by up to ten
+   minutes, and iOS forbids raising CallKit without a VoIP push. Steps 2–4 (backend
+   `DeviceToken` + per-minute cron + FCM, then APNs VoIP, then the ringtone picker) and the
+   full reasoning are in `next-phase.md` under **START HERE (2026-08-27)**.
+2. **Empty both QA allowlists.** They are still active on production — the home screen says
+   "Unlimited sparks", so nothing caps the OpenAI spend and the QA account meets neither the
+   paywall nor the 2-calls-a-day limit. See **Accounts** below for how, and for the trap in
+   "restoring" them by deleting the lines.
+3. **Decide where `sync()` goes after login.** `sign_in_screen.dart:157` and `:193` go straight
+   to the home screen. Nothing on that path asks for the notification permission or reports the
+   device timezone, so a user who signs in and never creates a quest gets **no alarms at all**
+   and never sees a dialog. `DeviceTimezone.report()` rides the same chain, so a phone in a new
+   zone does not report it until the next cold start — that one only affects `ScheduledCall`,
+   since quest alarms are local. Full write-up in yesterday's report §9.
+4. **Decide what to do with the notification settings screen.** All five toggles are dead: they
+   write to SharedPreferences and nothing reads them. Three of the five categories have no
+   sender anywhere in the app. Wire the two that map to something real ("Task Reminders",
+   "Streak Progress") and drop the rest, or take the promises off the screen.
+5. **Decide about the in-app notification feed on the profile.** Permanently empty; the
+   design's populated list was never built. Build it, or take the section out.
+6. **Push, and decide whether this branch merges to `main`.** **Twelve** commits are sitting
+   local on `fix/call-mic-permission-and-close-button`, the oldest from 08-25. Nothing has
+   been pushed since. The longer this sits the more a merge costs.
+
+---
+
+## ✅ Done 2026-08-25 — see the report for the reasoning
+
+- **Notifications and the timezone are proved on a device.** A 12:30 quest rang at
+  12:30:00.026, as an exact `RTC_WAKEUP`, at the epoch that is 12:30 **in the device's zone**.
+- **Quest alarms arrive 5 minutes early** (`questAlarmLeadMinutes`), with the copy reading the
+  quest's clock rather than the reminder's, and a quest made inside its own lead window still
+  warning instead of falling silent.
+- **The streak can lapse again.** It never compared to today, so a run from January still read
+  2 in August. Now anchored to today-or-yesterday, on the user's calendar, ignoring future
+  dates. **First backend tests ever** — 11 cases.
+- **Activity trend has a real axis.** `maxY` was hardcoded to 20, so every bar drew at a
+  twentieth of its height and the chart looked empty.
+- **One calendar, shared.** `widget/quest_calendar.dart` — Insights draws a month of it, My
+  Progress a week. The old week strip had no "skipped" state, so a missed day and a future day
+  looked identical. (That is the "all seven circles ticked" note that sat here unexplained.)
+- **The quest card opens the quest; the checkbox completes it.** Edit pencil retired.
+- **Suggested cards** read at last — most were navy on navy, because `moon4` is the fallback
+  for every unmatched task. Plus 5 mins, no Shuffle, smaller moon.
+- **Empty states centre properly** on Scheduled, Completed and Blocking — fixed in `today.dart`
+  on 08-14 and nowhere else.
+- **Profile** matches the design; the Edit icon was `Image.asset(color:)` flattening a plate to
+  a white disc. **"Talk to Fuzzy"** was the tenth place using a name the user never chose.
+- **Receipts** have a back button and swipe-to-delete, on a new
+  `DELETE /api/voice-calls/<id>/summary/`.
+- **Backend deployed** and verified inside the running container. `nowli-ai` untouched on
+  purpose.
+
+## 🔎 Open from yesterday, not acted on
+
+- **The time picker overflows by 4.3 px** on the AM/PM column at 375dp — visible as the striped
+  overflow banner on create-quest.
+- **The "10 mins" pill was invented** and is now gone from the user's quest cards. If quests
+  should carry a duration, it needs a real field; nothing ever asked the user for one.
+- **`completed/task_card/task_card.dart` is dead mock code** — a hardcoded "Clean house" list,
+  referenced from nowhere. Left in place.
+- **`SleepRoutineCard` is a byte-identical unused duplicate** of `RoutineCard` in
+  `soft_steps.dart`.
+- **Create-quest asks for the nearby-devices (Bluetooth) permission** — almost certainly a
+  plugin pulling in `BLUETOOTH_CONNECT` for headsets. Play wants a justification, and the
+  wording is alarming on a screen where someone writes down a task.
+- **The receipts screen has not been seen on a device.** The QA account has no saved summary,
+  and making one costs a billable call.
+
+---
+
+## ▶ The phone test — still open
+
+Yesterday's work was all emulator. The emulator routes no audio, so the microphone, the voice
+check and the AI call still cannot be judged here. **The archived APK predates everything** —
+build a fresh one:
+`flutter build apk --debug --dart-define-from-file=dart_defines.prod.json`.
+
+- [ ] Install and sign in as a real user — and watch whether the notification dialog appears
+      before the first quest is created (it should not today; that is item 2 above)
+- [ ] **The male voice** — still the one open question from 08-21, still needs two log lines:
+      `Companion voice from profile:` and `Realtime voice for this call:` (`cedar` male,
+      `marin` female)
+- [ ] Microphone, voice check, one AI call. ⚠️ **Calls are free and unlimited on the QA
+      account right now** — empty the allowlists first or accept the spend
+- [ ] A quest with a time should ring **5 minutes before** it, with the quest's own time in the
+      body. ⚠️ An account that has already denied twice will never see the dialog again;
+      grant it in system settings or use a fresh install
+- [ ] **Second phone still to retry** — `kekile49@gmail.com`, untested since the 08-06 fix
+- [ ] The last of the 320dp sweep: the call and voice-check screens
 
 ---
 
@@ -308,8 +257,11 @@ wording, and the **call screen pulse**.
 - Env changes take effect on container **create**, not restart — always `up -d`.
 - **Production logs 500s now.** `docker logs nowlii-backend` holds tracebacks.
 - **HTTPS is live**: `https://api.nowlii.com`, `https://ai.nowlii.com`. Cert to 2026-10-29.
-- As of 2026-08-12 the deployed backend is **byte-identical to committed `HEAD`** — there is
-  nothing waiting to deploy.
+- **As of 2026-08-21 both services on the box run commit `7377ae8`** (backend and `nowli-ai`,
+  rebuilt and restarted that afternoon). Nothing server-side is waiting to deploy. The
+  **Flutter** tree is a different story — see the top of this file.
+- `git archive` ships **committed** files only. A deploy of uncommitted work silently ships
+  the old code and looks like it worked.
 
 ### Accounts, money, data
 - ⚠️ **Both QA allowlists are ACTIVE on production** — both set to `p.pavle16`, restored at
@@ -363,13 +315,35 @@ wording, and the **call screen pulse**.
   either one hanging strands the user. In `delete_account_dialog` the cancel is fired and not
   awaited for exactly this reason.
 - `flutter` is not on PATH in tool shells — use `C:\src\flutter\bin\flutter.bat`.
+- ⚠️ **`Image.asset(..., color:)` flattens every pixel to one value.** It is a tint, not a
+  fill, so art that is already a coloured *plate* becomes a solid block of that colour. The
+  profile's Edit row passed `Colors.white` over `Edit profilIcon.png` — a blue plate with a
+  navy pencil — and rendered a plain white disc with no pencil in it, for weeks. If a row
+  needs its own colour, pass a widget rather than a path plus a tint.
+- ⚠️ **Key a `Dismissible` by the item's id, never its list position.** The key survives
+  rebuilds, so an index key makes the *next* row inherit the dismissed one's state and vanish
+  with it.
+- ⚠️ **Dart has no nested block comments.** Retiring a method by wrapping it in `/* */`
+  breaks silently if the region already contains one — the first inner `*/` ends the outer
+  comment and everything after it lands back in the parse. It happened once on 08-25 and
+  produced a cascade of `undefined_identifier` errors pointing nowhere near the cause.
+- **Splitting a mixed working tree:** `git add -p` is not available here, so a file carrying
+  two days' changes cannot be split. Assign the whole file to one commit and say so in the
+  message. File mtime is a reliable way to tell which day's work a file belongs to.
 - **`flutter analyze lib` has a standing baseline of 10 warnings.** Diff against it rather
-  than reading the count. 0 errors. **284 tests** pass (2026-08-15).
+  than reading the count. 0 errors. **297 tests** pass (2026-08-25).
+- **The backend has tests now, but only one app's.** `Apps/quests/tests.py` covers the streak
+  rule (11 cases, added 2026-08-25) and is the only suite that exists. Everything else is
+  still covered by reading and `manage.py check` alone — say so rather than implying a
+  green run across the backend.
 - **Never key companion art off `predefined_option`.** Production ids are `2, 3, 4, 6, 10,
   12`; the id says nothing about which character a row is. Resolution order is the
   `avatar_logo` filename → preset `nowlii_name` → id. Never the displayed name, which the
   user can change. **Do not rename the S3 files** until the backend has a stable `slug`.
-- Backend tests: use module labels (`Apps.users.tests`). A bare `manage.py test` **errors**.
+- Backend tests: use **module** labels (`Apps.quests.tests`). A bare `manage.py test` errors,
+  and so does an app label — `manage.py test Apps.quests` dies in unittest discovery with
+  `TypeError: _path_normpath`, because `Apps/` has no `__init__.py`. CLAUDE.md still quotes
+  the broken form.
 - **`AUTH_USER_MODEL` is never set** — production runs Django's stock `auth.User`.
 - The emulator cannot route host audio, so the mic, the voice check and the AI call cannot be
   judged there. Those need a phone.

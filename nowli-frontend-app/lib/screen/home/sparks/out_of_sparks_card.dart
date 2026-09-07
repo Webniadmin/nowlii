@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:nowlii/screen/home/sparks/out_of_sparks_sheet.dart';
 import 'package:nowlii/services/spark_state.dart';
+import 'package:nowlii/services/companion_avatar.dart';
 
 /// Takes the place of the "Ready to make today count?" card once both of the day's sparks
 /// are spent. The point is that being out is a designed ending rather than a failure —
@@ -112,9 +113,12 @@ class OutOfSparksCard extends StatelessWidget {
                 const SizedBox(height: 14.8),
                 Text(
                   sparks.paused
+                      // The companion is whoever the user named it: both "Fuzzy" and the
+                      // product's own name were written straight into this card.
                       ? 'Everything you have already done is still here. Renew to talk '
-                          'to Fuzzy again.'
-                      : 'You said it. You picked the next step. Nowlii will be back tomorrow.',
+                          'to ${CompanionAvatar.current.name} again.'
+                      : 'You said it. You picked the next step. '
+                          '${CompanionAvatar.current.name} will be back tomorrow.',
                   style: GoogleFonts.workSans(
                     color: const Color(0xB8011F54),
                     fontSize: 16,
