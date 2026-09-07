@@ -8,7 +8,73 @@ References verified against the codebase on 2026-07-01.
 
 ---
 
-## ▶ START HERE (2026-08-06)
+## ▶ START HERE (2026-08-27) — the scheduled call becomes a real call
+
+**Decided today, starts tomorrow.** Today a quest with `enable_call` produces a *notification*
+five minutes ahead, and tapping it opens the call screen. The product wants the companion to
+**ring** instead: the T-5min notification stays exactly as it is, and at T-0 the phone shows a
+real incoming-call screen — ring, Answer / Decline — where Answer drops straight into
+`AiVoice(scheduledCallId:, questTitle:)`.
+
+**The trigger has to be a server push, not a local alarm.** This was researched before
+committing to it, and it is the whole reason the task is a week and not a day:
+
+- **Battery Saver disables exact alarms outright.** Everything falls back to inexact, with up
+  to ~10 minutes of drift. That is fine for a reminder and fatal for "call me at 12:30".
+- **Doze** enforces a ~15-minute floor between exact-while-idle alarms, **force-stop** wipes
+  every pending alarm with nothing to re-arm it until the app is opened, and the Xiaomi /
+  Samsung / OnePlus / Huawei battery managers kill background work harder than stock Android
+  (some reset permissions after an OTA).
+- **iOS makes it categorical.** CallKit can only be reported while the app runs or when woken
+  by a **PushKit VoIP push**; a local notification cannot raise a call screen at all. And a
+  VoIP push that does not immediately report a call gets the app killed — three misses and it
+  is temporarily banned from VoIP push. There is no half-measure on iOS.
+
+So: **Android** = FCM high-priority data message (designed to break Doze); **iOS** = APNs VoIP
+push → CallKit. Both go through **`flutter_callkit_incoming`** (3.1.5, actively maintained),
+one Dart API over both platforms' native call UI.
+
+**Build in this order — step 1 is testable with no backend, and nothing is thrown away:**
+
+1. **Incoming-call screen + `flutter_callkit_incoming`, triggered locally.** The UX can be
+   iterated on immediately; the trigger is one call site that step 2 replaces.
+2. **Backend `DeviceToken` + a per-minute cron management command + FCM.**
+3. **iOS APNs VoIP certificate + PushKit.** Needs a real device — not the simulator.
+4. **Ringtones + the Settings picker.**
+
+**Files likely touched:** `lib/services/call_reminder_service.dart` (the T-0 branch moves out;
+the T-5min reminder and every quest alarm stay), a new incoming-call screen under
+`lib/screen/ai_call/`, `lib/core/app_routes/` (route + the `main.dart` tap wiring, which
+already exists as `onReminderTapped`), `android/app/src/main/AndroidManifest.xml`,
+`pubspec.yaml`; backend `Apps/voice_calls/` (new `DeviceToken` model + migration, a management
+command, and the push sender); `nowlii-frontend-app/ios/Runner/` for the VoIP entitlement.
+
+**Gotchas / blockers:**
+- **The backend already holds the hard part**: `ScheduledCall` knows every call's time, and a
+  `post_save` on `Quests` already keeps those rows correct. What is missing is only a token
+  table and something to fire on the minute. Prefer a **management command on a per-minute
+  cron**, stamping `pushed_at` for idempotency, over adding Celery + Redis for one job.
+- **A scheduled call still reserves no quota.** The 2/day limit is counted at call start, so
+  the ring must be suppressed when `remaining == 0` — `sync()` already computes that as
+  `stranded`. Ringing a phone for a call the backend will refuse is worse than staying silent.
+- **`USE_FULL_SCREEN_INTENT` is not a listing risk**, unlike `USE_EXACT_ALARM`. Play merely
+  **revokes** it for apps that are not calling/alarm apps; it can then be requested at runtime
+  (`flutter_local_notifications` exposes `requestFullScreenIntentPermission()`), degrading to a
+  60-second heads-up notification when refused. An earlier note in this project treated the two
+  as the same kind of risk — they are not.
+- **`ringtonePath` is a per-call parameter** on both platforms in `flutter_callkit_incoming`.
+  That is what makes step 4 cheap: an Android notification *channel's* sound is immutable after
+  creation, so doing the picker on the notification path would have forced one channel per
+  ringtone. Do not build it that way.
+- **This is the first time Firebase enters the project**, which was a deliberate avoidance —
+  see the header comment in `call_reminder_service.dart`. That comment stops being true at
+  step 2 and should be rewritten rather than left to mislead.
+- Estimate **4–6 days plus real-device testing**. iOS cannot be verified on this Windows
+  machine at all (see B3).
+
+---
+
+## ▶ (2026-08-06)
 
 **Put the APK on a real phone.** `nowlii-prod-v0.1.apk` is built and points at the live HTTPS
 backend; the code is pushed and the backend is deployed. Everything that has stacked up is now

@@ -4,7 +4,7 @@ _The single active document for the current working day. Update **only this file
 during the day. At end of day, write a report in `daily-reports/` and reset this list
 for tomorrow. Deferred items go to `future-checklist.md`._
 
-**Day:** 2026-08-26 (Wednesday)
+**Day:** 2026-09-07 (Monday) — first session since 08-27; the branch sat 11 days.
 **Branch:** `fix/call-mic-permission-and-close-button` — six commits `3f77fbf` → `086f5e9`,
 **not pushed to `origin`**.
 **Yesterday's report:** `daily-reports/2026-08-25.md` — notifications proved on hardware, the
@@ -12,25 +12,101 @@ streak fix, the shared calendar, and four passes over the app.
 
 ---
 
+## ✅ Done 2026-09-07 — the icon, confirmed on a device
+
+- **The orange icon is real, and it is the design's.** `assets/images/nowli.png` is
+  **byte-identical** (MD5 `91d35ae1acdccdb1f330eef6c098ecb5`) to the Figma master exported
+  from `App icon application` → `App store_ App Icon_2` (node `61:13065`), and so are both
+  files in `docs/store-assets/`. Nothing needed redrawing.
+- **Seen on the emulator at last** — `960667f` shipped it unverified. In the app drawer it is
+  a clean solid `#FC820F` circle out to the edge. The **dock** shows a pale `#FFCA96` ring
+  around it; that is a launcher dock treatment, not the asset — the two layers are provably
+  the same colour, there is one `colors.xml`, one adaptive XML, and no `roundIcon`.
+- **Launch sequence, measured frame by frame:** Android 12 system splash (white + the icon
+  masked to a circle) → crossfade → Flutter `Splash()` on indigo `#4542EB`.
+  **Decided today: the indigo stays.** It is the old brand colour under the new orange mark,
+  and the white→indigo jump is deliberate, not a bug to “fix” later.
+- **Three blue copies the 08-27 pass missed** are out of the bundle (`1144fe8`) — the 1024
+  App Store master, its SVG twin, and a 122px squircle, all relocated to
+  `docs/store-assets/_archive/`. They were unreferenced but reachable through the
+  whole-folder flutter_gen accessors, so `Assets.svgImages.androidAppIconSquircle` handed
+  back the **blue** icon to anyone who reached for it.
+- **Both APKs rebuilt** off `1144fe8` against prod, and archived in `nowlii-apk-archive/`
+  as `nowlii-debug-v0.3-orange-icon.apk` and
+  `nowlii-release-v0.3-orange-icon-DEBUGKEY.apk`.
+- **A release build works, and this is the first time anyone has run one.** `--release`
+  carries `isMinifyEnabled` and `isShrinkResources`, both on and both never exercised: R8
+  strips reflection-reached code and the failure shows up at runtime, not at build time.
+  It builds (124.9 MB against the debug 266 MB) **and boots** — installed on the emulator
+  it reaches the welcome screen with nothing in logcat: no `ClassNotFound`, no
+  `NoSuchMethod`, no fatal. Only the first screen was exercised; the rest of the app under
+  R8 is still unproven.
+- **The release APK is signed `CN=Android Debug`** — verified with `apksigner`, not assumed.
+  `key.properties` is absent so `build.gradle.kts` falls back to the debug keystore exactly
+  as written. Note its `logger.warn` **never reached the console** through `flutter build`,
+  so absence of that warning proves nothing — check the certificate.
+- Baseline held: `flutter analyze lib` 0 errors / 10 warnings, **297 tests pass**.
+
+## ❗ Found today, not acted on
+
+- **The native Android launch screen is still the stock Flutter template.**
+  `drawable/launch_background.xml` is a plain colour fill with the bitmap item commented
+  out, and there is no `flutter_native_splash` block in `pubspec.yaml`. It does not show
+  today only because **Android 12+ draws its own splash from the launcher icon** — which is
+  why the first frames are white with a circular orange mark. That system splash arrives in
+  **API 31**, and `minSdk` here is **23**, so every phone on Android 6–11 gets a plain
+  untouched colour fill with **no mark at all** until Flutter boots. Nobody has looked at
+  this app on one; the only test device and the only AVD are both API 36.
+- ⚠️ **The welcome screen still wears the blue mark, and it is the first screen a new user
+  sees.** `entry_screen_p2.dart` (route `EntryScreen`, live) draws one asset,
+  `assets/svg_images/enttry_two_screnn.png` — a 1500×2524 composite with the photo, the
+  NOWLII wordmark **and the mark all baked into the pixels**. The mark there is pale blue
+  (`#98BCFF`), measured on the release build. **No code change can fix it**; the art has to
+  be re-exported. Two things to settle first: the new identity has no standalone mark
+  (the icon is a cream mark *on* an orange plate), so somebody has to say whether it becomes
+  cream, orange, or keeps a plate; and in the current export the **green heart is clipped**
+  by the wordmark sitting over it, so the composition needs looking at, not just recolouring.
+  Needs the Figma frame for this screen — the link supplied today was the app-icon board only.
+- **`lib/screen/auth/sign_up.dart:165`** names `Assets.svgIcons.appStoreAppIconSvg`, an
+  accessor that no longer exists. It is inside a comment, so nothing breaks — do not
+  uncomment it.
+- **A release APK cannot be uploaded.** `android/key.properties` does not exist, so
+  `build.gradle.kts` falls back to the **debug** keystore and warns. Play rejects that.
+  Still the upload-keystore blocker below.
+
+---
+
 ## ▶ START HERE
 
-1. **Empty both QA allowlists.** They are still active on production — the home screen says
+1. **Start the incoming call — step 1: the screen, triggered locally.** Decided 2026-08-27: a
+   scheduled call should **ring** instead of arriving as a notification. Build the
+   incoming-call screen on `flutter_callkit_incoming` and fire it locally for now; the T-5min
+   reminder and every quest alarm stay exactly as they are. Answer routes into
+   `AiVoice(scheduledCallId:, questTitle:)`, which already takes both. Suppress the ring when
+   `remaining == 0` — `sync()` already knows that as `stranded`. **Do not build this on a
+   locally scheduled full-screen intent**: Battery Saver alone drifts exact alarms by up to ten
+   minutes, and iOS forbids raising CallKit without a VoIP push. Steps 2–4 (backend
+   `DeviceToken` + per-minute cron + FCM, then APNs VoIP, then the ringtone picker) and the
+   full reasoning are in `next-phase.md` under **START HERE (2026-08-27)**.
+2. **Empty both QA allowlists.** They are still active on production — the home screen says
    "Unlimited sparks", so nothing caps the OpenAI spend and the QA account meets neither the
    paywall nor the 2-calls-a-day limit. See **Accounts** below for how, and for the trap in
    "restoring" them by deleting the lines.
-2. **Decide where `sync()` goes after login.** `sign_in_screen.dart:157` and `:193` go straight
+3. **Decide where `sync()` goes after login.** `sign_in_screen.dart:157` and `:193` go straight
    to the home screen. Nothing on that path asks for the notification permission or reports the
    device timezone, so a user who signs in and never creates a quest gets **no alarms at all**
    and never sees a dialog. `DeviceTimezone.report()` rides the same chain, so a phone in a new
    zone does not report it until the next cold start — that one only affects `ScheduledCall`,
    since quest alarms are local. Full write-up in yesterday's report §9.
-3. **Decide what to do with the notification settings screen.** All five toggles are dead: they
+4. **Decide what to do with the notification settings screen.** All five toggles are dead: they
    write to SharedPreferences and nothing reads them. Three of the five categories have no
    sender anywhere in the app. Wire the two that map to something real ("Task Reminders",
    "Streak Progress") and drop the rest, or take the promises off the screen.
-4. **Decide about the in-app notification feed on the profile.** Permanently empty; the
+5. **Decide about the in-app notification feed on the profile.** Permanently empty; the
    design's populated list was never built. Build it, or take the section out.
-5. **Push, and decide whether this branch merges to `main`.** Six commits are sitting local.
+6. **Push, and decide whether this branch merges to `main`.** **Twelve** commits are sitting
+   local on `fix/call-mic-permission-and-close-button`, the oldest from 08-25. Nothing has
+   been pushed since. The longer this sits the more a merge costs.
 
 ---
 
