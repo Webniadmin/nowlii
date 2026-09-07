@@ -642,14 +642,6 @@ class $AssetsSvgIconsGen {
   AssetGenImage get aIPersonalization =>
       const AssetGenImage('assets/svg_icons/AI Personalization.png');
 
-  /// File path: assets/svg_icons/App store_ App Icon.png
-  AssetGenImage get appStoreAppIconPng =>
-      const AssetGenImage('assets/svg_icons/App store_ App Icon.png');
-
-  /// File path: assets/svg_icons/App store_ App Icon.svg
-  SvgGenImage get appStoreAppIconSvg =>
-      const SvgGenImage('assets/svg_icons/App store_ App Icon.svg');
-
   /// File path: assets/svg_icons/Apple Icons Blue.svg
   SvgGenImage get appleIconsBlue =>
       const SvgGenImage('assets/svg_icons/Apple Icons Blue.svg');
@@ -1265,8 +1257,6 @@ class $AssetsSvgIconsGen {
     a,
     aIInsightsReflections,
     aIPersonalization,
-    appStoreAppIconPng,
-    appStoreAppIconSvg,
     appleIconsBlue,
     appleIcon,
     arrow,
@@ -1433,10 +1423,6 @@ class $AssetsSvgImagesGen {
 
   /// File path: assets/svg_images/A.png
   AssetGenImage get a => const AssetGenImage('assets/svg_images/A.png');
-
-  /// File path: assets/svg_images/Android App Icon - Squircle.png
-  AssetGenImage get androidAppIconSquircle =>
-      const AssetGenImage('assets/svg_images/Android App Icon - Squircle.png');
 
   /// File path: assets/svg_images/App Icon.svg
   SvgGenImage get appIcon =>
@@ -1607,7 +1593,6 @@ class $AssetsSvgImagesGen {
   /// List of all assets
   List<dynamic> get values => [
     a,
-    androidAppIconSquircle,
     appIcon,
     b,
     buttonCalendar,
