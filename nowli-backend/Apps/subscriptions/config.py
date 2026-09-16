@@ -18,21 +18,30 @@ TRIAL_DAYS = 7
 # Each phase covers an inclusive range of 1-based billing months from the subscription
 # start (month 1 = the first billing month). ``price`` = the monthly price during it.
 #
-# ``google_base_plan`` / ``apple_product`` tie a phase to the product the store actually
-# bills. Neither store can express this ladder in one product: a Google Play offer allows
-# **at most two pricing phases**, and an Apple introductory offer is a single phase. So each
-# step is its own store product and the subscriber is moved down the ladder by a plan change
-# at renewal. See ``services.step_down_due`` and docs/subscriptions-iap.md.
+# ``stripe_price_env`` names the setting holding that rung's Stripe price id. Stripe is how
+# the subscription is actually paid for: one **subscription schedule** carries all four
+# phases and Stripe moves the subscriber down the ladder itself, server-side.
+#
+# ``google_base_plan`` / ``apple_product`` describe the same rung as a store product, for
+# the store path that is NOT in use. They are kept because neither store can express this
+# ladder in one product — a Google Play offer allows **at most two pricing phases** and an
+# Apple introductory offer is a single phase — so if the store path is ever revived the
+# mapping is already written down. Nothing reads them while ``platform`` is ``stripe``.
+# See ``stripe_gateway.schedule_phases`` and docs/stripe-payments.md.
 # The five named stages of the plan: Spark → Rhythm → Independence → Release → Graduated.
 # The first four are what the user pays; the fifth is free and is not a store product.
 PHASES = [
     {"from_month": 1,  "to_month": 3,  "price": 19.99, "stage": "Spark",
+     "stripe_price_env": "STRIPE_PRICE_SPARK",
      "google_base_plan": "spark", "apple_product": "com.nowlii.pro.spark"},
     {"from_month": 4,  "to_month": 6,  "price": 14.99, "stage": "Rhythm",
+     "stripe_price_env": "STRIPE_PRICE_RHYTHM",
      "google_base_plan": "rhythm", "apple_product": "com.nowlii.pro.rhythm"},
     {"from_month": 7,  "to_month": 9,  "price": 9.99, "stage": "Independence",
+     "stripe_price_env": "STRIPE_PRICE_INDEPENDENCE",
      "google_base_plan": "independence", "apple_product": "com.nowlii.pro.independence"},
     {"from_month": 10, "to_month": 12, "price": 4.99, "stage": "Release",
+     "stripe_price_env": "STRIPE_PRICE_RELEASE",
      "google_base_plan": "release", "apple_product": "com.nowlii.pro.release"},
 ]
 

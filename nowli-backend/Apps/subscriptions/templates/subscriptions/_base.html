@@ -1,0 +1,42 @@
+{% comment %}
+The two pages a Stripe Checkout browser tab lands on. Deliberately plain and self-contained:
+they are opened in whatever browser the phone uses, often on a slow connection, straight
+after a payment — so no fonts to fetch, no scripts, nothing that can fail and leave someone
+who has just been charged looking at a blank page.
+
+There is no deep link back into the app. The app re-reads /subscriptions/me/ every time it
+returns to the foreground, so switching back to it is enough, and that works even if the tab
+is closed or checkout was finished on another device.
+{% endcomment %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}NOWLII{% endblock %}</title>
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center;
+      justify-content: center; background: #FFFEF8; color: #1A1A1A;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 24px;
+    }
+    .card { max-width: 420px; text-align: center; }
+    .mark {
+      width: 72px; height: 72px; border-radius: 50%; background: #FC820F;
+      margin: 0 auto 28px; display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 34px; line-height: 1;
+    }
+    h1 { font-size: 24px; margin: 0 0 12px; font-weight: 600; }
+    p { font-size: 16px; line-height: 1.55; margin: 0 0 14px; color: #4A4A4A; }
+    .hint { font-size: 14px; color: #8A8A8A; margin-top: 26px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="mark">{% block mark %}✓{% endblock %}</div>
+    {% block body %}{% endblock %}
+  </div>
+</body>
+</html>

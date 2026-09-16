@@ -544,3 +544,60 @@ SUBSCRIPTION_UNLIMITED_USERS = [
     for u in os.getenv("SUBSCRIPTION_UNLIMITED_USERS", "pavle").split(",")
     if u.strip()
 ]
+
+
+# ------------------------------------------------------------------------------
+# Stripe — how the subscription is actually paid for
+# ------------------------------------------------------------------------------
+# NOWLII sells on the web through Stripe Checkout, not through Apple IAP or Google Play
+# Billing. The reason is the price ladder: it steps down four times over a year, and a
+# Google Play offer carries at most two pricing phases while an Apple introductory offer
+# carries one. A Stripe **subscription schedule** expresses the whole ladder natively and
+# moves the subscriber down it server-side, which neither store can do at all.
+#
+# Everything here is blank by default: with no secret key the checkout endpoints answer
+# 503 and the rest of the app is unaffected, so a deployment that has not been given keys
+# degrades to "cannot buy" rather than breaking.
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
+
+# Signing secret for the webhook endpoint (`whsec_…`, from the Stripe dashboard or
+# `stripe listen`). Without it the webhook refuses every request — an unverified webhook is
+# an open endpoint that grants paid access to anyone who can POST JSON.
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+
+# The four price ids, one per rung of the ladder. They are created by
+# `manage.py sync_stripe_prices`, which builds them from Apps/subscriptions/config.PHASES
+# so the schedule is still written down in exactly one place. Read via
+# `stripe_gateway.price_id_for_phase`, never directly.
+STRIPE_PRICE_SPARK = os.getenv("STRIPE_PRICE_SPARK", "").strip()
+STRIPE_PRICE_RHYTHM = os.getenv("STRIPE_PRICE_RHYTHM", "").strip()
+STRIPE_PRICE_INDEPENDENCE = os.getenv("STRIPE_PRICE_INDEPENDENCE", "").strip()
+STRIPE_PRICE_RELEASE = os.getenv("STRIPE_PRICE_RELEASE", "").strip()
+
+# Where Stripe sends the browser when checkout finishes. These are plain pages served by
+# this backend; the app itself notices the purchase when it next comes back into focus and
+# re-reads /subscriptions/me/, so nothing depends on a deep link firing.
+STRIPE_SUCCESS_URL = os.getenv(
+    "STRIPE_SUCCESS_URL", "https://api.nowlii.com/api/subscriptions/success/"
+)
+STRIPE_CANCEL_URL = os.getenv(
+    "STRIPE_CANCEL_URL", "https://api.nowlii.com/api/subscriptions/cancelled/"
+)
+
+# Storefronts where the app is allowed to send a user to an outside payment page.
+# Apple has permitted this in the US since 2025-05 and Google Play since 2025-12-09; almost
+# everywhere else anti-steering still stands and the button must not appear at all. Launch
+# is US-first, so that is the default. Widening this list is a policy decision, not a
+# technical one — check the current rules for the storefront first.
+CHECKOUT_ALLOWED_COUNTRIES = [
+    c.strip().upper()
+    for c in os.getenv("CHECKOUT_ALLOWED_COUNTRIES", "US").split(",")
+    if c.strip()
+]
+
+# The mock "subscribe without paying" endpoint from Phase 1. It is how the paywall was
+# tested before there was a payment processor, and it grants full access for free, so it
+# stays off unless someone deliberately turns it on in a dev environment.
+SUBSCRIPTION_ALLOW_MOCK_ACTIVATE = os.getenv(
+    "SUBSCRIPTION_ALLOW_MOCK_ACTIVATE", "False"
+).lower() in ("true", "1", "yes")

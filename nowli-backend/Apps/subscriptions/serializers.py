@@ -48,5 +48,14 @@ class SubscriptionStatusSerializer(serializers.Serializer):
     trial_ends_at    = serializers.DateField(required=False, allow_null=True)
     trial_days_total = serializers.IntegerField(required=False)
     trial_used       = serializers.BooleanField(required=False)
+    # The end of the paid period, and whether the plan is already set to stop on it. Both
+    # are what the app needs to say "your plan ends on <date>" rather than going quiet.
+    current_period_end   = serializers.DateField(required=False, allow_null=True)
+    cancel_at_period_end = serializers.BooleanField(required=False)
+    # Whether this user may be shown an outside payment link at all. Linking out is allowed
+    # in the US and a handful of other storefronts and forbidden in the rest, so the button
+    # is a server decision, not something the app decides for itself.
+    checkout_available   = serializers.BooleanField(required=False)
     # Present for every caller; `due`/`cancel` are False for anyone it does not apply to.
+    # Always false on Stripe — it steps the price down itself. Kept for the unused store path.
     step_down        = StepDownSerializer(required=False)

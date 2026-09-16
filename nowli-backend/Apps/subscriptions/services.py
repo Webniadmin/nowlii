@@ -261,12 +261,22 @@ def compute_status(subscription, ref: date = None) -> dict:
     next_phase = phase_for_month(idx + 1)
 
     is_free = paid_started and this_phase["is_free"]
-    # Access comes from an active trial, lifetime-free/currently-free, or an active paid sub.
+    # A failing card does not end access on the spot — it ends it on the day the user stops
+    # having paid for. Stripe retries a declined renewal for days and most recover, so the
+    # first failure is not the signal; the paid-through date is. With no date on file there
+    # is nothing to honour, so the grace is not granted.
+    paid_through = (
+        subscription.current_period_end is not None
+        and ref <= subscription.current_period_end
+    )
+    # Access comes from an active trial, lifetime-free/currently-free, an active paid sub,
+    # or a past-due one still inside the period it paid for.
     has_access = (
         trial["in_trial"]
         or subscription.lifetime_free
         or is_free
         or subscription.status == subscription.Status.ACTIVE
+        or (subscription.status == subscription.Status.PAST_DUE and paid_through)
     )
     # `in_trial` means "access is coming FROM the trial" — someone who subscribes on day 3
     # is a paying customer, so the app must stop showing them a trial countdown even though
@@ -274,7 +284,8 @@ def compute_status(subscription, ref: date = None) -> dict:
     on_trial = (
         trial["in_trial"]
         and not subscription.lifetime_free
-        and subscription.status != subscription.Status.ACTIVE
+        and subscription.status not in (subscription.Status.ACTIVE,
+                                        subscription.Status.PAST_DUE)
     )
     return {
         "month_index": idx if paid_started else 0,
@@ -285,6 +296,10 @@ def compute_status(subscription, ref: date = None) -> dict:
         "lifetime_free": subscription.lifetime_free or is_free,
         "status": subscription.status,
         "has_access": has_access,
+        # What the app needs to tell the truth about the end of the plan: the day access
+        # runs to, and whether it is already set to stop on that day.
+        "current_period_end": subscription.current_period_end,
+        "cancel_at_period_end": subscription.cancel_at_period_end,
         "in_trial": on_trial,
         "trial_days_left": trial["trial_days_left"] if on_trial else 0,
         "trial_ends_at": trial["trial_ends_at"],

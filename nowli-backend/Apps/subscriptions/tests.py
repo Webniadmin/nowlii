@@ -120,6 +120,11 @@ class TrialTests(APITestCase):
         self.assertTrue(services.user_has_pro(u))
 
 
+# These exercise the lifecycle through the MOCK activate endpoint, which is off by default
+# now that real purchases go through Stripe Checkout — it grants the paid product for free,
+# so production must not expose it. The tests still want it: it is the only way to put an
+# account into a given state without standing up a payment provider.
+@override_settings(SUBSCRIPTION_ALLOW_MOCK_ACTIVATE=True)
 class EndpointTests(APITestCase):
     def setUp(self):
         self.u = User.objects.create_user(username="ep", password="x")
@@ -210,7 +215,8 @@ class EndpointTests(APITestCase):
         self.assertEqual(r.status_code, 501)
 
 
-@override_settings(SUBSCRIPTION_ENFORCED=True, SUBSCRIPTION_UNLIMITED_USERS=[])
+@override_settings(SUBSCRIPTION_ENFORCED=True, SUBSCRIPTION_UNLIMITED_USERS=[],
+                   SUBSCRIPTION_ALLOW_MOCK_ACTIVATE=True)
 class AccessGateTests(APITestCase):
     """The paywall itself: trial → full app, expired trial → 402, purchase → back in."""
 
