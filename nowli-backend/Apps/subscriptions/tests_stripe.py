@@ -161,6 +161,31 @@ class WebhookTests(APITestCase):
         self.assertEqual(webhooks.dispatch(event), "duplicate")
         self.assertEqual(StripeEvent.objects.filter(event_id="evt_1").count(), 1)
 
+    def test_a_real_stripe_event_object_is_handled(self):
+        """The webhook receives a `stripe.Event`, not a dict.
+
+        Every other test here builds a dict by hand, and that is exactly how this was missed:
+        since stripe-python 15 a StripeObject is not a mapping, so `.get()` on one raises
+        AttributeError. Hand-built dicts passed while every real delivery returned 500.
+        """
+        import stripe as stripe_sdk
+
+        self.sub.stripe_subscription_id = "sub_obj"
+        self.sub.save()
+        event = stripe_sdk.Event.construct_from({
+            "id": "evt_obj",
+            "type": "customer.subscription.updated",
+            "data": {"object": {
+                "id": "sub_obj",
+                "customer": "cus_obj",
+                "cancel_at_period_end": True,
+            }},
+        }, "sk_test_x")
+
+        self.assertEqual(webhooks.dispatch(event), "applied")
+        self.sub.refresh_from_db()
+        self.assertTrue(self.sub.cancel_at_period_end)
+
     def test_an_unhandled_event_is_acknowledged_not_retried(self):
         result = webhooks.dispatch(self._event("payment_intent.created", {}, "evt_2"))
         self.assertEqual(result, "ignored")

@@ -11,6 +11,7 @@ ids Stripe carries, they never assume a previous event already ran, and ``Stripe
 drops a replay before a handler ever sees it.
 """
 
+import json
 import logging
 from datetime import datetime, timezone as dt_timezone
 
@@ -329,6 +330,14 @@ def dispatch(event) -> str:
     until it gets a 2xx and is explicit that an event can be delivered more than once, and
     every handler below writes something that must not be applied twice.
     """
+    # `stripe.Webhook.construct_event` hands back a `stripe.Event`, not a dict, and since
+    # stripe-python 15 a StripeObject is no longer a mapping — `.get()` on one raises
+    # AttributeError, which means every real delivery 500s while a hand-built dict works
+    # fine. Round-tripping through JSON is what gives plain dicts all the way down;
+    # `.to_dict()` is shallow and the handlers below read nested fields.
+    if not isinstance(event, dict):
+        event = json.loads(str(event))
+
     event_id = event.get("id") or ""
     event_type = event.get("type") or ""
 
