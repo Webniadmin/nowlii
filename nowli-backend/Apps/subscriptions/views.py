@@ -366,21 +366,22 @@ class CheckoutSessionView(APIView):
                  "region": region},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if not stripe_gateway.is_configured():
-            return Response({"detail": "Payments are not configured on this server."},
-                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
-
         sub, _created = Subscription.objects.get_or_create(user=request.user)
         sub = services.sync_lifetime(sub)
 
-        # Someone who finished the year pays nothing ever again, and someone already paying
-        # would end up with two subscriptions against one account.
+        # Facts about this user come before facts about the server: someone who finished the
+        # year pays nothing ever again whatever the server's configuration, and someone
+        # already paying would end up with two subscriptions against one account.
         if sub.lifetime_free:
             return Response({"detail": "You already have free lifetime access."},
                             status=status.HTTP_409_CONFLICT)
         if sub.status == Subscription.Status.ACTIVE and sub.stripe_subscription_id:
             return Response({"detail": "You already have an active subscription."},
                             status=status.HTTP_409_CONFLICT)
+
+        if not stripe_gateway.is_configured():
+            return Response({"detail": "Payments are not configured on this server."},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         try:
             url = stripe_gateway.create_checkout_session(request.user, sub)

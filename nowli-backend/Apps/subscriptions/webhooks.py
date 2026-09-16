@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timezone as dt_timezone
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from . import services, stripe_gateway
@@ -333,7 +333,12 @@ def dispatch(event) -> str:
     event_type = event.get("type") or ""
 
     try:
-        StripeEvent.objects.create(event_id=event_id, event_type=event_type)
+        # Wrapped in its own atomic block so the duplicate-key error is rolled back to a
+        # savepoint. Without it the failed INSERT leaves the surrounding transaction broken
+        # and every query after it raises — a replay would take down the request that was
+        # supposed to shrug it off.
+        with transaction.atomic():
+            StripeEvent.objects.create(event_id=event_id, event_type=event_type)
     except IntegrityError:
         log.info("stripe webhook: %s (%s) already applied — ignoring replay",
                  event_id, event_type)
