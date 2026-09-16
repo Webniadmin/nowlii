@@ -82,6 +82,20 @@ class SubscriptionStatus {
   /// True once the user has ever had a trial — it is never granted twice.
   final bool trialUsed;
 
+  // ── The end of the plan ────────────────────────────────────────────────────
+  /// The day the paid period runs to. Cancelling stops the plan on this day rather than
+  /// immediately, and a subscriber whose card is failing keeps access until it.
+  final String? currentPeriodEnd;
+
+  /// The user asked to stop and the plan ends when the paid period does. Access is
+  /// unchanged until then — they paid for those days.
+  final bool cancelAtPeriodEnd;
+
+  /// Whether this user may be shown a payment link at all. Decided by the SERVER, not here:
+  /// linking out to an outside payment page is allowed in the US and forbidden in most
+  /// storefronts, and it is also false when the backend has no payment keys configured.
+  final bool checkoutAvailable;
+
   SubscriptionStatus({
     required this.subscribed,
     required this.status,
@@ -100,10 +114,20 @@ class SubscriptionStatus {
     required this.trialEndsAt,
     required this.trialDaysTotal,
     required this.trialUsed,
+    this.currentPeriodEnd,
+    this.cancelAtPeriodEnd = false,
+    this.checkoutAvailable = false,
   });
 
   /// The trial ran out and nothing was bought — this is the paywall state.
   bool get trialExpired => !hasAccess && trialUsed;
+
+  /// A subscriber who has already asked to stop. The screen must not go on selling to them
+  /// — what they need is the date it ends and a way to change their mind.
+  bool get endingSoon => cancelAtPeriodEnd && hasAccess;
+
+  /// Someone with a Stripe billing account to manage (cards, invoices, cancelling).
+  bool get hasBillingAccount => platform == 'stripe' && startedAt != null;
 
   factory SubscriptionStatus.fromJson(Map<String, dynamic> json) {
     return SubscriptionStatus(
@@ -124,6 +148,12 @@ class SubscriptionStatus {
       trialEndsAt: json['trial_ends_at'],
       trialDaysTotal: json['trial_days_total'] ?? 7,
       trialUsed: json['trial_used'] ?? false,
+      currentPeriodEnd: json['current_period_end'],
+      cancelAtPeriodEnd: json['cancel_at_period_end'] ?? false,
+      // Defaults to FALSE, unlike the access cache: a missing flag means an older backend
+      // that cannot take payment, and offering a button that leads nowhere is worse than
+      // not showing one.
+      checkoutAvailable: json['checkout_available'] ?? false,
     );
   }
 }

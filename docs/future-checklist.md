@@ -40,7 +40,9 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
       Tracked in `daily-checklist.md`.
 - [ ] **Release signing keystore** — not created yet; release builds fall back to the debug
       keystore, which Play rejects. Wiring is done (`android/key.properties.example`).
-- [ ] **Real payments** — `activate` is a mock, `verify-receipt` a 501 stub. See P3 below.
+- [x] **Real payments** — built on Stripe Checkout 2026-09-16 (US-first). `activate` is now
+      off in production and the store-IAP path is parked. Still needs a live Stripe account,
+      Terms of Service, and Play enrolment before money can move. See `docs/stripe-payments.md`.
 
 ## P1 — Security (do soon)
 
@@ -142,13 +144,14 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
 - [ ] **Apple Sign-In (B2).** Fully built; disabled (returns 503) until `APPLE_CLIENT_IDS` and
       related keys are filled. Requires a paid Apple Developer account + `.p8` key + Service ID.
       See `docs/apple-login.md`.
-- [ ] **Subscriptions Phase 2 — REAL payments.** _Now the biggest product gap (2026-07-29)._
-      The 7-day trial, the 402 paywall and the decreasing-price lifecycle are all built, deployed
-      and enforced — but `POST /subscriptions/activate/` is a **mock** and `verify-receipt/` is a
-      **501 stub**, so anyone can "subscribe" for free. Needs: the `in_app_purchase` plugin,
-      per-phase products in App Store Connect / Play Console (re-verify the offer templates —
-      policies change), and backend receipt verification feeding the existing engine. Mobile-only;
-      Stripe is not allowed for in-app digital subscriptions. See the `subscription-model` memory.
+- [x] **Subscriptions Phase 2 — REAL payments.** _Done 2026-09-16 — but on Stripe, not IAP._
+      The ladder is a Stripe subscription schedule, which expresses it natively and steps the
+      price down server-side; the stores cannot (Play allows two pricing phases, Apple one, and
+      neither has a server-side plan change). Linking out to an outside payment page is permitted
+      in the US since 2025-05 (Apple) / 2025-12-09 (Play), which is what made this possible —
+      the old "Stripe is not allowed for in-app digital subscriptions" note predates that.
+      Remaining: live Stripe account, ToS, refund policy, Play program enrolment. See
+      `docs/stripe-payments.md`.
 - [ ] **Remove the dead `CustomUserModel` subscription fields** (`paid_user`, `current_plan`,
       period + `is_subscribed()`/`get_subscription_period()`) — superseded by `Apps/subscriptions`.
 - [ ] **Scheduled AI calls — BLOCKED ON CLIENT, do not start.** Confirmed 2026-07-29 that nothing

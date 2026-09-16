@@ -1,5 +1,11 @@
 # Subscriptions — store setup (Google Play + Apple)
 
+> ⚠️ **PARKED as of 2026-09-16.** Payment is taken through **Stripe Checkout** — see
+> **`docs/stripe-payments.md`**, which is the live path. This document describes the store-IAP
+> alternative that was not chosen. It is kept, and the code for it kept dormant, because one
+> scenario revives it: if the US link-out permission is withdrawn on appeal, IAP becomes the
+> only way to sell on iOS. Nothing here is wired up today.
+
 _Written 2026-08-03. Companion to `Apps/subscriptions/config.py`, which is the single source
 of truth for the schedule and the product ids._
 

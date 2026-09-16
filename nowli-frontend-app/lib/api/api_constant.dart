@@ -71,6 +71,14 @@ class ApiConstants {
   static const String subscriptionStartTrial = '/api/subscriptions/start-trial/';
   static const String subscriptionActivate = '/api/subscriptions/activate/';
   static const String subscriptionCancel = '/api/subscriptions/cancel/';
+  static const String subscriptionResume = '/api/subscriptions/resume/';
+
+  // Stripe. `checkout` returns a hosted URL the app opens in the device's BROWSER — not a
+  // webview, which is the thing the stores' linking-out rules exist to forbid. `portal` is
+  // Stripe's own page for cards, invoices and cancelling. Nothing here takes a card number:
+  // payment details never reach this app or our backend.
+  static const String subscriptionCheckout = '/api/subscriptions/checkout/';
+  static const String subscriptionPortal = '/api/subscriptions/portal/';
 
   // AI voice-call limit endpoints (use baseUrl / Django — the authority for the
   // per-user daily limit). See Apps.voice_calls on the backend.

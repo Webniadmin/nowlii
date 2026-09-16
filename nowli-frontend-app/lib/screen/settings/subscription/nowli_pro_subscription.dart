@@ -26,12 +26,17 @@ class NowliProSubscription extends StatefulWidget {
   State<NowliProSubscription> createState() => _NowliProSubscriptionState();
 }
 
-class _NowliProSubscriptionState extends State<NowliProSubscription> {
+class _NowliProSubscriptionState extends State<NowliProSubscription>
+    with WidgetsBindingObserver {
   final SubscriptionService _subService = SubscriptionService();
   SubscriptionStatus? _status;
   SubscriptionPlan? _plan;
   bool _activating = false;
   bool _cancelling = false;
+
+  /// True between opening the payment page and coming back, so the screen knows the next
+  /// return to the foreground is worth a status refresh.
+  bool _awaitingCheckout = false;
 
   /// True when the router sent the user here because they'd lost access (trial over),
   /// as opposed to them opening the screen from the profile menu. Drives whether a
@@ -49,7 +54,28 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSubscription();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Payment happens in the browser, in another app, so this screen is never told that it
+  /// succeeded — it finds out by looking again when the user comes back.
+  ///
+  /// This is the whole return path, deliberately. There is no deep link to fire and nothing
+  /// to miss: whether they paid, closed the tab, or gave up, returning to the app re-reads
+  /// the backend, which is the only thing that knows what really happened.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _awaitingCheckout) {
+      _awaitingCheckout = false;
+      _refreshAfterCheckout();
+    }
   }
 
   Future<void> _loadSubscription() async {
@@ -181,30 +207,95 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
     return 'for the next ${numberWord(months)} months';
   }
 
-  // Phase-1 MOCK activation (real Apple IAP / Google Play Billing comes later).
+  /// Open Stripe Checkout in the browser.
+  ///
+  /// Nothing about the subscription changes in this method — it hands the user to a payment
+  /// page in another app. What they bought (or did not) is learned on the way back, in
+  /// [_refreshAfterCheckout].
   Future<void> _subscribe() async {
     setState(() => _activating = true);
-    final status = await _subService.activateMock();
+    final error = await _subService.startCheckout();
     if (!mounted) return;
+    setState(() {
+      _activating = false;
+      // Only wait for a return if the browser actually opened.
+      _awaitingCheckout = error == null;
+    });
+
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  /// Re-read the subscription after the user comes back from the payment page.
+  ///
+  /// Retried a few times because the app can win the race: access is granted by Stripe's
+  /// webhook reaching our backend, and a user who pays and switches straight back can arrive
+  /// a second before it does. Without the retry the first read says "not subscribed" and the
+  /// screen would tell a paying customer their payment failed.
+  Future<void> _refreshAfterCheckout() async {
+    setState(() => _activating = true);
+
+    SubscriptionStatus? status;
+    for (var attempt = 0; attempt < 4; attempt++) {
+      status = await _subService.getMyStatus();
+      if (!mounted) return;
+      if (status != null && status.hasAccess && status.monthIndex > 0) break;
+      if (attempt < 3) {
+        await Future.delayed(const Duration(milliseconds: 1200));
+        if (!mounted) return;
+      }
+    }
+
     setState(() {
       _activating = false;
       if (status != null) _status = status;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(status != null
-            ? 'Subscription active — month ${status.monthIndex}, \$${status.currentPrice.toStringAsFixed(2)}/mo'
-            : 'Could not activate subscription. Please try again.'),
-        backgroundColor: status != null ? Colors.green : Colors.red,
-      ),
-    );
 
-    // Someone who landed here because their trial ran out is stuck on this screen until
-    // they pay — once access is back, let them straight into the app. A user who opened
-    // the screen themselves (from the profile menu) stays put.
-    if (status != null && status.hasAccess && _openedAsPaywall) {
-      context.go(AppRoutespath.homeScreen);
+    final paid = status != null && status.hasAccess && status.monthIndex > 0;
+    if (paid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "You're subscribed — \$${status.currentPrice.toStringAsFixed(2)}/mo, "
+            'and it goes down from here.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+      // Someone who landed here because their trial ran out is stuck on this screen until
+      // they pay — once access is back, let them straight into the app. A user who opened
+      // the screen themselves (from the profile menu) stays put.
+      if (_openedAsPaywall) context.go(AppRoutespath.homeScreen);
+      return;
     }
+
+    // Not an error: leaving checkout without paying is a normal thing to do, and the page
+    // they just closed already told them nothing was charged. Saying "payment failed" here
+    // would be wrong most of the time it fires.
+    await _loadSubscription();
+  }
+
+  /// The day the plan runs to, as "12 October" — or null when the backend has not told us.
+  String? get _paidUntil {
+    final raw = _status?.currentPeriodEnd;
+    if (raw == null || raw.isEmpty) return null;
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return null;
+    return DateFormat('d MMMM').format(parsed);
+  }
+
+  /// What the cancel dialog promises. Names the date when there is one.
+  String get _cancelCopy {
+    final until = _paidUntil;
+    if (until != null) {
+      return 'You keep everything until $until — the month is already paid for. '
+          'Nothing is charged after that, and you can change your mind any time before it.';
+    }
+    return 'You keep everything until the end of the period you have already paid for. '
+        'Nothing is charged after that, and you can change your mind before then.';
   }
 
   /// Cancel a paid subscription.
@@ -220,12 +311,13 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFFFFFEF8),
         title: const Text('Cancel your subscription?'),
-        // Says what actually happens. `CancelView` sets the status to cancelled and
-        // `has_access` is computed from it, so access stops on the spot — promising "you
-        // keep it until the end of the period" would have been a comfortable lie.
-        content: const Text(
-          'Your paid access ends right away and the app returns to its free state. '
-          'You can subscribe again at any time.',
+        // Says what actually happens, and what happens now is different from what the
+        // mock used to do. `CancelView` schedules the stop for `current_period_end` rather
+        // than taking access away on the spot — the month is already paid for. The date is
+        // named when the backend has given us one; without it the promise stays true but
+        // vague rather than inventing a day.
+        content: Text(
+          _cancelCopy,
         ),
         actions: [
           TextButton(
@@ -249,13 +341,44 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
       if (status != null) _status = status;
     });
 
+    final until = _paidUntil;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(status == null
+            ? "Couldn't cancel right now. Please try again."
+            : until != null
+                ? 'Cancelled. You keep everything until $until.'
+                : 'Cancelled. You keep everything until the period you paid for runs out.'),
+        backgroundColor: status != null ? Colors.green : Colors.red,
+      ),
+    );
+  }
+
+  /// Change your mind while the cancellation is still pending.
+  Future<void> _resumeSubscription() async {
+    setState(() => _cancelling = true);
+    final status = await _subService.resume();
+    if (!mounted) return;
+    setState(() {
+      _cancelling = false;
+      if (status != null) _status = status;
+    });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(status != null
-            ? 'Subscription cancelled.'
-            : "Couldn't cancel right now. Please try again."),
+            ? "You're still subscribed — nothing will stop."
+            : "Couldn't do that right now. Please try again."),
         backgroundColor: status != null ? Colors.green : Colors.red,
       ),
+    );
+  }
+
+  /// Open Stripe's own page for cards, invoices and cancelling.
+  Future<void> _openBilling() async {
+    final error = await _subService.openBillingPortal();
+    if (!mounted || error == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error), backgroundColor: Colors.red),
     );
   }
 
@@ -535,12 +658,18 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
     // onTap of null. It was inert and nothing said so; a subscriber could only find out by
     // pressing it. It now states the fact instead of offering the sale.
     if (_isSubscribed) {
+      final ending = _status?.endingSoon ?? false;
+      final until = _paidUntil;
       return Column(
         children: [
           PaywallTapButton(
             // Short on purpose: the button is one line and clips, and the price is already
             // stated twice above it — in the summary and in the timeline row.
-            label: _isFreeForever ? 'Free forever' : "You're subscribed",
+            label: _isFreeForever
+                ? 'Free forever'
+                : ending
+                    ? (until != null ? 'Ends $until' : 'Ending soon')
+                    : "You're subscribed",
             knobIcon: Assets.svgIcons.paywallSparkle.svg(width: 24, height: 24),
             onTap: null,
           ),
@@ -548,10 +677,19 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
           // cancel it, so there is nothing to offer that user.
           if (!_isFreeForever) ...[
             const SizedBox(height: 12),
+            // A cancellation that has not happened yet is not the end of the story — the
+            // useful offer to someone who cancelled two minutes ago is undoing it, not
+            // cancelling again.
             TextButton(
-              onPressed: _cancelling ? null : _cancelSubscription,
+              onPressed: _cancelling
+                  ? null
+                  : (ending ? _resumeSubscription : _cancelSubscription),
               child: Text(
-                _cancelling ? 'Cancelling…' : 'Cancel subscription',
+                _cancelling
+                    ? 'Just a moment…'
+                    : ending
+                        ? 'Keep my subscription'
+                        : 'Cancel subscription',
                 style: GoogleFonts.workSans(
                   color: const Color(0xFF4C586E),
                   fontSize: 15,
@@ -560,8 +698,35 @@ class _NowliProSubscriptionState extends State<NowliProSubscription> {
                 ),
               ),
             ),
+            // Cards, invoices and receipts live on Stripe's own pages — the app has no
+            // business holding any of it, and a subscriber needs somewhere to change a card
+            // before a renewal fails rather than after.
+            if (_status?.hasBillingAccount ?? false)
+              TextButton(
+                onPressed: _openBilling,
+                child: Text(
+                  'Payment & invoices',
+                  style: GoogleFonts.workSans(
+                    color: const Color(0xFF4C586E),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
           ],
         ],
+      );
+    }
+
+    // No way to take payment — either this storefront is not one where linking out to an
+    // outside payment page is allowed, or the backend has no payment keys. Showing a
+    // Subscribe button that answers 403 would be worse than saying so.
+    if (!(_status?.checkoutAvailable ?? false)) {
+      return PaywallTapButton(
+        label: 'Not available here yet',
+        knobIcon: Assets.svgIcons.paywallSparkle.svg(width: 24, height: 24),
+        onTap: null,
       );
     }
 
