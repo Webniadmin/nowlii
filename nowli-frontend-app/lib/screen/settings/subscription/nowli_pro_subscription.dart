@@ -38,6 +38,13 @@ class _NowliProSubscriptionState extends State<NowliProSubscription>
   /// return to the foreground is worth a status refresh.
   bool _awaitingCheckout = false;
 
+  /// Bumped whenever a purchase attempt ends with nothing bought, to put the swipe button
+  /// back to the start. The swipe latches so it cannot fire twice, and payment finishes in
+  /// another app — so "opened the browser and came back without paying" is both common and
+  /// indistinguishable, from here, from a payment page that never opened. Either way the
+  /// user must be able to try again without leaving the screen.
+  int _swipeReset = 0;
+
   /// True when the router sent the user here because they'd lost access (trial over),
   /// as opposed to them opening the screen from the profile menu. Drives whether a
   /// successful purchase jumps back into the app.
@@ -220,6 +227,8 @@ class _NowliProSubscriptionState extends State<NowliProSubscription>
       _activating = false;
       // Only wait for a return if the browser actually opened.
       _awaitingCheckout = error == null;
+      // Nothing was bought, so the swipe has to be usable again.
+      if (error != null) _swipeReset++;
     });
 
     if (error != null) {
@@ -274,7 +283,10 @@ class _NowliProSubscriptionState extends State<NowliProSubscription>
 
     // Not an error: leaving checkout without paying is a normal thing to do, and the page
     // they just closed already told them nothing was charged. Saying "payment failed" here
-    // would be wrong most of the time it fires.
+    // would be wrong most of the time it fires. But the swipe has latched, so put it back —
+    // someone who changed their mind at the payment page and then changed it again would
+    // otherwise find a button that does nothing.
+    setState(() => _swipeReset++);
     await _loadSubscription();
   }
 
@@ -691,7 +703,11 @@ class _NowliProSubscriptionState extends State<NowliProSubscription>
                         ? 'Keep my subscription'
                         : 'Cancel subscription',
                 style: GoogleFonts.workSans(
-                  color: const Color(0xFF4C586E),
+                  // `_cardMuted` — a slate meant for the white schedule card — was being
+                  // used here, on the navy background, where it is barely legible. These
+                  // two links are the only controls a subscriber has on this screen, so
+                  // they take the same colour as the readable caption below them.
+                  color: _caption,
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                   decoration: TextDecoration.underline,
@@ -707,7 +723,7 @@ class _NowliProSubscriptionState extends State<NowliProSubscription>
                 child: Text(
                   'Payment & invoices',
                   style: GoogleFonts.workSans(
-                    color: const Color(0xFF4C586E),
+                    color: _caption,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     decoration: TextDecoration.underline,
@@ -734,6 +750,7 @@ class _NowliProSubscriptionState extends State<NowliProSubscription>
       label: _activating ? 'Just a moment…' : 'Swipe to Subscribe',
       knobIcon: Assets.svgIcons.paywallArrowRight.svg(width: 14, height: 14),
       enabled: !_activating,
+      resetSignal: _swipeReset,
       onConfirm: _subscribe,
     );
   }

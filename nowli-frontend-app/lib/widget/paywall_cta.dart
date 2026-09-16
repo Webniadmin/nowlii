@@ -111,6 +111,16 @@ class PaywallSwipeButton extends StatefulWidget {
 
   final double threshold;
 
+  /// Change this to put the knob back at the start and let the user swipe again.
+  ///
+  /// A completed swipe latches, so the button cannot fire twice — but the attempt it starts
+  /// does not always end in a purchase. Payment happens in the browser, and coming back
+  /// without having paid is an ordinary thing to do; so is a payment page that fails to
+  /// open. Without a way to unlatch, either of those leaves a dead button that only a trip
+  /// out of the screen and back will revive. The parent bumps this when an attempt ends
+  /// with nothing bought.
+  final int resetSignal;
+
   const PaywallSwipeButton({
     super.key,
     required this.label,
@@ -118,6 +128,7 @@ class PaywallSwipeButton extends StatefulWidget {
     required this.onConfirm,
     this.enabled = true,
     this.threshold = 0.7,
+    this.resetSignal = 0,
   });
 
   @override
@@ -127,6 +138,17 @@ class PaywallSwipeButton extends StatefulWidget {
 class _PaywallSwipeButtonState extends State<PaywallSwipeButton> {
   double _drag = 0;
   bool _confirmed = false;
+
+  @override
+  void didUpdateWidget(PaywallSwipeButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.resetSignal != oldWidget.resetSignal) {
+      setState(() {
+        _drag = 0;
+        _confirmed = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
