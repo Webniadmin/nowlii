@@ -139,6 +139,36 @@ Note the box `.env` still literally contains `DEBUG=True`, but `docker-compose.p
 (`EMAIL_HOST=smtp.gmail.com`/587/TLS, `DEFAULT_FROM_EMAIL→EMAIL_HOST_USER`) since the box has
 `EMAIL_HOST_USER`+`EMAIL_HOST_PASSWORD`.
 
+## Deploy log — 2026-09-21, second (payments fixed against the real Stripe test API)
+
+Shipped backend `909074f` (`c129d1f` + `909074f`: the 11 Test-Clock findings and the
+months-paid ladder, see `docs/stripe-payments.md` §Verified). Rollback tag
+**`:backup-20260921b`** (= `db1c661`; safe to roll back to — the new `PaidMonth` table is
+simply unused by it). Migration **`subscriptions.0005_paidmonth`** applied to prod RDS
+(`showmigrations` confirms). Stripe still dormant: keys blank, webhook 503, checkout off.
+Verified: reviewer `lifetime_free`, `has_access:true`, quota unlimited, quests/insights/plan 200.
+
+## Deploy log — 2026-09-21 (Stripe code, dormant; signups un-broken; App Store reviewer)
+
+Shipped backend `db1c661` from `feat/stripe-payments`. Rollback tag: **`:backup-20260921`**;
+`.env` backup: `~/backend/.env.bak-20260921-before-stripe-deploy`.
+
+- **Why it was urgent:** migration `subscriptions.0004` had been applied to prod RDS on
+  2026-09-16 while the box still ran pre-Stripe code. Its NOT NULL columns
+  (`cancel_at_period_end`, `stripe_*_id`) have no DB default, so the old code 500'd on every
+  new `Subscription` insert — i.e. every new signup's trial start. The new code writes them.
+  **Rolling back to `:backup-20260921` brings that bug back** unless the columns first get
+  `SET DEFAULT false / ''`.
+- `No migrations to apply` on boot (0004 was already there). The entrypoint's
+  `That username is already taken` is the optional superuser step and is harmless.
+- `.env`: Stripe placeholders added, **blank** → checkout off (`checkout_available:false`),
+  webhook answers 503. Fill them per `docs/stripe-payments.md` and `up -d`.
+- App Store reviewer `appreview@nowlii.com` (user 61): `lifetime_free` subscription + both
+  unlimited allowlists. Verified: `/subscriptions/me/` `has_access:true`, quota
+  `unlimited:true`, quests/insights 200, checkout 409 "already have free lifetime access".
+- The column defaults were **not** added (not needed while this code runs) — see the rollback
+  warning above.
+
 ## Deploy log — 2026-08-06 (Google login stops failing silently)
 
 Shipped `d2b0737` from `feat/design-implementation`. **Backend only**, no migrations
