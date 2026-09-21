@@ -22,8 +22,7 @@ import logging
 import stripe
 from django.conf import settings
 
-from . import config
-from .services import current_month_index
+from . import config, services
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +33,8 @@ PRODUCT_LOOKUP_KEY = "nowlii_pro"
 # Set on a schedule once it holds the whole ladder — how attach_schedule tells a finished
 # ladder from the one-phase schedule a failed attach leaves behind.
 LADDER_MARKER = "nowlii_ladder"
+# Set on a Checkout-created subscription: the ladder month that purchase was sold as.
+START_MONTH_KEY = "nowlii_start_month"
 
 
 class StripeNotConfigured(RuntimeError):
@@ -139,17 +140,22 @@ def schedule_phases(start_month: int = 1) -> list:
 
 
 def start_month_for(subscription) -> int:
-    """Which rung of the ladder this user should be sold, 1-based.
+    """Which rung of the ladder this user should be sold next, 1-based.
 
-    1 for anyone who has never paid. For a returning subscriber it is the month their
-    existing ``started_at`` puts them in, so the months they already paid for are not sold
-    to them a second time. Clamped to the last paid rung: past that they are lifetime-free
-    and have nothing to buy.
+    **Months paid + 1** — never months since they first paid. Someone who paid for five
+    months, lapsed and came back is sold month 6 (Rhythm), however long they were away;
+    counting the calendar instead sold a one-month customer the $9.99 rung half a year later.
+    Mock-era rows have no paid months, so they start at 1: nothing was ever paid for.
+    Clamped to the last paid rung: past that they are lifetime-free and have nothing to buy.
     """
-    if subscription is None or subscription.started_at is None:
+    if subscription is None:
         return 1
-    idx = current_month_index(subscription.started_at)
-    return max(1, min(idx, config.FREE_AFTER_MONTH))
+    return max(1, min(services.months_paid(subscription) + 1, config.FREE_AFTER_MONTH))
+
+
+def current_ladder_month(subscription) -> int:
+    """The rung the *running* period belongs to — the last month paid for."""
+    return max(1, min(services.months_paid(subscription), config.FREE_AFTER_MONTH))
 
 
 # ─────────────────────────────────────────────
@@ -210,7 +216,10 @@ def create_checkout_session(user, subscription, success_url="", cancel_url="") -
         # handler never has to guess from an email address.
         client_reference_id=str(user.pk),
         subscription_data={
-            "metadata": {"user_id": str(user.pk), "username": getattr(user, "username", "")},
+            # START_MONTH_KEY travels with the subscription so the webhook attaches the
+            # ladder from the rung actually sold, whatever order Stripe's events arrive in.
+            "metadata": {"user_id": str(user.pk), "username": getattr(user, "username", ""),
+                         START_MONTH_KEY: str(month)},
         },
         # The trial is ours, not Stripe's: it is granted on first login with no card at all,
         # and someone reaching checkout is choosing to start paying now. Handing Stripe a
@@ -221,7 +230,7 @@ def create_checkout_session(user, subscription, success_url="", cancel_url="") -
     return session.url
 
 
-def attach_schedule(stripe_subscription_id: str, start_month: int = 1) -> str:
+def attach_schedule(stripe_subscription_id: str, start_month: int = None) -> str:
     """Wrap a freshly bought subscription in the full price ladder. Returns the schedule id.
 
     ``from_subscription`` creates a schedule whose single phase mirrors what the user just
@@ -241,7 +250,11 @@ def attach_schedule(stripe_subscription_id: str, start_month: int = 1) -> str:
     next ``invoice.paid`` heal a ladder that failed to attach.
     """
     client = _client()
-    existing = _plain(client.Subscription.retrieve(stripe_subscription_id)).get("schedule")
+    live = _plain(client.Subscription.retrieve(stripe_subscription_id))
+    if start_month is None:
+        # The rung Checkout sold, recorded on the subscription when the session was made.
+        start_month = int((live.get("metadata") or {}).get(START_MONTH_KEY) or 1)
+    existing = live.get("schedule")
     if isinstance(existing, dict):
         existing = existing.get("id")
     if existing:
@@ -348,7 +361,7 @@ def resume(subscription) -> dict:
     # cancels and changes their mind is billed today's rung for as long as they stay.
     try:
         schedule_id = attach_schedule(subscription.stripe_subscription_id,
-                                      start_month_for(subscription))
+                                      current_ladder_month(subscription))
         if subscription.stripe_schedule_id != schedule_id:
             subscription.stripe_schedule_id = schedule_id
             subscription.save(update_fields=["stripe_schedule_id", "updated_at"])

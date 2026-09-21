@@ -52,6 +52,37 @@ def phase_for_month(month_index: int) -> dict:
             "google_base_plan": "", "apple_product": ""}
 
 
+# Subscription.Status values of someone still billed (plain strings, as stored).
+_PAYING = ("active", "past_due")
+
+
+def months_paid(subscription) -> int:
+    """How many ladder months Stripe has reported paid for this subscriber (see PaidMonth)."""
+    if subscription is None or subscription.pk is None:
+        return 0
+    return subscription.paid_months.count()
+
+
+def ladder_month(subscription, ref: date = None) -> int:
+    """The 1-based ladder month this subscriber is in — or, if not paying, would buy next.
+
+    Counted in **months paid**, never months elapsed: someone who paid one month and left is
+    still on month 2 when they return, however long they were gone. On the Stripe path that
+    count is the ``PaidMonth`` table; the month being served is the last one paid for.
+
+    Rows from before Stripe (mock) have no invoice record, so calendar months since
+    ``started_at`` is all there is for them — the pre-Stripe behaviour, unchanged.
+    """
+    if subscription.platform == "stripe":
+        paid = months_paid(subscription)
+        if subscription.status in _PAYING and paid > 0:
+            return paid
+        return paid + 1
+    if subscription.started_at is None:
+        return 1
+    return current_month_index(subscription.started_at, ref)
+
+
 def store_product_for_month(month_index: int, platform: str) -> str:
     """The store product that should be billing a subscriber in ``month_index``.
 
@@ -168,6 +199,13 @@ def sync_lifetime(subscription, ref: date = None):
     Idempotent: only writes on the first crossing. Returns the (possibly updated) instance.
     """
     ref = ref or timezone.localdate()
+    if subscription.platform == "stripe":
+        # Twelve months paid is the year, whenever they were paid and whatever came after.
+        if months_paid(subscription) >= config.FREE_AFTER_MONTH and not subscription.lifetime_free:
+            subscription.lifetime_free = True
+            subscription.status = subscription.Status.LIFETIME_FREE
+            subscription.save(update_fields=["lifetime_free", "status", "updated_at"])
+        return subscription
     if subscription.started_at is None:
         return subscription          # trial-only: the paid year hasn't started counting
     if subscription.status in _LAPSED:
@@ -262,7 +300,7 @@ def compute_status(subscription, ref: date = None) -> dict:
     # A trial-only subscription has no paid start date yet, so there is no billing month to
     # report. Month 1 / the first phase price is what they'd pay if they subscribed today.
     paid_started = subscription.started_at is not None
-    idx = current_month_index(subscription.started_at, ref) if paid_started else 1
+    idx = ladder_month(subscription, ref) if paid_started else 1
     this_phase = phase_for_month(idx)
     next_phase = phase_for_month(idx + 1)
 

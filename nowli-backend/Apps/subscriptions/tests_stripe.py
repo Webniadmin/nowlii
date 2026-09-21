@@ -16,7 +16,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from . import config, services, stripe_gateway, webhooks
-from .models import StripeEvent, Subscription
+from .models import PaidMonth, StripeEvent, Subscription
 
 User = get_user_model()
 
@@ -40,6 +40,12 @@ def _months_ago(n: int) -> date:
         year -= 1
     day = min(today.day, 28)
     return date(year, month, day)
+
+
+def _pay(sub, months: int, first: int = 1):
+    """Record ``months`` paid ladder months on ``sub``, as invoice.paid would."""
+    for n in range(first, first + months):
+        PaidMonth.objects.create(subscription=sub, invoice_id=f"in_{sub.pk}_{n}")
 
 
 @override_settings(**FAKE_PRICES)
@@ -81,19 +87,45 @@ class LadderShapeTests(APITestCase):
         self.assertEqual(phases[0]["duration"]["interval_count"], 1)
 
     def test_start_month_for(self):
+        """Months PAID + 1 — never months since they first paid."""
         user = User.objects.create_user(username="ladder", email="l@x.com", password="p")
-        sub = Subscription.objects.create(user=user)
+        sub = Subscription.objects.create(user=user, platform=Subscription.Platform.STRIPE)
 
         self.assertEqual(stripe_gateway.start_month_for(None), 1)
         self.assertEqual(stripe_gateway.start_month_for(sub), 1)   # never paid
 
-        sub.started_at = _months_ago(4)
+        _pay(sub, 4)
         self.assertEqual(stripe_gateway.start_month_for(sub), 5)
 
         # Past the paid year there is nothing left to sell, so it clamps rather than
         # walking off the end of the ladder.
-        sub.started_at = _months_ago(20)
+        _pay(sub, 11, first=5)
         self.assertEqual(stripe_gateway.start_month_for(sub), config.FREE_AFTER_MONTH)
+
+    def test_a_long_absence_is_not_progress_down_the_ladder(self):
+        """Paid one month, gone twenty: they come back on month 2 at $19.99, not a cheaper
+        rung and not free. Counting the calendar sold them $9.99, then nothing at all."""
+        user = User.objects.create_user(username="away", email="a@x.com", password="p")
+        sub = Subscription.objects.create(
+            user=user, platform=Subscription.Platform.STRIPE,
+            status=Subscription.Status.CANCELLED, started_at=_months_ago(20),
+        )
+        _pay(sub, 1)
+
+        self.assertEqual(stripe_gateway.start_month_for(sub), 2)
+        status = services.compute_status(sub)
+        self.assertEqual(status["current_price"], 19.99)
+        self.assertFalse(status["has_access"])
+        self.assertFalse(status["is_free"])
+
+    def test_the_price_shown_follows_months_paid(self):
+        user = User.objects.create_user(username="five", email="f@x.com", password="p")
+        sub = Subscription.objects.create(
+            user=user, platform=Subscription.Platform.STRIPE,
+            status=Subscription.Status.ACTIVE, started_at=_months_ago(9),
+        )
+        _pay(sub, 5)            # nine calendar months, five of them paid
+        self.assertEqual(services.compute_status(sub)["current_price"], 14.99)
 
     def test_rung_for_month_carries_the_price_id(self):
         """services.phase_for_month is a derived view for the API and has no price id;
@@ -211,7 +243,8 @@ class WebhookTests(APITestCase):
         self.assertEqual(self.sub.stripe_schedule_id, "sched_1")
         # The paid year starts the day they pay, not the day the trial began.
         self.assertEqual(self.sub.started_at, timezone.localdate())
-        attach.assert_called_once_with("sub_1", 1)
+        # None: the rung comes from the metadata Checkout put on the subscription.
+        attach.assert_called_once_with("sub_1", None)
 
     def test_checkout_does_not_reset_a_returning_subscribers_ladder(self):
         """They earned their way down to Rhythm; month 1 would re-sell what they bought."""
@@ -231,7 +264,7 @@ class WebhookTests(APITestCase):
 
         self.sub.refresh_from_db()
         self.assertEqual(self.sub.started_at, original_start)
-        attach.assert_called_once_with("sub_2", 5)
+        attach.assert_called_once_with("sub_2", None)
 
     def test_a_purchase_survives_a_failure_to_attach_the_ladder(self):
         """They have been charged. Losing the automatic step down is recoverable by hand;
@@ -497,3 +530,71 @@ class AttachScheduleTests(APITestCase):
             self.assertEqual(stripe_gateway.attach_schedule("sub_1"), "sub_sched_done")
         fake.SubscriptionSchedule.create.assert_not_called()
         fake.SubscriptionSchedule.modify.assert_not_called()
+
+
+class PaidMonthTests(APITestCase):
+    """The odometer: one row per paid ladder invoice, and what it decides."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="odo", email="o@x.com", password="p")
+        self.sub = Subscription.objects.create(
+            user=self.user, platform=Subscription.Platform.STRIPE,
+            status=Subscription.Status.ACTIVE, started_at=timezone.localdate(),
+            stripe_subscription_id="sub_odo", stripe_customer_id="cus_odo",
+        )
+
+    def _invoice(self, event_id, type_="invoice.paid", invoice_id="in_1",
+                 reason="subscription_cycle"):
+        return {"id": event_id, "type": type_, "data": {"object": {
+            "id": invoice_id, "customer": "cus_odo", "subscription": "sub_odo",
+            "billing_reason": reason, "status": "paid", "amount_paid": 1999,
+            "lines": {"data": [{"period": {"start": 1790000000, "end": 1792600000}}]},
+        }}}
+
+    def test_the_same_invoice_counts_once(self):
+        """invoice.paid and invoice.payment_succeeded arrive for every invoice."""
+        with mock.patch.object(stripe_gateway, "attach_schedule", return_value="s"):
+            webhooks.dispatch(self._invoice("evt_a"))
+            webhooks.dispatch(self._invoice("evt_b", type_="invoice.payment_succeeded"))
+        self.assertEqual(services.months_paid(self.sub), 1)
+
+    def test_a_proration_is_not_a_month(self):
+        with mock.patch.object(stripe_gateway, "attach_schedule", return_value="s"):
+            webhooks.dispatch(self._invoice("evt_p", invoice_id="in_p",
+                                            reason="subscription_update"))
+        self.assertEqual(services.months_paid(self.sub), 0)
+
+    def test_twelve_paid_months_is_the_year(self):
+        _pay(self.sub, 11)
+        with mock.patch.object(stripe_gateway, "attach_schedule", return_value="s"):
+            webhooks.dispatch(self._invoice("evt_12", invoice_id="in_12"))
+        self.sub.refresh_from_db()
+        self.assertTrue(self.sub.lifetime_free)
+
+    def test_eleven_paid_months_and_a_cancel_is_not(self):
+        _pay(self.sub, 11)
+        with mock.patch.object(stripe_gateway, "ladder_completed", return_value=False):
+            webhooks.dispatch({"id": "evt_d", "type": "customer.subscription.deleted",
+                               "data": {"object": {"id": "sub_odo", "customer": "cus_odo"}}})
+        self.sub.refresh_from_db()
+        self.assertFalse(self.sub.lifetime_free)
+        self.assertEqual(self.sub.status, Subscription.Status.CANCELLED)
+
+
+@override_settings(STRIPE_SECRET_KEY="sk_test_x", **FAKE_PRICES)
+class CheckoutSellsTheRightRungTests(APITestCase):
+    def test_a_returning_subscriber_is_sold_the_month_after_their_last_paid(self):
+        user = User.objects.create_user(username="back", email="b@x.com", password="p")
+        sub = Subscription.objects.create(
+            user=user, platform=Subscription.Platform.STRIPE, started_at=_months_ago(14),
+            status=Subscription.Status.CANCELLED, stripe_customer_id="cus_back",
+        )
+        _pay(sub, 4)
+        fake = mock.MagicMock()
+        fake.checkout.Session.create.return_value = mock.MagicMock(url="https://x", id="cs")
+        with mock.patch.object(stripe_gateway, "_client", return_value=fake):
+            stripe_gateway.create_checkout_session(user, sub)
+        kwargs = fake.checkout.Session.create.call_args.kwargs
+        self.assertEqual(kwargs["line_items"][0]["price"], "price_rhythm")      # month 5
+        self.assertEqual(
+            kwargs["subscription_data"]["metadata"][stripe_gateway.START_MONTH_KEY], "5")

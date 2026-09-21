@@ -19,8 +19,8 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from . import services, stripe_gateway
-from .models import StripeEvent, Subscription
+from . import config, services, stripe_gateway
+from .models import PaidMonth, StripeEvent, Subscription
 
 log = logging.getLogger(__name__)
 User = get_user_model()
@@ -91,9 +91,9 @@ def handle_checkout_completed(obj):
     """A purchase went through: this is where a user becomes a paying subscriber.
 
     Sets the local row to ACTIVE, records the Stripe ids, and — for someone who has never
-    paid — anchors ``started_at`` to today, which is what the whole price ladder is measured
-    from. A returning subscriber keeps their original ``started_at``: they already earned
-    their way down the ladder and must not be sold those months again.
+    paid — sets ``started_at`` (the day they first paid; informational). Where they are on
+    the ladder is not measured from it: that is the count of ``PaidMonth`` rows, so a
+    returning subscriber resumes at the month after the last one they paid for.
 
     Then the rest of the ladder is attached as a schedule. If that call fails the purchase is
     still honoured — the user has access and has been charged — and the failure is logged
@@ -144,10 +144,12 @@ def handle_checkout_completed(obj):
         sub.save(update_fields=fields + ["updated_at"])
 
     if stripe_sub_id:
-        _ensure_ladder(sub, stripe_sub_id)
+        # None = the rung this Checkout sold, read from the subscription's own metadata, so
+        # it is right whether or not this purchase's invoice.paid has been counted yet.
+        _ensure_ladder(sub, stripe_sub_id, start_month=None)
 
 
-def _ensure_ladder(sub, stripe_sub_id):
+def _ensure_ladder(sub, stripe_sub_id, start_month):
     """Make sure this subscription is wrapped in the price ladder; heal it if not.
 
     Called on purchase and again on every paid invoice. ``attach_schedule`` is idempotent —
@@ -161,8 +163,9 @@ def _ensure_ladder(sub, stripe_sub_id):
     # A pending cancel released the schedule on purpose; resume() re-attaches it.
     if sub.lifetime_free or sub.started_at is None or sub.cancel_at_period_end:
         return
+    if start_month is not None and start_month > config.FREE_AFTER_MONTH:
+        return                                # the year is paid; nothing left to schedule
     try:
-        start_month = services.current_month_index(sub.started_at)
         schedule_id = stripe_gateway.attach_schedule(stripe_sub_id, start_month)
     except Exception:
         log.exception(
@@ -203,9 +206,45 @@ def handle_invoice_paid(obj):
     if fields:
         sub.save(update_fields=fields + ["updated_at"])
 
+    _record_paid_month(sub, obj)
+    services.sync_lifetime(sub)
+
     sub_id = _invoice_subscription_id(obj)
     if sub_id and sub.platform == Subscription.Platform.STRIPE:
-        _ensure_ladder(sub, sub_id)
+        _ensure_ladder(sub, sub_id, start_month=stripe_gateway.current_ladder_month(sub))
+
+
+# The invoices that are a month of the ladder. A proration from a mid-period change is not.
+_LADDER_INVOICES = ("subscription_create", "subscription_cycle")
+
+
+def _record_paid_month(sub, invoice):
+    """Count this invoice as a paid month — once, however often Stripe tells us.
+
+    The id is unique, so invoice.paid and the invoice.payment_succeeded that accompanies it,
+    a replay, or a late delivery all land on the same row.
+    """
+    if invoice.get("billing_reason") not in _LADDER_INVOICES:
+        return
+    if invoice.get("status") not in (None, "paid"):
+        return
+    invoice_id = invoice.get("id") or ""
+    if not invoice_id:
+        return
+    period = {}
+    for line in (invoice.get("lines") or {}).get("data") or []:
+        period = line.get("period") or {}
+        if period:
+            break
+    PaidMonth.objects.get_or_create(
+        invoice_id=invoice_id,
+        defaults={
+            "subscription": sub,
+            "period_start": _as_date(period.get("start")),
+            "period_end": _as_date(period.get("end")),
+            "amount_cents": int(invoice.get("amount_paid") or 0),
+        },
+    )
 
 
 def handle_invoice_payment_failed(obj):
@@ -300,7 +339,9 @@ def handle_subscription_deleted(obj):
         return
 
     schedule_id = obj.get("schedule") or sub.stripe_schedule_id
-    if not sub.lifetime_free and schedule_id and stripe_gateway.ladder_completed(schedule_id):
+    finished = services.months_paid(sub) >= config.FREE_AFTER_MONTH or (
+        bool(schedule_id) and stripe_gateway.ladder_completed(schedule_id))
+    if not sub.lifetime_free and finished:
         sub.lifetime_free = True
         sub.status = Subscription.Status.LIFETIME_FREE
         sub.save(update_fields=["lifetime_free", "status", "updated_at"])

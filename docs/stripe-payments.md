@@ -229,6 +229,11 @@ Found only this way — the unit tests mock Stripe and passed throughout:
    (date rule kept only for non-lapsed legacy rows).
 9. `started_at` was the processing day, not Stripe's → could shift the anniversary by a day.
 
-**Open decision:** `start_month_for` (returning subscriber) also counts *calendar* months since
-`started_at`, so someone who paid 1 month and returns 6 months later is sold Independence
-($9.99). The docs above intend months *paid*. Needs a product call before launch.
+**Resolved 2026-09-21 — the ladder counts months PAID, not months elapsed.** `PaidMonth` holds
+one row per paid `subscription_create`/`subscription_cycle` invoice (unique invoice id, so
+`invoice.paid` + `invoice.payment_succeeded`, replays and late deliveries count once). From it:
+the price shown (`services.ladder_month`), the rung a returning subscriber is sold
+(`start_month_for` = paid + 1, carried to the webhook as `nowlii_start_month` metadata),
+the ladder re-attached on resume/renewal, and lifetime free (12 paid months, or Stripe's
+completed ladder). Verified on the test account: 12 real invoices → 12 rows → lifetime; a
+one-month customer who lapsed is sold month 2 at $19.99 on return.

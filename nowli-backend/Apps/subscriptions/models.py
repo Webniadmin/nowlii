@@ -117,3 +117,33 @@ class StripeEvent(models.Model):
 
     def __str__(self):
         return f"{self.event_type} {self.event_id}"
+
+
+class PaidMonth(models.Model):
+    """One billed month of the ladder that Stripe reports as paid — the ladder's odometer.
+
+    **Where someone is on the price ladder is the number of months they have paid for, not the
+    number of months since they first paid.** Counting calendar months turned a lapse into
+    progress: pay one month, leave, and a year later the backend read a finished ladder and
+    gave the app away; come back after six and be sold the $9.99 rung. This table is the count.
+
+    One row per Stripe invoice (the id is unique), so a replayed or out-of-order
+    ``invoice.paid`` — and the ``invoice.payment_succeeded`` that accompanies every one — can
+    never count the same month twice. Only ``subscription_create`` and ``subscription_cycle``
+    invoices are recorded: a proration from a mid-period change is not a month.
+    """
+
+    subscription = models.ForeignKey(
+        Subscription, on_delete=models.CASCADE, related_name="paid_months",
+    )
+    invoice_id = models.CharField(max_length=255, unique=True)
+    period_start = models.DateField(blank=True, null=True)
+    period_end = models.DateField(blank=True, null=True)
+    amount_cents = models.PositiveIntegerField(default=0)
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["period_start"]
+
+    def __str__(self):
+        return f"{self.invoice_id} {self.period_start}→{self.period_end}"
