@@ -158,6 +158,10 @@ def sync_step_down_state(subscription, ref: date = None):
     return subscription
 
 
+# Subscription.Status values of someone no longer paying (the plain strings, as stored).
+_LAPSED = ("cancelled", "expired")
+
+
 def sync_lifetime(subscription, ref: date = None):
     """Persist the lifetime-free transition once the user passes ``FREE_AFTER_MONTH``.
 
@@ -166,6 +170,8 @@ def sync_lifetime(subscription, ref: date = None):
     ref = ref or timezone.localdate()
     if subscription.started_at is None:
         return subscription          # trial-only: the paid year hasn't started counting
+    if subscription.status in _LAPSED:
+        return subscription          # stopped paying: calendar time is not months paid
     idx = current_month_index(subscription.started_at, ref)
     if idx > config.FREE_AFTER_MONTH and not subscription.lifetime_free:
         subscription.lifetime_free = True
@@ -260,7 +266,10 @@ def compute_status(subscription, ref: date = None) -> dict:
     this_phase = phase_for_month(idx)
     next_phase = phase_for_month(idx + 1)
 
-    is_free = paid_started and this_phase["is_free"]
+    # Free is earned by paying the year, not by waiting it out: without the status check,
+    # someone who paid one month and cancelled was free forever twelve months later.
+    is_free = (paid_started and this_phase["is_free"]
+               and subscription.status not in _LAPSED)
     # A failing card does not end access on the spot — it ends it on the day the user stops
     # having paid for. Stripe retries a declined renewal for days and most recover, so the
     # first failure is not the signal; the paid-through date is. With no date on file there

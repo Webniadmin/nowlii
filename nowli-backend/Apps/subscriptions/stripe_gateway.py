@@ -7,7 +7,7 @@ is answered in exactly one place, and the rest of the app deals in our own vocab
 
 **The ladder is a subscription schedule.** NOWLII's monthly price steps down four times over
 a year and then the app is free forever. Stripe expresses that natively: a schedule is an
-ordered list of phases, each with its own price and a number of billing iterations, and when
+ordered list of phases, each with its own price and a duration in months, and when
 the last phase ends the subscription simply stops. That final stop is what the backend reads
 as "they finished the year" and turns into lifetime-free access.
 
@@ -16,6 +16,7 @@ an Apple introductory offer one, and neither store has a server-side plan change
 step down would have depended on the user opening the app. See docs/stripe-payments.md.
 """
 
+import json
 import logging
 
 import stripe
@@ -30,6 +31,9 @@ log = logging.getLogger(__name__)
 # four prices is the shape that lets a schedule move between them.
 PRODUCT_NAME = "NOWLII Pro"
 PRODUCT_LOOKUP_KEY = "nowlii_pro"
+# Set on a schedule once it holds the whole ladder — how attach_schedule tells a finished
+# ladder from the one-phase schedule a failed attach leaves behind.
+LADDER_MARKER = "nowlii_ladder"
 
 
 class StripeNotConfigured(RuntimeError):
@@ -124,9 +128,12 @@ def schedule_phases(start_month: int = 1) -> list:
         months = last - first + 1
         if months <= 0:
             continue
+        # `duration`, not `iterations`: the API version this SDK pins (2026-08-26.dahlia)
+        # rejects `iterations` outright, and a rejected schedule means the customer is billed
+        # the first rung forever. Found only against the real test API — mocks accept anything.
         phases.append({
             "items": [{"price": price_id_for_phase(phase), "quantity": 1}],
-            "iterations": months,
+            "duration": {"interval": "month", "interval_count": months},
         })
     return phases
 
@@ -225,12 +232,29 @@ def attach_schedule(stripe_subscription_id: str, start_month: int = 1) -> str:
     ``end_behavior="cancel"`` is the free-forever step: when the last paid phase finishes,
     Stripe cancels the subscription, the ``customer.subscription.deleted`` webhook arrives,
     and the backend sees a user past month 12 and grants lifetime access.
+
+    **Idempotent, and that matters.** Creating the schedule and filling it are two calls; if
+    the second fails, the subscription is left owned by a one-phase schedule and a plain
+    ``create(from_subscription=…)`` refuses forever after ("already attached to a schedule").
+    So an existing schedule is reused and finished, and a finished one — marked in its
+    metadata — is returned untouched. That is what lets a retry, a Dashboard "resend", or the
+    next ``invoice.paid`` heal a ladder that failed to attach.
     """
     client = _client()
-    schedule = client.SubscriptionSchedule.create(from_subscription=stripe_subscription_id)
+    existing = _plain(client.Subscription.retrieve(stripe_subscription_id)).get("schedule")
+    if isinstance(existing, dict):
+        existing = existing.get("id")
+    if existing:
+        schedule = client.SubscriptionSchedule.retrieve(existing)
+        plain = _plain(schedule)
+        if (plain.get("metadata") or {}).get(LADDER_MARKER) and plain.get("end_behavior") == "cancel":
+            return schedule.id                      # already the full ladder
+    else:
+        schedule = client.SubscriptionSchedule.create(from_subscription=stripe_subscription_id)
 
     phases = schedule_phases(start_month)
-    current = (schedule.phases or [{}])[0]
+    # SDK objects are not dicts (since stripe-python 13 `.get` raises), so read plain data.
+    current = (_plain(schedule).get("phases") or [{}])[0]
     # Phase 0 is already running and billed. Keep Stripe's own start/end for it and only
     # carry over our item list, which is the same first rung anyway.
     first = dict(phases[0])
@@ -241,12 +265,25 @@ def attach_schedule(stripe_subscription_id: str, start_month: int = 1) -> str:
         schedule.id,
         end_behavior="cancel",
         phases=[first] + phases[1:],
+        metadata={LADDER_MARKER: "1"},
     )
     log.info(
         "stripe: schedule %s attached to %s (%d phases)",
         updated.id, stripe_subscription_id, len(phases),
     )
     return updated.id
+
+
+def ladder_completed(schedule_id: str) -> bool:
+    """Did this schedule run our whole ladder to the end? The lifetime-free signal.
+
+    ``completed`` is Stripe's word for a schedule whose last phase finished. A user who
+    cancelled has a *released* or *canceled* schedule instead, so this cannot be reached by
+    paying once and waiting. The marker rules out any other schedule on the account.
+    """
+    plain = _plain(_client().SubscriptionSchedule.retrieve(schedule_id))
+    return (plain.get("status") == "completed"
+            and bool((plain.get("metadata") or {}).get(LADDER_MARKER)))
 
 
 # ─────────────────────────────────────────────
@@ -295,7 +332,7 @@ def cancel_at_period_end(subscription) -> dict:
         subscription.stripe_subscription_id,
         cancel_at_period_end=True,
     )
-    return {"cancel_at_period_end": True, "current_period_end": sub.get("current_period_end")}
+    return {"cancel_at_period_end": True, "current_period_end": _current_period_end(sub)}
 
 
 def resume(subscription) -> dict:
@@ -307,7 +344,35 @@ def resume(subscription) -> dict:
         subscription.stripe_subscription_id,
         cancel_at_period_end=False,
     )
-    return {"cancel_at_period_end": False, "current_period_end": sub.get("current_period_end")}
+    # cancel_at_period_end() released the ladder; without re-attaching it, someone who
+    # cancels and changes their mind is billed today's rung for as long as they stay.
+    try:
+        schedule_id = attach_schedule(subscription.stripe_subscription_id,
+                                      start_month_for(subscription))
+        if subscription.stripe_schedule_id != schedule_id:
+            subscription.stripe_schedule_id = schedule_id
+            subscription.save(update_fields=["stripe_schedule_id", "updated_at"])
+    except stripe.StripeError:
+        log.exception("stripe: resumed %s but could not re-attach the ladder",
+                      subscription.stripe_subscription_id)
+    return {"cancel_at_period_end": False, "current_period_end": _current_period_end(sub)}
+
+
+def _plain(obj) -> dict:
+    """A Stripe SDK object as plain nested dicts; dicts (test doubles) pass through.
+
+    JSON round-trip, not ``.to_dict()``: that one is shallow, and nested objects would
+    still raise on ``.get`` (same reasoning as ``webhooks.dispatch``).
+    """
+    if isinstance(obj, dict):
+        return obj
+    return json.loads(str(obj))
+
+
+def _current_period_end(stripe_subscription) -> int:
+    """Paid-through timestamp, wherever this API version keeps it (see webhooks._period_end)."""
+    from .webhooks import _period_end        # webhooks imports this module; avoid the cycle
+    return _period_end(_plain(stripe_subscription))
 
 
 def construct_event(payload: bytes, signature: str):

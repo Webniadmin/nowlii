@@ -10,14 +10,14 @@ forever.
 
 | Stage | Months | Price | Stripe phase |
 |---|---|---|---|
-| **Spark** | 1–3 | $19.99 | `iterations: 3` |
-| **Rhythm** | 4–6 | $14.99 | `iterations: 3` |
-| **Independence** | 7–9 | $9.99 | `iterations: 3` |
-| **Release** | 10–12 | $4.99 | `iterations: 3` |
+| **Spark** | 1–3 | $19.99 | `duration: 3 months` |
+| **Rhythm** | 4–6 | $14.99 | `duration: 3 months` |
+| **Independence** | 7–9 | $9.99 | `duration: 3 months` |
+| **Release** | 10–12 | $4.99 | `duration: 3 months` |
 | **Graduated** | 13+ | free | *(not a phase — the schedule ends)* |
 
 **A Stripe subscription schedule is exactly this shape**: an ordered list of phases, each
-with its own price and a count of billing iterations. Stripe walks the subscriber down the
+with its own price and a duration in months. Stripe walks the subscriber down the
 ladder itself, server-side, with nothing required from the app.
 
 Neither store can do that. A Google Play offer carries **at most two pricing phases** and an
@@ -195,3 +195,40 @@ All of it is **dormant** — `step_down_due` returns `due: False` for anything t
 `apple` or `google` platform row, so Stripe subscribers never touch it. It is kept because
 the one scenario that revives it is real: if the US link-out permission is withdrawn on
 appeal, IAP becomes the only way to sell on iOS, and that mapping is already written down.
+
+---
+
+## Verified against the real test API — 2026-09-21
+
+A real Checkout (card 4242) on a Test Clock customer, events pulled from the Events API and
+replayed signed to the local webhook, the clock advanced month by month:
+
+- Invoices: **19.99 ×3 → 14.99 ×3 → 9.99 ×3 → 4.99 ×3**, then the schedule `completed` and the
+  subscription cancelled; the backend granted `lifetime_free`.
+- Cancel → access kept to the paid period end, ladder released; resume → ladder re-attached.
+- Declined card (`pm_card_chargeCustomerFail`) → six `payment_failed`, `past_due` with access to
+  the **paid** date only, then Stripe cancels and the user lapses (not lifetime).
+- Forged/missing signature → 400. Region gate: US 200, RS/DE 403. Portal URL 200.
+
+Found only this way — the unit tests mock Stripe and passed throughout:
+
+1. `iterations` is rejected by API `2026-08-26.dahlia` → phases use `duration`. Without it **no
+   ladder ever attached**: everyone billed $19.99 forever.
+2. A failed attach left a one-phase schedule that every retry refused → `attach_schedule` is
+   idempotent (reuses/finishes an existing schedule; `nowlii_ladder` metadata marks a done one),
+   and every `invoice.paid` re-checks it, so a broken ladder heals at the next renewal.
+3. `.get()` on SDK objects raises since stripe-python 13 (gateway, sync command, webhook log).
+4. The event record was committed before the handler → a failed handler's retry was dropped as
+   a duplicate. Now one transaction.
+5. `resume()` never re-attached the ladder `cancel` released.
+6. `subscription.updated` rolls the period forward even on a declined renewal → a free month of
+   "grace". Paid-through now comes from `invoice.paid` only.
+7. A late `invoice.paid` for last month cleared this month's `past_due` → ACTIVE with no end.
+8. **Pay one month, wait a year → free forever**: `is_free`/`sync_lifetime` counted calendar
+   months regardless of status. Lifetime now = Stripe reports our ladder schedule `completed`
+   (date rule kept only for non-lapsed legacy rows).
+9. `started_at` was the processing day, not Stripe's → could shift the anniversary by a day.
+
+**Open decision:** `start_month_for` (returning subscriber) also counts *calendar* months since
+`started_at`, so someone who paid 1 month and returns 6 months later is sold Independence
+($9.99). The docs above intend months *paid*. Needs a product call before launch.

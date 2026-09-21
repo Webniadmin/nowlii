@@ -122,6 +122,7 @@ class Command(BaseCommand):
         return (
             price.unit_amount == cents
             and price.currency == config.CURRENCY.lower()
-            and (price.recurring or {}).get("interval") == "month"
+            and price.recurring is not None
+            and price.recurring.interval == "month"
             and price.product == product_id
         )

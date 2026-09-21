@@ -127,8 +127,11 @@ def handle_checkout_completed(obj):
         sub.platform = Subscription.Platform.STRIPE
         fields.append("platform")
     # The paid year starts the day they actually pay, not the day their trial began.
+    # Stripe's date for the session, not the day this webhook happened to be processed: a
+    # delivery that lands after midnight UTC, or a retry hours later, would otherwise start
+    # the year a day after Stripe's billing anchor.
     if sub.started_at is None:
-        sub.started_at = today
+        sub.started_at = _as_date(obj.get("created")) or today
         fields.append("started_at")
     # A lifetime-free user is left alone: they finished the year and must never be flipped
     # back to paying, whatever arrives from Stripe.
@@ -140,22 +143,37 @@ def handle_checkout_completed(obj):
     if fields:
         sub.save(update_fields=fields + ["updated_at"])
 
-    if stripe_sub_id and not sub.stripe_schedule_id:
-        try:
-            start_month = services.current_month_index(sub.started_at)
-            schedule_id = stripe_gateway.attach_schedule(stripe_sub_id, start_month)
-            sub.stripe_schedule_id = schedule_id
-            sub.save(update_fields=["stripe_schedule_id", "updated_at"])
-        except Exception:
-            # Deliberately swallowed. The user paid and has access; what is lost is the
-            # automatic step down, which is recoverable by hand from the schedule id in the
-            # Stripe dashboard. Failing the webhook here would make Stripe retry an event
-            # whose paid part already succeeded.
-            log.exception(
-                "stripe webhook: could not attach the price ladder to %s (user %s) — "
-                "they are subscribed but will NOT step down automatically",
-                stripe_sub_id, sub.user_id,
-            )
+    if stripe_sub_id:
+        _ensure_ladder(sub, stripe_sub_id)
+
+
+def _ensure_ladder(sub, stripe_sub_id):
+    """Make sure this subscription is wrapped in the price ladder; heal it if not.
+
+    Called on purchase and again on every paid invoice. ``attach_schedule`` is idempotent —
+    a finished ladder costs two reads and nothing else — so a ladder that failed to attach at
+    checkout (a Stripe outage, a half-built schedule) repairs itself at the next renewal
+    instead of billing the first rung forever.
+
+    Failures are swallowed on purpose. The user paid and has access; what would be lost is
+    the automatic step down, and failing the webhook would roll back the access instead.
+    """
+    # A pending cancel released the schedule on purpose; resume() re-attaches it.
+    if sub.lifetime_free or sub.started_at is None or sub.cancel_at_period_end:
+        return
+    try:
+        start_month = services.current_month_index(sub.started_at)
+        schedule_id = stripe_gateway.attach_schedule(stripe_sub_id, start_month)
+    except Exception:
+        log.exception(
+            "stripe webhook: could not attach the price ladder to %s (user %s) — "
+            "they are subscribed but will NOT step down until this succeeds",
+            stripe_sub_id, sub.user_id,
+        )
+        return
+    if sub.stripe_schedule_id != schedule_id:
+        sub.stripe_schedule_id = schedule_id
+        sub.save(update_fields=["stripe_schedule_id", "updated_at"])
 
 
 def handle_invoice_paid(obj):
@@ -170,14 +188,24 @@ def handle_invoice_paid(obj):
 
     fields = []
     period_end = _as_date(_period_end_from_invoice(obj))
-    if period_end and sub.current_period_end != period_end:
+    # Only an invoice that pays *past* what is already paid moves anything. Events arrive out
+    # of order: a late invoice.paid for last month must neither pull the date back nor clear
+    # a past_due that belongs to this month's declined charge — ACTIVE has no end date, so
+    # that would have been access for good.
+    newer = period_end is not None and (sub.current_period_end is None
+                                        or period_end > sub.current_period_end)
+    if newer:
         sub.current_period_end = period_end
         fields.append("current_period_end")
-    if sub.status == Subscription.Status.PAST_DUE:
-        sub.status = Subscription.Status.ACTIVE
-        fields.append("status")
+        if sub.status == Subscription.Status.PAST_DUE:
+            sub.status = Subscription.Status.ACTIVE
+            fields.append("status")
     if fields:
         sub.save(update_fields=fields + ["updated_at"])
+
+    sub_id = _invoice_subscription_id(obj)
+    if sub_id and sub.platform == Subscription.Platform.STRIPE:
+        _ensure_ladder(sub, sub_id)
 
 
 def handle_invoice_payment_failed(obj):
@@ -212,10 +240,14 @@ def handle_subscription_updated(obj):
         return
 
     fields = []
-    period_end = _as_date(_period_end(obj))
-    if period_end and sub.current_period_end != period_end:
-        sub.current_period_end = period_end
-        fields.append("current_period_end")
+    # Deliberately NOT current_period_end. Stripe rolls the period forward at renewal whether
+    # or not the charge succeeds, so reading it here turned a declined card into a free extra
+    # month of "grace". The paid-through date comes from invoice.paid alone.
+    if sub.current_period_end is None:
+        period_end = _as_date(_period_end(obj))
+        if period_end:
+            sub.current_period_end = period_end
+            fields.append("current_period_end")
 
     schedule_id = obj.get("schedule") or ""
     if schedule_id and sub.stripe_schedule_id != schedule_id:
@@ -251,10 +283,14 @@ def handle_subscription_deleted(obj):
     """The subscription ended. Which of two very different things that means is decided here.
 
     Finishing the ladder ends the subscription exactly like cancelling does — the schedule's
-    ``end_behavior`` is ``cancel``, so Stripe deletes it on the last day of month 12. The
-    difference is the month index: past ``FREE_AFTER_MONTH`` the user completed the year and
-    has earned **lifetime-free access**, and this is the moment that is granted. Before it,
-    they stopped paying and the plan lapses.
+    ``end_behavior`` is ``cancel``, so Stripe deletes it on the last day of month 12. What
+    tells them apart is **Stripe's own record**: our ladder schedule reports ``completed``.
+    That user paid the whole year and earns lifetime-free access, here. Anything else is a
+    cancel or a failed card, and the plan lapses.
+
+    Not the month index. That counts calendar days from ``started_at``, so it disagrees with
+    Stripe by a day whenever the webhook that set ``started_at`` was processed after midnight
+    UTC — and on the anniversary a full year's customer would be cancelled instead of freed.
 
     A lapse is not a lockout. ``HasProAccessOrReadOnly`` keeps their history readable; what
     closes is what the subscription bought.
@@ -263,9 +299,11 @@ def handle_subscription_deleted(obj):
     if sub is None:
         return
 
-    # Grants lifetime_free when they are past the paid year — the same rule the rest of the
-    # app uses, kept in services so there is one definition of "finished".
-    sub = services.sync_lifetime(sub)
+    schedule_id = obj.get("schedule") or sub.stripe_schedule_id
+    if not sub.lifetime_free and schedule_id and stripe_gateway.ladder_completed(schedule_id):
+        sub.lifetime_free = True
+        sub.status = Subscription.Status.LIFETIME_FREE
+        sub.save(update_fields=["lifetime_free", "status", "updated_at"])
     # Nothing is pending any more either way — the plan has ended.
     if sub.cancel_at_period_end:
         sub.cancel_at_period_end = False
@@ -341,21 +379,24 @@ def dispatch(event) -> str:
     event_id = event.get("id") or ""
     event_type = event.get("type") or ""
 
-    try:
-        # Wrapped in its own atomic block so the duplicate-key error is rolled back to a
-        # savepoint. Without it the failed INSERT leaves the surrounding transaction broken
-        # and every query after it raises — a replay would take down the request that was
-        # supposed to shrug it off.
-        with transaction.atomic():
-            StripeEvent.objects.create(event_id=event_id, event_type=event_type)
-    except IntegrityError:
-        log.info("stripe webhook: %s (%s) already applied — ignoring replay",
-                 event_id, event_type)
-        return "duplicate"
+    # The record and the handler commit together. If the handler raises, the record rolls
+    # back with it and Stripe's retry is processed, not dropped as a replay — otherwise one
+    # transient failure on checkout.session.completed leaves a customer charged and never
+    # granted access.
+    with transaction.atomic():
+        try:
+            # Its own savepoint, so a duplicate-key error does not break the outer
+            # transaction and take down the request that was supposed to shrug it off.
+            with transaction.atomic():
+                StripeEvent.objects.create(event_id=event_id, event_type=event_type)
+        except IntegrityError:
+            log.info("stripe webhook: %s (%s) already applied — ignoring replay",
+                     event_id, event_type)
+            return "duplicate"
 
-    handler = HANDLERS.get(event_type)
-    if handler is None:
-        return "ignored"
+        handler = HANDLERS.get(event_type)
+        if handler is None:
+            return "ignored"
 
-    handler((event.get("data") or {}).get("object") or {})
-    return "applied"
+        handler((event.get("data") or {}).get("object") or {})
+        return "applied"

@@ -7,7 +7,7 @@ applied twice does damage. The parts that genuinely need Stripe (that a schedule
 docs/stripe-payments.md.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from unittest import mock
 
 from django.contrib.auth import get_user_model
@@ -49,7 +49,7 @@ class LadderShapeTests(APITestCase):
     def test_a_new_subscriber_gets_the_whole_ladder(self):
         phases = stripe_gateway.schedule_phases()
         self.assertEqual(len(phases), len(config.PHASES))
-        self.assertEqual([p["iterations"] for p in phases], [3, 3, 3, 3])
+        self.assertEqual([p["duration"]["interval_count"] for p in phases], [3, 3, 3, 3])
         self.assertEqual(
             [p["items"][0]["price"] for p in phases],
             ["price_spark", "price_rhythm", "price_independence", "price_release"],
@@ -58,7 +58,7 @@ class LadderShapeTests(APITestCase):
     def test_twelve_billed_months_then_it_ends(self):
         """The whole point of end_behavior=cancel: the ladder is finite."""
         self.assertEqual(
-            sum(p["iterations"] for p in stripe_gateway.schedule_phases()),
+            sum(p["duration"]["interval_count"] for p in stripe_gateway.schedule_phases()),
             config.FREE_AFTER_MONTH,
         )
 
@@ -70,15 +70,15 @@ class LadderShapeTests(APITestCase):
         """
         phases = stripe_gateway.schedule_phases(start_month=5)
         self.assertEqual(phases[0]["items"][0]["price"], "price_rhythm")
-        self.assertEqual(phases[0]["iterations"], 2)
+        self.assertEqual(phases[0]["duration"]["interval_count"], 2)
         self.assertEqual(len(phases), 3)          # Rhythm (part), Independence, Release
-        self.assertEqual(sum(p["iterations"] for p in phases), 8)
+        self.assertEqual(sum(p["duration"]["interval_count"] for p in phases), 8)
 
     def test_the_last_rung_alone(self):
         phases = stripe_gateway.schedule_phases(start_month=12)
         self.assertEqual(len(phases), 1)
         self.assertEqual(phases[0]["items"][0]["price"], "price_release")
-        self.assertEqual(phases[0]["iterations"], 1)
+        self.assertEqual(phases[0]["duration"]["interval_count"], 1)
 
     def test_start_month_for(self):
         user = User.objects.create_user(username="ladder", email="l@x.com", password="p")
@@ -251,20 +251,103 @@ class WebhookTests(APITestCase):
 
     def test_finishing_the_year_grants_lifetime_free(self):
         """The schedule ends with end_behavior=cancel, so completing the ladder arrives as
-        the same event as giving up. The month index is what tells them apart."""
-        self.sub.started_at = _months_ago(13)
+        the same event as giving up. Stripe's completed schedule is what tells them apart —
+        deliberately on the anniversary day minus one, where the month index still says 12."""
+        self.sub.started_at = _months_ago(12) + timedelta(days=1)
         self.sub.stripe_subscription_id = "sub_done"
         self.sub.status = Subscription.Status.ACTIVE
         self.sub.save()
 
-        webhooks.dispatch(self._event("customer.subscription.deleted", {
-            "id": "sub_done", "customer": "cus_done",
-        }, "evt_6"))
+        with mock.patch.object(stripe_gateway, "ladder_completed", return_value=True) as done:
+            webhooks.dispatch(self._event("customer.subscription.deleted", {
+                "id": "sub_done", "customer": "cus_done", "schedule": "sub_sched_done",
+            }, "evt_6"))
 
+        done.assert_called_once_with("sub_sched_done")
         self.sub.refresh_from_db()
         self.assertTrue(self.sub.lifetime_free)
         self.assertEqual(self.sub.status, Subscription.Status.LIFETIME_FREE)
         self.assertTrue(services.compute_status(self.sub)["has_access"])
+
+    def test_a_cancel_after_a_year_of_calendar_time_is_not_a_finished_ladder(self):
+        """A released (cancelled) schedule is not a completed one, however old the start."""
+        self.sub.started_at = _months_ago(13)
+        self.sub.stripe_subscription_id = "sub_quit"
+        self.sub.status = Subscription.Status.ACTIVE
+        self.sub.save()
+
+        with mock.patch.object(stripe_gateway, "ladder_completed", return_value=False):
+            webhooks.dispatch(self._event("customer.subscription.deleted", {
+                "id": "sub_quit", "customer": "cus_quit", "schedule": "sub_sched_quit",
+            }, "evt_6b"))
+
+        self.sub.refresh_from_db()
+        self.assertFalse(self.sub.lifetime_free)
+        self.assertEqual(self.sub.status, Subscription.Status.CANCELLED)
+
+    def test_paying_once_and_waiting_a_year_is_not_free_forever(self):
+        """Calendar time is not months paid. Before the fix, one $19.99 month and a year's
+        wait read as a finished ladder in both compute_status and sync_lifetime."""
+        self.sub.started_at = _months_ago(13)
+        self.sub.status = Subscription.Status.CANCELLED
+        self.sub.current_period_end = self.sub.started_at + timedelta(days=30)
+        self.sub.save()
+
+        self.assertFalse(services.compute_status(self.sub)["has_access"])
+        services.sync_lifetime(self.sub)
+        self.sub.refresh_from_db()
+        self.assertFalse(self.sub.lifetime_free)
+
+    def test_a_declined_renewal_does_not_extend_the_paid_through_date(self):
+        """Stripe rolls the period forward at renewal even when the charge fails. Reading that
+        as paid-through gave a declined card a free month — seen against the real test API."""
+        paid_to = timezone.localdate() + timedelta(days=2)
+        self.sub.stripe_subscription_id = "sub_decl"
+        self.sub.status = Subscription.Status.ACTIVE
+        self.sub.current_period_end = paid_to
+        self.sub.save()
+        rolled = int(datetime(paid_to.year, paid_to.month, paid_to.day,
+                              tzinfo=dt_timezone.utc).timestamp()) + 30 * 86400
+
+        webhooks.dispatch(self._event("customer.subscription.updated", {
+            "id": "sub_decl", "customer": "cus_decl", "status": "past_due",
+            "items": {"data": [{"current_period_end": rolled}]},
+        }, "evt_decl"))
+
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.status, Subscription.Status.PAST_DUE)
+        self.assertEqual(self.sub.current_period_end, paid_to)
+
+    def test_a_failed_handler_leaves_the_event_retryable(self):
+        """The record and the handler commit together, so Stripe's retry is processed rather
+        than dropped as a replay of an event that never took effect."""
+        self.sub.stripe_subscription_id = "sub_retry"
+        self.sub.save()
+        event = self._event("customer.subscription.updated", {
+            "id": "sub_retry", "customer": "cus_retry", "cancel_at_period_end": True,
+        }, "evt_retry")
+
+        with mock.patch.object(webhooks, "_period_end", side_effect=RuntimeError("blip")):
+            with self.assertRaises(RuntimeError):
+                webhooks.dispatch(event)
+        self.assertFalse(StripeEvent.objects.filter(event_id="evt_retry").exists())
+
+        self.assertEqual(webhooks.dispatch(event), "applied")
+        self.sub.refresh_from_db()
+        self.assertTrue(self.sub.cancel_at_period_end)
+
+    def test_the_paid_year_starts_on_stripes_date_not_the_processing_date(self):
+        """A delivery processed after midnight UTC must not shift the anniversary."""
+        paid_on = timezone.localdate() - timedelta(days=1)
+        created = int(datetime(paid_on.year, paid_on.month, paid_on.day, 23, 59,
+                               tzinfo=dt_timezone.utc).timestamp())
+        with mock.patch.object(stripe_gateway, "attach_schedule", return_value="sub_sched_y"):
+            webhooks.dispatch(self._event("checkout.session.completed", {
+                "client_reference_id": str(self.user.pk), "customer": "cus_y",
+                "subscription": "sub_y", "created": created,
+            }, "evt_y"))
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.started_at, paid_on)
 
     def test_stopping_early_lapses_instead(self):
         self.sub.started_at = _months_ago(2)
@@ -294,6 +377,26 @@ class WebhookTests(APITestCase):
         self.sub.refresh_from_db()
         self.assertEqual(self.sub.status, Subscription.Status.ACTIVE)
         self.assertIsNotNone(self.sub.current_period_end)
+
+    def test_a_late_invoice_for_last_month_does_not_forgive_this_months_decline(self):
+        """Stripe does not order events. Replaying last month's invoice.paid after this
+        month's payment_failed flipped past_due to ACTIVE — access with no end date."""
+        paid_to = timezone.localdate() + timedelta(days=3)
+        self.sub.stripe_subscription_id = "sub_late"
+        self.sub.status = Subscription.Status.PAST_DUE
+        self.sub.current_period_end = paid_to
+        self.sub.save()
+        old_end = int(datetime(paid_to.year, paid_to.month, paid_to.day,
+                               tzinfo=dt_timezone.utc).timestamp())
+
+        webhooks.dispatch(self._event("invoice.paid", {
+            "customer": "cus_late", "subscription": "sub_late",
+            "lines": {"data": [{"period": {"end": old_end}}]},
+        }, "evt_late"))
+
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.status, Subscription.Status.PAST_DUE)
+        self.assertEqual(self.sub.current_period_end, paid_to)
 
     def test_an_event_for_a_stranger_is_ignored_quietly(self):
         """A shared Stripe account will carry events about customers we have never seen."""
@@ -350,3 +453,47 @@ class CheckoutEndpointTests(APITestCase):
         )
         res = self.client.post("/api/subscriptions/checkout/", HTTP_X_NOWLII_REGION="US")
         self.assertEqual(res.status_code, 409)
+
+
+@override_settings(STRIPE_SECRET_KEY="sk_test_x", **FAKE_PRICES)
+class AttachScheduleTests(APITestCase):
+    """attach_schedule must be safe to call again — found against the real test API, where a
+    failed second call left a one-phase schedule that every retry then refused to replace."""
+
+    def _stripe(self, sub_schedule=None, schedule=None):
+        fake = mock.MagicMock()
+        fake.Subscription.retrieve.return_value = {"schedule": sub_schedule}
+        fake.SubscriptionSchedule.retrieve.return_value = mock.MagicMock(
+            id=sub_schedule, **{"__str__.return_value": __import__("json").dumps(schedule or {})})
+        created = mock.MagicMock(id="sub_sched_new",
+                                 **{"__str__.return_value": '{"phases": [{"start_date": 100}]}'})
+        fake.SubscriptionSchedule.create.return_value = created
+        fake.SubscriptionSchedule.modify.return_value = mock.MagicMock(id="sub_sched_new")
+        return fake
+
+    def test_a_fresh_subscription_gets_a_new_ladder(self):
+        fake = self._stripe()
+        with mock.patch.object(stripe_gateway, "_client", return_value=fake):
+            stripe_gateway.attach_schedule("sub_1")
+        fake.SubscriptionSchedule.create.assert_called_once_with(from_subscription="sub_1")
+        kwargs = fake.SubscriptionSchedule.modify.call_args.kwargs
+        self.assertEqual(kwargs["end_behavior"], "cancel")
+        self.assertEqual(kwargs["metadata"], {stripe_gateway.LADDER_MARKER: "1"})
+        self.assertEqual(len(kwargs["phases"]), 4)
+        self.assertEqual(kwargs["phases"][0]["start_date"], 100)
+
+    def test_a_half_built_schedule_is_finished_not_recreated(self):
+        fake = self._stripe("sub_sched_half", {"end_behavior": "release", "metadata": {},
+                                               "phases": [{"start_date": 200}]})
+        with mock.patch.object(stripe_gateway, "_client", return_value=fake):
+            self.assertEqual(stripe_gateway.attach_schedule("sub_1"), "sub_sched_new")
+        fake.SubscriptionSchedule.create.assert_not_called()
+        self.assertEqual(fake.SubscriptionSchedule.modify.call_args.args[0], "sub_sched_half")
+
+    def test_a_finished_ladder_is_left_alone(self):
+        fake = self._stripe("sub_sched_done", {"end_behavior": "cancel",
+                                               "metadata": {stripe_gateway.LADDER_MARKER: "1"}})
+        with mock.patch.object(stripe_gateway, "_client", return_value=fake):
+            self.assertEqual(stripe_gateway.attach_schedule("sub_1"), "sub_sched_done")
+        fake.SubscriptionSchedule.create.assert_not_called()
+        fake.SubscriptionSchedule.modify.assert_not_called()

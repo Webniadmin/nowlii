@@ -233,7 +233,8 @@ class CancelView(APIView):
             fields = ["cancel_at_period_end"]
             sub.cancel_at_period_end = True
             period_end = webhooks._as_date(result.get("current_period_end"))
-            if period_end:
+            # Only fills a gap: the paid-through date belongs to invoice.paid (see webhooks).
+            if period_end and sub.current_period_end is None:
                 sub.current_period_end = period_end
                 fields.append("current_period_end")
             sub.save(update_fields=fields + ["updated_at"])
@@ -277,7 +278,8 @@ class ResumeView(APIView):
         sub.cancel_at_period_end = False
         fields = ["cancel_at_period_end"]
         period_end = webhooks._as_date(result.get("current_period_end"))
-        if period_end:
+        # Only fills a gap: the paid-through date belongs to invoice.paid (see webhooks).
+        if period_end and sub.current_period_end is None:
             sub.current_period_end = period_end
             fields.append("current_period_end")
         sub.save(update_fields=fields + ["updated_at"])
@@ -474,10 +476,10 @@ class StripeWebhookView(APIView):
             result = webhooks.dispatch(event)
         except Exception:
             # A 500 here makes Stripe retry, which is what we want for a transient fault —
-            # but the event id is already recorded, so the retry will be dropped as a
-            # duplicate. Log loudly: this one needs a human.
+            # and the event record rolled back with the handler, so the retry is processed.
+            # Log loudly: this one needs a human.
             log.exception("stripe webhook: handler failed for %s (%s)",
-                          event.get("id"), event.get("type"))
+                          event["id"], event["type"])
             return Response({"detail": "Handler error."},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
