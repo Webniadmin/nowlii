@@ -4,11 +4,11 @@ _The single active document for the current working day. Update **only this file
 during the day. At end of day, write a report in `daily-reports/` and reset this list
 for tomorrow. Deferred items go to `future-checklist.md`._
 
-**Day:** 2026-09-07 (Monday) — first session since 08-27; the branch sat 11 days.
-**Branch:** `fix/call-mic-permission-and-close-button` — six commits `3f77fbf` → `086f5e9`,
-**not pushed to `origin`**.
-**Yesterday's report:** `daily-reports/2026-08-25.md` — notifications proved on hardware, the
-streak fix, the shared calendar, and four passes over the app.
+**Day:** 2026-09-22 (Tuesday). **Start at "RESUME HERE" just below** — everything under it
+is older history (from 2026-09-07 and before) kept for reference.
+**Branch:** `feat/stripe-payments` — **not pushed to `origin`**.
+**Last written report:** `daily-reports/2026-08-25.md`; the work of 09-16 → 09-22 is recorded
+in the RESUME block, `docs/stripe-payments.md` §Verified and `docs/deploy-aws.md`.
 
 ---
 
