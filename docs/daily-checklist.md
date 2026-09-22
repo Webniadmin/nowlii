@@ -20,7 +20,7 @@ in the RESUME block, `docs/stripe-payments.md` §Verified and `docs/deploy-aws.m
 **Goal right now:** Google Play **closed testing** (not live; Stripe stays in TEST mode until
 testing passes — the user's decision).
 
-**The AAB:** `C:\Users\Pavle\Desktop\nowlii-1.0.0-1.aab` — 1.0.0 / versionCode 1, signed with
+**The AAB:** `C:\Users\Pavle\Desktop\nowlii-1.0.0-2.aab` — 1.0.0 / versionCode **2** (code 1 was already taken in Play), signed with
 the upload key, prod URLs, release build smoke-tested on the emulator. Nothing in the app
 changed since, so it does **not** need rebuilding for the deletion page.
 
