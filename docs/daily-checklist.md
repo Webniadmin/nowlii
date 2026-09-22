@@ -12,40 +12,65 @@ streak fix, the shared calendar, and four passes over the app.
 
 ---
 
-## ▶ RESUME HERE — 2026-09-22 (left off 2026-09-21 evening)
+## ▶ RESUME HERE — updated 2026-09-22 (after the account-deletion page shipped)
 
-**Branch:** `feat/stripe-payments`, commits up to `e111f90`, **not pushed**. Prod backend = `909074f`.
+**Branch:** `feat/stripe-payments`, commits up to `7dc0c93`, **not pushed to origin**
+(push/merge only when the user asks). **Prod backend = `7e39249`** (rollback `:backup-20260922`).
 
-**Where we stopped:** the Play AAB is built and on the Desktop —
-`C:\Users\Pavle\Desktop\nowlii-1.0.0-1.aab` (1.0.0 / versionCode 1, signed with the new
-upload key, prod URLs, release build smoke-tested on the emulator). Closed testing, **not live**.
+**Goal right now:** Google Play **closed testing** (not live; Stripe stays in TEST mode until
+testing passes — the user's decision).
 
-**Next, in order (user does 1–3 in consoles, then tell Claude):**
-1. Play Console → Closed testing → Create release → upload the AAB → **save, do NOT roll out**.
-2. Play Console → App integrity → App signing → copy the **App signing key SHA-1**.
-3. Google Cloud project **274971792537** → Credentials → two **Android OAuth clients** for
-   `com.nowlii.app`: the Play SHA-1, and the upload key SHA-1
-   `0F:8E:28:9D:07:96:7C:0A:65:95:86:62:04:7F:26:E7:8D:84:46:F6`.
-   Without this, "Continue with Google" fails on Play installs (email login is fine).
-4. Install from Play as a tester, test Google login → then add testers → **Start rollout**.
-5. Store review login (Play "App access" + App Store): `appreview@nowlii.com` /
-   (password: in the user's password manager / Claude memory `apple-reviewer-account` — never in the repo) — prod user 61, lifetime free, unlimited calls.
+**The AAB:** `C:\Users\Pavle\Desktop\nowlii-1.0.0-1.aab` — 1.0.0 / versionCode 1, signed with
+the upload key, prod URLs, release build smoke-tested on the emulator. Nothing in the app
+changed since, so it does **not** need rebuilding for the deletion page.
 
-**Open / to decide:**
-- Back up `C:\Users\Pavle\nowlii-upload-keystore.jks` + `nowli-frontend-app/android/key.properties`
-  off this machine — losing them blocks all app updates.
+**Next, in order (user does 1–4 in the consoles, then tells Claude):**
+1. Play Console → **Closed testing → Create release** → upload the AAB → **save, do NOT roll out**.
+2. Play Console → **App content → Data safety → Data deletion** → "Delete account URL":
+   **`https://api.nowlii.com/delete-account/`** (live since 2026-09-22).
+3. Play Console → **App content → App access** → review login:
+   `appreview@nowlii.com` / (password: in the user's password manager / Claude memory `apple-reviewer-account` — never in the repo) (prod user 61, lifetime free, unlimited
+   calls; email+password, not the Google/Apple button). Same login for App Store review.
+4. Play Console → **App integrity → App signing** → copy the **App signing key SHA-1**, then
+   Google Cloud project **274971792537** → Credentials (or Google Auth Platform → Clients) →
+   create **two Android OAuth clients** for `com.nowlii.app`: that Play SHA-1, and the upload
+   key SHA-1 `0F:8E:28:9D:07:96:7C:0A:65:95:86:62:04:7F:26:E7:8D:84:46:F6`. Leave the existing
+   debug-key client alone. Without this, "Continue with Google" fails on Play installs
+   (`ApiException: 10`); email login is unaffected. No rebuild needed.
+5. Install from Play as a tester → test **Google login** → only then add testers → **Start
+   rollout**. The user explicitly does not want testers on a build where Google login fails.
+
+**Open / to decide (not blocking closed testing):**
+- **Back up** `C:\Users\Pavle\nowlii-upload-keystore.jks` + `nowli-frontend-app/android/key.properties`
+  off this machine — losing them blocks every future app update.
+- **Password-reset & signup OTPs have no attempt limit** and use `random` (not `secrets`) →
+  a reset code is brute-forceable = account takeover. Fix before public launch; copy the
+  pattern of `AccountDeletionRequest` (HMAC, single use, 5 attempts, resend cooldown).
+- **RDS backups:** the deletion page says backups roll off "within 35 days" (AWS's max for
+  automated backups). Confirm in the AWS console there are no **manual** snapshots, or
+  change that sentence in `Apps/users/templates/users/delete_account.html`.
 - `READ_MEDIA_IMAGES` may trip Play's photo-permission policy → swap to the system photo picker?
 - Release builds log URLs + response bodies (`🌐 URL`, `📥 Response Body`) — silence before public launch.
-- Prod runs Stripe **TEST** mode (US users see the button, no real charges). Going live later:
-  `sk_live_`, `sync_stripe_prices --create` again, a live webhook + `whsec`, ToS + refund policy.
+- Apple "Hide My Email" users can't receive the deletion code unless the sender is registered
+  in Apple's Private Email Relay; the page points them to in-app deletion / hello@nowlii.com.
+- Going **Stripe live** later: `sk_live_`, `sync_stripe_prices --create` again (live ids
+  differ), a new live webhook + its `whsec`, `up -d`; plus Terms of Service + refund policy.
 - Local `nowli-backend/.env` points at **prod RDS** — always run locally with
   `DB_ENGINE=django.db.backends.sqlite3 DB_NAME=db.sqlite3`.
+- **Deploy gotcha:** the auto-mode classifier sometimes refuses the prod `build`/`up -d`
+  until the user's message explicitly says "deploy to production"; the source is already on
+  the box at that point, which is a safe place to pause.
+
+**Done 2026-09-22:** public account-deletion page `https://api.nowlii.com/delete-account/`
+(emailed 6-digit code; identical answers for unknown addresses); account deletion — app and
+page — now **deletes the Stripe customer first** (before, a deleted user kept being charged),
+verified on the real Stripe test API; deployed (`7e39249`, migration `users.0020`).
+229 backend tests pass.
 
 **Done 2026-09-21:** reviewer account; prod schema drift fixed (every signup was 500ing);
 Stripe verified end-to-end on the real test API (11 bugs fixed, see
-`docs/stripe-payments.md` §Verified); ladder now counts **months paid**; two backend deploys
-(`docs/deploy-aws.md`); Stripe test mode + webhook live on prod, verified with a real Checkout;
-Play upload key + AAB.
+`docs/stripe-payments.md` §Verified); ladder counts **months paid**; Stripe test mode + webhook
+live on prod, verified with a real Checkout; Play upload key + AAB.
 
 ---
 
