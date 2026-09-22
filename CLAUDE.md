@@ -25,9 +25,10 @@ The three projects are developed and run independently; there is no root-level b
   `__init__.py`, so unittest discovery dies in `TypeError: _path_normpath`. (This file used to
   quote both broken forms.)
 - Run a single test: `uv run python manage.py test Apps.quests.tests.StreakTests.test_name`
-- **Coverage is one app.** `Apps/quests/tests.py` (the streak rule, 11 cases, 2026-08-25) is
-  the only suite that exists. Everything else is covered by reading and `manage.py check`
-  alone — say so rather than implying a green run across the backend.
+- **Coverage (2026-09-22): 248 tests** across seven modules — `Apps.<app>.tests` for
+  `users`, `quests`, `insights`, `subtask_generator`, `voice_calls`, `subscriptions`, plus
+  `Apps.subscriptions.tests_stripe`. Pass every module label explicitly (no discovery).
+  Stripe tests never call Stripe; the real-API checks are recorded in `docs/stripe-payments.md`.
 - API docs (Swagger): `http://localhost:8000/api/docs/`; root `/` redirects there.
 
 ### Architecture

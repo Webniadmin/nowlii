@@ -38,13 +38,23 @@ Priority tiers: **P1** = security / must-do soon · **P2** = correctness & quali
       3600 → 31536000, not straight to a year), add the nginx HTTP→HTTPS redirect (the cert
       was issued `--no-redirect` on purpose), then close 8000/8001 in the security group.
       Tracked in `daily-checklist.md`.
-- [ ] **Release signing keystore** — not created yet; release builds fall back to the debug
-      keystore, which Play rejects. Wiring is done (`android/key.properties.example`).
+- [x] ~~**Release signing keystore**~~ — **Done 2026-09-21**: `C:/Users/Pavle/nowlii-upload-keystore.jks`
+      + `android/key.properties`; signed AAB uploaded for closed testing (versionCode 2).
+      **Still to do:** back both files up off this machine.
+- [x] ~~**Account deletion web page** (Play Data safety)~~ — **Done 2026-09-22**:
+      `https://api.nowlii.com/delete-account/`; deletion also deletes the Stripe customer.
 - [x] **Real payments** — built on Stripe Checkout 2026-09-16 (US-first). `activate` is now
       off in production and the store-IAP path is parked. Still needs a live Stripe account,
       Terms of Service, and Play enrolment before money can move. See `docs/stripe-payments.md`.
 
 ## P1 — Security (do soon)
+
+- [ ] **Signup / password-reset OTP is brute-forceable** (found 2026-09-22). No attempt limit,
+      generated with `random` instead of `secrets` → a reset code can be guessed = account
+      takeover. Copy the `AccountDeletionRequest` pattern (secrets, HMAC-stored, single use,
+      5 attempts, resend cooldown). Scheduled first on `daily-checklist.md` 2026-09-23.
+- [ ] **Release builds log URLs and response bodies** (`🌐 URL`, `📥 Response Body`) —
+      silence before the public launch.
 
 - [ ] **Secret rotation (A5).** All `.env` secrets were exposed and must be rotated at the
       providers (OpenAI, AWS IAM, Hume, Google), then pasted back into both `.env` files.

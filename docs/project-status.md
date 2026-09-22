@@ -1,6 +1,28 @@
 # NOWLII — Project Status & Analysis
 
-_Last reviewed: 2026-08-25_
+_Last reviewed: 2026-09-22_
+
+## Completed 2026-09-16 → 2026-09-22 (Stripe payments, Play closed-testing prep)
+
+_Full detail in `daily-reports/2026-09-22.md`. Branch `feat/stripe-payments` (`1b3c75e` →
+`075b4bd`), **merged into `main` and pushed** 2026-09-22. Prod backend `7e39249`._
+
+- **Real payments on Stripe Checkout** (US-first): the price ladder is a Stripe subscription
+  schedule, the paywall opens Checkout in the browser, access comes from webhooks only.
+  Verified against the real Stripe test API with a Test Clock over thirteen months — 11 bugs
+  fixed that the mocks hid (every webhook was a 500; the ladder never attached). The ladder
+  now counts **months paid** (`PaidMonth`). Stripe is in **test mode** on prod until closed
+  testing passes.
+- **Prod schema drift fixed** — every signup had been returning 500.
+- **Account deletion:** public page `https://api.nowlii.com/delete-account/` (emailed code,
+  HMAC, 5 attempts); deleting an account now deletes the Stripe customer first — before, a
+  deleted user kept being charged.
+- **Google Play:** upload keystore, reviewer account `appreview@nowlii.com` (prod user 61),
+  signed AAB versionCode 2 for closed testing.
+- 248 backend tests pass (7 test modules; was 11 cases in one app on 08-25).
+
+**Found, not fixed:** signup/reset OTP has no attempt limit (P1); Google login on Play installs
+needs the Play App Signing SHA-1 registered in GCP; the upload keystore has no off-machine backup.
 
 ## Completed this session (2026-08-25)
 
