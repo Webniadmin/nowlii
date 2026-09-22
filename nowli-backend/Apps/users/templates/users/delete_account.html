@@ -1,0 +1,132 @@
+{% comment %}
+The public account-deletion page Google Play's Data safety form links to. Self-contained like
+the Stripe pages (no fonts, no scripts): it must work on any phone browser, for someone who may
+no longer have the app. The copy states what is deleted and what is kept — Play requires both.
+{% endcomment %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Delete your NOWLII account</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: #FFFEF8; color: #1A1A1A;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 32px 16px 48px;
+    }
+    main { max-width: 560px; margin: 0 auto; }
+    h1 { font-size: 26px; margin: 0 0 8px; }
+    h2 { font-size: 17px; margin: 28px 0 8px; }
+    p, li { font-size: 15.5px; line-height: 1.55; color: #3A3A3A; }
+    ul { padding-left: 20px; margin: 6px 0; }
+    .lead { color: #5A5A5A; margin-top: 0; }
+    form { background: #fff; border: 1px solid #ECE8DC; border-radius: 16px; padding: 20px;
+           margin-top: 20px; }
+    label { display: block; font-weight: 600; font-size: 14.5px; margin: 0 0 6px; }
+    input[type=email], input[type=text] {
+      width: 100%; font-size: 17px; padding: 12px 14px; border: 1px solid #D6D1C4;
+      border-radius: 10px; margin-bottom: 14px; background: #FFFEFB;
+    }
+    input[name=code] { letter-spacing: 6px; font-variant-numeric: tabular-nums; }
+    .check { display: flex; gap: 10px; align-items: flex-start; font-weight: 400;
+             font-size: 14.5px; margin: 4px 0 16px; }
+    .check input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
+    button { width: 100%; font-size: 16px; font-weight: 700; border: 0; border-radius: 999px;
+             padding: 14px; cursor: pointer; background: #FC820F; color: #1A1A1A; }
+    button.danger { background: #C62828; color: #fff; }
+    button.link { background: none; color: #5A5A5A; font-weight: 500; padding: 10px;
+                  text-decoration: underline; }
+    .error { background: #FDECEA; color: #8E1C1C; border-radius: 10px; padding: 10px 12px;
+             font-size: 14.5px; margin: 0 0 14px; }
+    .note { font-size: 14px; color: #6A6A6A; }
+    .done { text-align: center; padding-top: 40px; }
+    .mark { width: 72px; height: 72px; border-radius: 50%; background: #FC820F; color: #fff;
+            margin: 0 auto 24px; display: flex; align-items: center; justify-content: center;
+            font-size: 34px; }
+  </style>
+</head>
+<body>
+<main>
+{% if step == "done" %}
+  <div class="done">
+    <div class="mark">✓</div>
+    <h1>Your account has been deleted</h1>
+    <p>Your NOWLII account and the data listed on the previous page are gone, and any
+       subscription has been cancelled. You won't be charged again.</p>
+    <p class="note">You can close this page.</p>
+  </div>
+{% else %}
+  <h1>Delete your NOWLII account</h1>
+  <p class="lead">This page permanently deletes a <strong>NOWLII</strong> account and its data.
+     You don't need the app to use it.</p>
+
+  <h2>How it works</h2>
+  <ul>
+    <li>Enter the email address you use for NOWLII.</li>
+    <li>We email you a 6-digit code to prove the account is yours.</li>
+    <li>Enter the code and confirm. The account is deleted immediately.</li>
+  </ul>
+  <p class="note">You can also do this in the app: <strong>Settings → Privacy &amp; Data →
+     Delete My Account</strong>.</p>
+
+  {% if step == "email" %}
+  <form method="post" action="">
+    {% csrf_token %}
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <label for="email">Email address</label>
+    <input id="email" type="email" name="email" value="{{ email }}" autocomplete="email"
+           required>
+    <input type="hidden" name="action" value="send">
+    <button type="submit">Email me a code</button>
+  </form>
+  {% else %}
+  <form method="post" action="">
+    {% csrf_token %}
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <p>If <strong>{{ email }}</strong> has a NOWLII account, we've sent a code to it. It
+       expires in 15 minutes. Check your spam folder too.</p>
+    <input type="hidden" name="email" value="{{ email }}">
+    <label for="code">6-digit code</label>
+    <input id="code" type="text" name="code" inputmode="numeric" pattern="[0-9]*"
+           maxlength="6" autocomplete="one-time-code" required>
+    <label class="check"><input type="checkbox" name="understand" value="yes" required>
+      I understand this permanently deletes my account and data, and cannot be undone.</label>
+    <button class="danger" type="submit" name="action" value="confirm">Delete my account</button>
+  </form>
+  <form method="post" action="" style="border:0;background:none;padding:0;margin-top:4px">
+    {% csrf_token %}
+    <input type="hidden" name="email" value="{{ email }}">
+    <button class="link" type="submit" name="action" value="send">Send a new code</button>
+  </form>
+  {% endif %}
+
+  <h2>What is deleted</h2>
+  <ul>
+    <li>Your account, login details and profile, including your photo</li>
+    <li>Your quests, subtasks, streaks and insights</li>
+    <li>Your AI call records, call summaries and the emotion and mood data from them</li>
+    <li>Your support messages and settings</li>
+    <li>Your subscription, which is cancelled immediately, and your saved payment card</li>
+  </ul>
+
+  <h2>What is kept, and for how long</h2>
+  <ul>
+    <li><strong>Payment records</strong> (invoices and charges) stay with our payment provider,
+        Stripe, for as long as tax and accounting law requires. We no longer hold them.</li>
+    <li><strong>Encrypted database backups</strong> may still contain your data until they are
+        overwritten on their rolling schedule, within 35 days.</li>
+  </ul>
+
+  <h2>Can't receive the email?</h2>
+  <p>If you signed in with Apple and chose "Hide My Email", or no longer have access to the
+     address, delete the account from the app, or email
+     <a href="mailto:hello@nowlii.com">hello@nowlii.com</a> with the subject "Delete my
+     account" and how you sign in, and we'll verify it's you and delete it for you.</p>
+{% endif %}
+</main>
+</body>
+</html>

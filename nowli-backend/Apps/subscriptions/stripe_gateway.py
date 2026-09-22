@@ -287,6 +287,23 @@ def attach_schedule(stripe_subscription_id: str, start_month: int = None) -> str
     return updated.id
 
 
+def delete_customer(customer_id: str) -> None:
+    """Delete the Stripe customer: cancels every subscription on it *immediately*, drops the
+    saved cards. Invoices stay in Stripe, which is what tax records require.
+
+    Used when a user deletes their account. Deliberately raises on failure — the caller
+    must not delete the account while Stripe could still bill it, because afterwards there
+    is no account left to cancel from. A customer that is already gone is success.
+    """
+    client = _client()
+    try:
+        client.Customer.delete(customer_id)
+    except stripe.InvalidRequestError as exc:
+        if getattr(exc, "code", "") == "resource_missing":
+            return
+        raise
+
+
 def ladder_completed(schedule_id: str) -> bool:
     """Did this schedule run our whole ladder to the end? The lifetime-free signal.
 

@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
 
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from .account_deletion import DeletionBlocked, delete_account
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -874,29 +874,16 @@ class DeleteAccountAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        user = request.user
-        user_id, user_email = user.pk, user.email
-
-        # The avatar lives in S3 and would survive the cascade as an orphaned object.
-        profile = getattr(user, 'profile', None)
-        if profile is not None and profile.profile_image:
-            try:
-                profile.profile_image.delete(save=False)
-            except Exception:
-                # Never block the deletion on a storage hiccup — the account matters more
-                # than one leftover file, and the row is going regardless.
-                logger.exception('Could not delete the avatar for user %s', user_id)
-
-        # Best-effort: stop any outstanding refresh tokens from being usable in the window
-        # before their rows cascade away.
+        # Shared with the public web page (/delete-account/): stops Stripe billing first,
+        # then removes the avatar, the tokens and the user.
         try:
-            for token in OutstandingToken.objects.filter(user=user):
-                BlacklistedToken.objects.get_or_create(token=token)
-        except Exception:
-            logger.exception('Could not blacklist tokens for user %s', user_id)
-
-        user.delete()
-        logger.info('Deleted account %s (%s) at the user\'s request', user_id, user_email)
+            delete_account(request.user, reason="the user's request (in-app)")
+        except DeletionBlocked:
+            return Response(
+                {'detail': "We couldn't cancel your subscription just now, so nothing was "
+                           "deleted. Please try again in a few minutes."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         return Response(
             {'message': 'Your account and all of your data have been permanently deleted.'},

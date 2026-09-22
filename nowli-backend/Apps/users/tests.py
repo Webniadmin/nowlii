@@ -552,3 +552,119 @@ class GoogleLoginTests(APITestCase):
             response = self.client.post('/api/auth/google/', {'id_token': 'stub'}, format='json')
 
         self.assertEqual(response.status_code, 503)
+
+
+# ------------------------------------------------------------------------------
+# Account deletion: billing stops first, and the public web page
+# ------------------------------------------------------------------------------
+import re
+
+from django.core import mail
+
+from Apps.subscriptions.models import Subscription
+from Apps.users.models import AccountDeletionRequest
+
+
+class DeletionStopsBillingTests(APITestCase):
+    """Deleting an account must cancel Stripe first — afterwards there is no account left
+    to cancel from, and the card would be charged every month."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="payer", email="payer@x.com", password="pw-12345")
+        Subscription.objects.create(user=self.user, platform="stripe", status="active",
+                                    stripe_customer_id="cus_payer",
+                                    stripe_subscription_id="sub_payer")
+        self.client.force_authenticate(self.user)
+
+    def test_the_stripe_customer_is_deleted_with_the_account(self):
+        with patch("Apps.subscriptions.stripe_gateway.delete_customer") as gone:
+            r = self.client.post("/api/auth/delete-account/", {"confirm": True}, format="json")
+        self.assertEqual(r.status_code, 200)
+        gone.assert_called_once_with("cus_payer")
+        self.assertFalse(get_user_model().objects.filter(pk=self.user.pk).exists())
+
+    def test_if_stripe_fails_nothing_is_deleted(self):
+        with patch("Apps.subscriptions.stripe_gateway.delete_customer",
+                   side_effect=RuntimeError("stripe down")):
+            r = self.client.post("/api/auth/delete-account/", {"confirm": True}, format="json")
+        self.assertEqual(r.status_code, 503)
+        self.assertTrue(get_user_model().objects.filter(pk=self.user.pk).exists())
+
+
+class DeleteAccountPageTests(TestCase):
+    URL = "/delete-account/"
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="leaver", email="leaver@x.com", password="pw-12345")
+
+    def _code(self):
+        return re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+
+    def _confirm(self, code, understand=True, email="leaver@x.com"):
+        data = {"email": email, "code": code, "action": "confirm"}
+        if understand:
+            data["understand"] = "yes"
+        return self.client.post(self.URL, data)
+
+    def test_the_page_loads_and_says_what_is_deleted_and_kept(self):
+        r = self.client.get(self.URL)
+        self.assertContains(r, "Delete your NOWLII account")
+        self.assertContains(r, "What is deleted")
+        self.assertContains(r, "What is kept")
+
+    def test_the_whole_flow_deletes_the_account(self):
+        r = self.client.post(self.URL, {"email": "Leaver@X.com", "action": "send"})
+        self.assertContains(r, "6-digit code")
+        self.assertEqual(len(mail.outbox), 1)
+        r = self._confirm(self._code())
+        self.assertContains(r, "Your account has been deleted")
+        self.assertFalse(get_user_model().objects.filter(pk=self.user.pk).exists())
+        self.assertFalse(AccountDeletionRequest.objects.exists())
+
+    def test_an_unknown_address_looks_exactly_the_same(self):
+        """No email is sent, but the page cannot be used to learn who has an account."""
+        known = self.client.post(self.URL, {"email": "leaver@x.com", "action": "send"})
+        unknown = self.client.post(self.URL, {"email": "nobody@x.com", "action": "send"})
+        self.assertEqual(len(mail.outbox), 1)
+        strip = lambda r: re.sub(r"leaver@x\.com|nobody@x\.com|csrfmiddlewaretoken\" value=\"[^\"]+",
+                                 "", r.content.decode())
+        self.assertEqual(strip(known), strip(unknown))
+        wrong_known = self._confirm("000000")
+        wrong_unknown = self._confirm("000000", email="nobody@x.com")
+        self.assertEqual(wrong_known.status_code, wrong_unknown.status_code)
+        self.assertEqual(strip(wrong_known), strip(wrong_unknown))
+
+    def test_the_box_must_be_ticked(self):
+        self.client.post(self.URL, {"email": "leaver@x.com", "action": "send"})
+        self._confirm(self._code(), understand=False)
+        self.assertTrue(get_user_model().objects.filter(pk=self.user.pk).exists())
+
+    def test_five_wrong_guesses_burn_the_code(self):
+        self.client.post(self.URL, {"email": "leaver@x.com", "action": "send"})
+        code = self._code()
+        wrong = "000000" if code != "000000" else "111111"
+        for _ in range(AccountDeletionRequest.MAX_ATTEMPTS):
+            self._confirm(wrong)
+        self._confirm(code)
+        self.assertTrue(get_user_model().objects.filter(pk=self.user.pk).exists())
+
+    def test_a_code_is_not_mailed_twice_within_the_cooldown(self):
+        self.client.post(self.URL, {"email": "leaver@x.com", "action": "send"})
+        self.client.post(self.URL, {"email": "leaver@x.com", "action": "send"})
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_the_code_is_not_stored_in_clear(self):
+        self.client.post(self.URL, {"email": "leaver@x.com", "action": "send"})
+        req = AccountDeletionRequest.objects.get(email="leaver@x.com")
+        self.assertNotIn(self._code(), req.code_hash)
+
+    def test_a_used_code_cannot_delete_a_recreated_account(self):
+        self.client.post(self.URL, {"email": "leaver@x.com", "action": "send"})
+        code = self._code()
+        self._confirm(code)
+        again = get_user_model().objects.create_user(
+            username="leaver2", email="leaver@x.com", password="pw-12345")
+        self._confirm(code)
+        self.assertTrue(get_user_model().objects.filter(pk=again.pk).exists())

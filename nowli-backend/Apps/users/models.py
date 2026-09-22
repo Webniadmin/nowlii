@@ -149,6 +149,69 @@ class ForgotPasswordRequest(models.Model):
 
 
 # ------------------------------------------------------------------------------
+# ACCOUNT DELETION CODE (the public web page, for people without the app)
+# ------------------------------------------------------------------------------
+class AccountDeletionRequest(models.Model):
+    """A one-time emailed code that proves someone owns the account they ask to delete.
+
+    Stricter than the signup/reset OTPs on purpose, because what it unlocks cannot be undone:
+    the code comes from ``secrets`` rather than ``random``, only its HMAC is stored, it dies
+    after ``MAX_ATTEMPTS`` wrong guesses (a million-code space is otherwise brute-forceable
+    inside the 15 minutes), and a new code cannot be mailed more than once a
+    ``RESEND_COOLDOWN_SECONDS``.
+    """
+
+    email = models.EmailField(unique=True)
+    code_hash = models.CharField(max_length=128, blank=True)
+    code_sent_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    CODE_TTL_SECONDS = 15 * 60
+    MAX_ATTEMPTS = 5
+    RESEND_COOLDOWN_SECONDS = 60
+
+    def __str__(self):
+        return self.email
+
+    @staticmethod
+    def _digest(code: str) -> str:
+        from django.utils.crypto import salted_hmac
+        return salted_hmac("nowlii.account-deletion", str(code)).hexdigest()
+
+    def can_resend(self) -> bool:
+        return (self.code_sent_at is None or
+                (timezone.now() - self.code_sent_at).total_seconds()
+                >= self.RESEND_COOLDOWN_SECONDS)
+
+    def issue_code(self) -> str:
+        import secrets
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        self.code_hash = self._digest(code)
+        self.code_sent_at = timezone.now()
+        self.attempts = 0
+        self.save(update_fields=["code_hash", "code_sent_at", "attempts"])
+        return code
+
+    def check_code(self, code: str) -> bool:
+        """True once for the right code; every wrong guess counts toward the limit."""
+        from django.utils.crypto import constant_time_compare
+        if not self.code_hash or not self.code_sent_at:
+            return False
+        if (timezone.now() - self.code_sent_at).total_seconds() > self.CODE_TTL_SECONDS:
+            return False
+        if self.attempts >= self.MAX_ATTEMPTS:
+            return False
+        if constant_time_compare(self.code_hash, self._digest((code or "").strip())):
+            self.code_hash = ""                   # single use
+            self.save(update_fields=["code_hash"])
+            return True
+        self.attempts += 1
+        self.save(update_fields=["attempts"])
+        return False
+
+
+# ------------------------------------------------------------------------------
 # NOWLII PREDEFINED OPTIONS
 # ------------------------------------------------------------------------------
 class NowliiPredefinedOption(models.Model):

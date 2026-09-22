@@ -7,6 +7,8 @@ from django.conf.urls.static import static
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+
+from Apps.users.web_views import delete_account_page
 schema_view = get_schema_view(
     openapi.Info(
         title="✨ NOWLII API Documentation | Made by Md Fahad Mir ✨",
@@ -45,6 +47,8 @@ urlpatterns = [
     path('api/swagger.json', schema_view.without_ui(cache_timeout=0), name='schema-json'),
 
     # Redirect root to docs
+    # Public page Google Play's Data safety form links to: delete an account without the app.
+    path('delete-account/', delete_account_page, name='delete-account-page'),
     path('', redirect_to_docs, name='root-redirect'),
 
 ]
