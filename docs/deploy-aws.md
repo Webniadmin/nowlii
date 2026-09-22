@@ -139,6 +139,14 @@ Note the box `.env` still literally contains `DEBUG=True`, but `docker-compose.p
 (`EMAIL_HOST=smtp.gmail.com`/587/TLS, `DEFAULT_FROM_EMAIL→EMAIL_HOST_USER`) since the box has
 `EMAIL_HOST_USER`+`EMAIL_HOST_PASSWORD`.
 
+## Deploy log — 2026-09-22 (public account-deletion page)
+
+Shipped backend `7e39249`. Rollback tag **`:backup-20260922`**. Migration
+`users.0020_accountdeletionrequest` applied (new table only). New public page
+**`https://api.nowlii.com/delete-account/`** — the URL for Play Console → Data safety → Data
+deletion. Verified live: GET 200, form POST passes CSRF over HTTPS, Stripe test key still
+loaded, reviewer login 200. Account deletion (app + page) now deletes the Stripe customer first.
+
 ## Deploy log — 2026-09-21, second (payments fixed against the real Stripe test API)
 
 Shipped backend `909074f` (`c129d1f` + `909074f`: the 11 Test-Clock findings and the
